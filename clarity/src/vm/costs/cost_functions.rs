@@ -163,6 +163,14 @@ define_named_enum!(ClarityCostFunction {
     Secp256r1verify("cost_secp256r1verify"),
     PlonkVerify("cost_plonk_verify"),
     Groth16Verify("cost_groth16_verify"),
+    Bn254G1Add("cost_bn254_g1_add"),
+    Bn254G1Mul("cost_bn254_g1_mul"),
+    Bn254G1Neg("cost_bn254_g1_neg"),
+    Bn254G1Msm("cost_bn254_g1_msm"),
+    Bn254G2Add("cost_bn254_g2_add"),
+    Bn254G2Mul("cost_bn254_g2_mul"),
+    Bn254G2Neg("cost_bn254_g2_neg"),
+    Bn254PairingCheck("cost_bn254_pairing_check"),
     Unimplemented("cost_unimplemented"),
 });
 
@@ -343,6 +351,14 @@ pub trait CostValues {
     fn cost_secp256r1verify(n: u64) -> Result<ExecutionCost, VmExecutionError>;
     fn cost_plonk_verify(n: u64) -> Result<ExecutionCost, VmExecutionError>;
     fn cost_groth16_verify(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_g1_add(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_g1_mul(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_g1_neg(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_g1_msm(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_g2_add(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_g2_mul(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_g2_neg(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_bn254_pairing_check(n: u64) -> Result<ExecutionCost, VmExecutionError>;
 }
 
 impl ClarityCostFunction {
@@ -502,6 +518,14 @@ impl ClarityCostFunction {
             ClarityCostFunction::Secp256r1verify => C::cost_secp256r1verify(n),
             ClarityCostFunction::PlonkVerify => C::cost_plonk_verify(n),
             ClarityCostFunction::Groth16Verify => C::cost_groth16_verify(n),
+            ClarityCostFunction::Bn254G1Add => C::cost_bn254_g1_add(n),
+            ClarityCostFunction::Bn254G1Mul => C::cost_bn254_g1_mul(n),
+            ClarityCostFunction::Bn254G1Neg => C::cost_bn254_g1_neg(n),
+            ClarityCostFunction::Bn254G1Msm => C::cost_bn254_g1_msm(n),
+            ClarityCostFunction::Bn254G2Add => C::cost_bn254_g2_add(n),
+            ClarityCostFunction::Bn254G2Mul => C::cost_bn254_g2_mul(n),
+            ClarityCostFunction::Bn254G2Neg => C::cost_bn254_g2_neg(n),
+            ClarityCostFunction::Bn254PairingCheck => C::cost_bn254_pairing_check(n),
             ClarityCostFunction::Unimplemented => Err(RuntimeError::NotImplemented.into()),
         }
     }

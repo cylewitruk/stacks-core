@@ -1,10 +1,11 @@
-use ark_bn254::{Bn254, Fq, Fr};
-use ark_ff::{BigInteger, PrimeField};
+use ark_bn254::{Bn254, Fq, Fr, G1Affine, G2Affine};
+use ark_ec::{AffineRepr as _, CurveGroup as _, PrimeGroup as _};
+use ark_ff::{BigInteger as _, PrimeField as _};
 use ark_groth16::Groth16;
 use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError,
 };
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::CanonicalSerialize as _;
 use ark_snark::SNARK;
 use ark_std::rand::rngs::OsRng;
 use clarity_types::errors::CheckErrorKind;
@@ -58,6 +59,45 @@ fn buff_literal(bytes: &[u8]) -> String {
 
 fn zeroed_buff_literal(len: usize) -> String {
     buff_literal(&vec![0u8; len])
+}
+
+fn fq_to_be32(f: &Fq) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let bytes = f.into_bigint().to_bytes_be();
+    out[32 - bytes.len()..].copy_from_slice(&bytes);
+    out
+}
+
+fn g1_to_bytes(p: &G1Affine) -> Vec<u8> {
+    if p.is_zero() {
+        return vec![0u8; 64];
+    }
+    let mut out = Vec::with_capacity(64);
+    out.extend_from_slice(&fq_to_be32(&p.x));
+    out.extend_from_slice(&fq_to_be32(&p.y));
+    out
+}
+
+fn g2_to_bytes(p: &G2Affine) -> Vec<u8> {
+    if p.is_zero() {
+        return vec![0u8; 128];
+    }
+    let mut out = Vec::with_capacity(128);
+    // EVM order: x_im, x_re, y_im, y_re
+    out.extend_from_slice(&fq_to_be32(&p.x.c1));
+    out.extend_from_slice(&fq_to_be32(&p.x.c0));
+    out.extend_from_slice(&fq_to_be32(&p.y.c1));
+    out.extend_from_slice(&fq_to_be32(&p.y.c0));
+    out
+}
+
+fn bn254_pair_bytes(pairs: &[(G1Affine, G2Affine)]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pairs.len() * 192);
+    for (g1, g2) in pairs {
+        out.extend_from_slice(&g1_to_bytes(g1));
+        out.extend_from_slice(&g2_to_bytes(g2));
+    }
+    out
 }
 
 /// Helper to build a tiny TurboPlonk proof/vk/inputs (BN254)
@@ -136,13 +176,6 @@ impl ConstraintSynthesizer<Fr> for MulCircuit {
         )?;
         Ok(())
     }
-}
-
-fn fq_to_be32(f: &Fq) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    let bytes = f.into_bigint().to_bytes_be();
-    out[32 - bytes.len()..].copy_from_slice(&bytes);
-    out
 }
 
 /// Helper to build a tiny Groth16 proof/vk/inputs (BN254), with EVM-style proof encoding
@@ -612,6 +645,275 @@ fn test_groth16_verify_invalid_proof_returns_false() {
 
     assert_eq!(
         Value::Bool(false),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g1_add_returns_ok() {
+    let g1 = G1Affine::generator();
+    let bytes = g1_to_bytes(&g1);
+
+    let program = format!(
+        "(is-ok (bn254-g1-add {} {}))",
+        buff_literal(&bytes),
+        buff_literal(&bytes)
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g1_add_invalid_point_returns_err() {
+    // x = 1, y = 1 is almost certainly not on curve
+    let mut bad = vec![0u8; 64];
+    bad[31] = 0x01;
+    bad[63] = 0x01;
+
+    let program = format!(
+        "(is-err (bn254-g1-add {} {}))",
+        buff_literal(&bad),
+        buff_literal(&bad)
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g1_mul_returns_ok() {
+    let g1 = G1Affine::generator();
+    let point_bytes = g1_to_bytes(&g1);
+
+    // scalar = 2
+    let mut scalar = vec![0u8; 32];
+    scalar[31] = 0x02;
+
+    let program = format!(
+        "(is-ok (bn254-g1-mul {} {}))",
+        buff_literal(&point_bytes),
+        buff_literal(&scalar),
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g1_neg_adds_to_identity() {
+    let g1 = G1Affine::generator();
+    let g1_bytes = g1_to_bytes(&g1);
+    let zero = zeroed_buff_literal(64);
+
+    let program = format!(
+        "(let ((neg (unwrap! (bn254-g1-neg {}) (err u1)))) (is-eq (unwrap! (bn254-g1-add {} neg) (err u1)) {}))",
+        buff_literal(&g1_bytes),
+        buff_literal(&g1_bytes),
+        zero
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g2_add_returns_ok() {
+    let g2 = G2Affine::generator();
+    let bytes = g2_to_bytes(&g2);
+
+    let program = format!(
+        "(is-ok (bn254-g2-add {} {}))",
+        buff_literal(&bytes),
+        buff_literal(&bytes)
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g2_mul_returns_ok() {
+    let g2 = G2Affine::generator();
+    let point_bytes = g2_to_bytes(&g2);
+
+    // scalar = 2
+    let mut scalar = vec![0u8; 32];
+    scalar[31] = 0x02;
+
+    let program = format!(
+        "(is-ok (bn254-g2-mul {} {}))",
+        buff_literal(&point_bytes),
+        buff_literal(&scalar),
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_pairing_check_true_for_inverse_pairs() {
+    let g1 = G1Affine::generator();
+    let g2 = G2Affine::generator();
+    let g1_neg = (-g1.into_group()).into_affine();
+
+    let input = bn254_pair_bytes(&[(g1, g2), (g1_neg, g2)]);
+
+    let program = format!("(bn254-pairing-check {})", buff_literal(&input));
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_pairing_check_false_for_single_pair() {
+    let g1 = G1Affine::generator();
+    let g2 = G2Affine::generator();
+
+    let input = bn254_pair_bytes(&[(g1, g2)]);
+
+    let program = format!("(bn254-pairing-check {})", buff_literal(&input));
+
+    assert_eq!(
+        Value::Bool(false),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g2_neg_adds_to_identity() {
+    let g2 = G2Affine::generator();
+    let g2_bytes = g2_to_bytes(&g2);
+    let zero = zeroed_buff_literal(128);
+
+    let program = format!(
+        "(let ((neg (unwrap! (bn254-g2-neg {}) (err u1)))) (is-eq (unwrap! (bn254-g2-add {} neg) (err u1)) {}))",
+        buff_literal(&g2_bytes),
+        buff_literal(&g2_bytes),
+        zero
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bn254_g1_msm_matches_expected_sum() {
+    let g1 = G1Affine::generator();
+    let g1_bytes = g1_to_bytes(&g1);
+
+    // terms: 2*G + 3*G = 5*G
+    let mut terms = Vec::with_capacity(96 * 2);
+    terms.extend_from_slice(&g1_bytes);
+    let mut s2 = vec![0u8; 32];
+    s2[31] = 0x02;
+    terms.extend_from_slice(&s2);
+
+    terms.extend_from_slice(&g1_bytes);
+    let mut s3 = vec![0u8; 32];
+    s3[31] = 0x03;
+    terms.extend_from_slice(&s3);
+
+    let expected = g1_to_bytes(
+        &(g1.into_group()
+            .mul_bigint(Fr::from(5u32).into_bigint())
+            .into_affine()),
+    );
+
+    let program = format!(
+        "(is-eq (unwrap! (bn254-g1-msm {}) (err u1)) {})",
+        buff_literal(&terms),
+        buff_literal(&expected)
+    );
+
+    assert_eq!(
+        Value::Bool(true),
         execute_with_parameters(
             program.as_str(),
             ClarityVersion::Clarity4,

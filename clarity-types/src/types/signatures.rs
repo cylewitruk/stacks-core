@@ -854,6 +854,8 @@ impl TypeSignature {
     pub const BUFFER_64: TypeSignature = Self::type_buffer_const(64);
     /// Buffer type with length 65.
     pub const BUFFER_65: TypeSignature = Self::type_buffer_const(65);
+    /// Buffer type with length 128.
+    pub const BUFFER_128: TypeSignature = Self::type_buffer_const(128);
 
     /// String ASCII type with minimum length (`1`).
     pub const STRING_ASCII_MIN: TypeSignature = Self::type_ascii_const(1);

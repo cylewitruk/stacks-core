@@ -174,9 +174,7 @@ impl ArithmeticOnlyChecker<'_> {
             | InsertEntry | SetVar | MintAsset | MintToken | TransferAsset | TransferToken
             | ContractCall | StxTransfer | StxTransferMemo | StxBurn | AtBlock | GetStxBalance
             | GetTokenSupply | BurnToken | FromConsensusBuff | ToConsensusBuff | BurnAsset
-            | StxGetAccount | PlonkVerify | Groth16Verify => {
-                Err(Error::FunctionNotPermitted(function))
-            }
+            | StxGetAccount => Err(Error::FunctionNotPermitted(function)),
             Append
             | Concat
             | AsMaxLen
@@ -218,7 +216,9 @@ impl ArithmeticOnlyChecker<'_> {
             | ConsSome | ConsOkay | ConsError | DefaultTo | UnwrapRet | UnwrapErrRet | IsOkay
             | IsNone | Asserts | Unwrap | UnwrapErr | IsErr | IsSome | TryRet | ToUInt | ToInt
             | Len | Begin | TupleMerge | BitwiseOr | BitwiseAnd | BitwiseXor2 | BitwiseNot
-            | BitwiseLShift | BitwiseRShift => {
+            | BitwiseLShift | BitwiseRShift | Groth16Verify | PlonkVerify | Bn254G1Add
+            | Bn254G1Mul | Bn254G1Neg | Bn254G1Msm | Bn254G2Add | Bn254G2Mul | Bn254G2Neg
+            | Bn254PairingCheck => {
                 // Check all arguments.
                 self.check_all(args)
             }

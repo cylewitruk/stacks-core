@@ -205,6 +205,14 @@ define_versioned_named_enum_with_max!(NativeFunctions(ClarityVersion) {
     Secp256r1Verify("secp256r1-verify", ClarityVersion::Clarity4, None),
     PlonkVerify("plonk-verify", ClarityVersion::Clarity4, None),
     Groth16Verify("groth16-verify", ClarityVersion::Clarity4, None),
+    Bn254G1Add("bn254-g1-add", ClarityVersion::Clarity4, None),
+    Bn254G1Mul("bn254-g1-mul", ClarityVersion::Clarity4, None),
+    Bn254G1Neg("bn254-g1-neg", ClarityVersion::Clarity4, None),
+    Bn254G1Msm("bn254-g1-msm", ClarityVersion::Clarity4, None),
+    Bn254G2Add("bn254-g2-add", ClarityVersion::Clarity4, None),
+    Bn254G2Mul("bn254-g2-mul", ClarityVersion::Clarity4, None),
+    Bn254G2Neg("bn254-g2-neg", ClarityVersion::Clarity4, None),
+    Bn254PairingCheck("bn254-pairing-check", ClarityVersion::Clarity4, None),
 });
 
 ///
@@ -598,6 +606,17 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
             Groth16Verify => {
                 SpecialFunction("native_groth16-verify", &crypto::special_groth16_verify)
             }
+            Bn254G1Add => SpecialFunction("native_bn254-g1-add", &crypto::special_bn254_g1_add),
+            Bn254G1Mul => SpecialFunction("native_bn254-g1-mul", &crypto::special_bn254_g1_mul),
+            Bn254G1Neg => SpecialFunction("native_bn254-g1-neg", &crypto::special_bn254_g1_neg),
+            Bn254G1Msm => SpecialFunction("native_bn254-g1-msm", &crypto::special_bn254_g1_msm),
+            Bn254G2Add => SpecialFunction("native_bn254-g2-add", &crypto::special_bn254_g2_add),
+            Bn254G2Mul => SpecialFunction("native_bn254-g2-mul", &crypto::special_bn254_g2_mul),
+            Bn254G2Neg => SpecialFunction("native_bn254-g2-neg", &crypto::special_bn254_g2_neg),
+            Bn254PairingCheck => SpecialFunction(
+                "native_bn254-pairing-check",
+                &crypto::special_bn254_pairing_check,
+            ),
         };
         Some(callable)
     } else {

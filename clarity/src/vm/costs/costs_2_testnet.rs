@@ -773,4 +773,36 @@ impl CostValues for Costs2Testnet {
     fn cost_groth16_verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
         Err(RuntimeError::NotImplemented.into())
     }
+
+    fn cost_bn254_g1_add(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
+
+    fn cost_bn254_g1_mul(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
+
+    fn cost_bn254_g1_neg(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
+
+    fn cost_bn254_g1_msm(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
+
+    fn cost_bn254_g2_add(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
+
+    fn cost_bn254_g2_mul(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
+
+    fn cost_bn254_g2_neg(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
+
+    fn cost_bn254_pairing_check(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
 }

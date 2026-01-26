@@ -1438,6 +1438,78 @@ const GROTH16_VERIFY_API: SpecialAPI = SpecialAPI {
     example: "(groth16-verify 0x00 0x00 0x00) ;; Returns false",
 };
 
+const BN254_G1_ADD_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 64), (buff 64)",
+    snippet: "bn254-g1-add ${1:point-a} ${2:point-b}",
+    output_type: "(response (buff 64) uint)",
+    signature: "(bn254-g1-add point-a point-b)",
+    description: "Adds two BN254 G1 points. Each point is a 64-byte buffer: 32-byte big-endian x followed by 32-byte big-endian y. Returns `(ok (buff 64))` on success or `(err uint)` on invalid input.",
+    example: "(bn254-g1-add 0x00 0x00) ;; Returns (err u1)",
+};
+
+const BN254_G1_MUL_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 64), (buff 32)",
+    snippet: "bn254-g1-mul ${1:point} ${2:scalar}",
+    output_type: "(response (buff 64) uint)",
+    signature: "(bn254-g1-mul point scalar)",
+    description: "Multiplies a BN254 G1 point by a scalar. Point is a 64-byte buffer (x || y), scalar is a 32-byte big-endian buffer. Returns `(ok (buff 64))` on success or `(err uint)` on invalid input.",
+    example: "(bn254-g1-mul 0x00 0x0000000000000000000000000000000000000000000000000000000000000000) ;; Returns (err u1)",
+};
+
+const BN254_G1_NEG_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 64)",
+    snippet: "bn254-g1-neg ${1:point}",
+    output_type: "(response (buff 64) uint)",
+    signature: "(bn254-g1-neg point)",
+    description: "Negates a BN254 G1 point. Point is a 64-byte buffer: 32-byte big-endian x followed by 32-byte big-endian y. Returns `(ok (buff 64))` on success or `(err uint)` on invalid input.",
+    example: "(bn254-g1-neg 0x00) ;; Returns (err u1)",
+};
+
+const BN254_G1_MSM_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 96 * N)",
+    snippet: "bn254-g1-msm ${1:terms}",
+    output_type: "(response (buff 64) uint)",
+    signature: "(bn254-g1-msm terms)",
+    description: "Computes a BN254 G1 multi-scalar multiplication. Input is a buffer of 96-byte tuples: G1 (64 bytes) followed by scalar (32 bytes), all big-endian. Returns `(ok (buff 64))` on success or `(err uint)` on invalid input.",
+    example: "(bn254-g1-msm 0x) ;; Returns (ok 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000)",
+};
+
+const BN254_G2_ADD_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 128), (buff 128)",
+    snippet: "bn254-g2-add ${1:point-a} ${2:point-b}",
+    output_type: "(response (buff 128) uint)",
+    signature: "(bn254-g2-add point-a point-b)",
+    description: "Adds two BN254 G2 points. Each point is a 128-byte buffer: (x_im || x_re || y_im || y_re), all 32-byte big-endian limbs. Returns `(ok (buff 128))` on success or `(err uint)` on invalid input.",
+    example: "(bn254-g2-add 0x00 0x00) ;; Returns (err u1)",
+};
+
+const BN254_G2_MUL_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 128), (buff 32)",
+    snippet: "bn254-g2-mul ${1:point} ${2:scalar}",
+    output_type: "(response (buff 128) uint)",
+    signature: "(bn254-g2-mul point scalar)",
+    description: "Multiplies a BN254 G2 point by a scalar. Point is a 128-byte buffer: (x_im || x_re || y_im || y_re), scalar is a 32-byte big-endian buffer. Returns `(ok (buff 128))` on success or `(err uint)` on invalid input.",
+    example: "(bn254-g2-mul 0x00 0x0000000000000000000000000000000000000000000000000000000000000000) ;; Returns (err u1)",
+};
+
+const BN254_G2_NEG_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 128)",
+    snippet: "bn254-g2-neg ${1:point}",
+    output_type: "(response (buff 128) uint)",
+    signature: "(bn254-g2-neg point)",
+    description: "Negates a BN254 G2 point. Point is a 128-byte buffer: (x_im || x_re || y_im || y_re), all 32-byte big-endian limbs. Returns `(ok (buff 128))` on success or `(err uint)` on invalid input.",
+    example: "(bn254-g2-neg 0x00) ;; Returns (err u1)",
+};
+
+const BN254_PAIRING_CHECK_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 192 * N)",
+    snippet: "bn254-pairing-check ${1:pairs-bytes}",
+    output_type: "bool",
+    signature: "(bn254-pairing-check pairs-bytes)",
+    description: "Performs a BN254 multi-pairing check. Input is a buffer of 192-byte tuples: G1 (64 bytes) followed by G2 (128 bytes). G1 is (x || y), G2 is (x_im || x_re || y_im || y_re), all 32-byte big-endian limbs.",
+    example: "(bn254-pairing-check 0x) ;; Returns false",
+};
+
 const CONTRACT_CALL_API: SpecialAPI = SpecialAPI {
     input_type: "ContractName, PublicFunctionName, Arg0, ...",
     snippet: "contract-call? ${1:contract-principal} ${2:func} ${3:arg1}",
@@ -2921,6 +2993,14 @@ pub fn make_api_reference(function: &NativeFunctions) -> FunctionAPI {
         Secp256r1Verify => make_for_special(&SECP256R1VERIFY_API, function),
         PlonkVerify => make_for_special(&PLONK_VERIFY_API, function),
         Groth16Verify => make_for_special(&GROTH16_VERIFY_API, function),
+        Bn254G1Add => make_for_special(&BN254_G1_ADD_API, function),
+        Bn254G1Mul => make_for_special(&BN254_G1_MUL_API, function),
+        Bn254G1Neg => make_for_special(&BN254_G1_NEG_API, function),
+        Bn254G2Add => make_for_special(&BN254_G2_ADD_API, function),
+        Bn254G2Mul => make_for_special(&BN254_G2_MUL_API, function),
+        Bn254G1Msm => make_for_special(&BN254_G1_MSM_API, function),
+        Bn254G2Neg => make_for_special(&BN254_G2_NEG_API, function),
+        Bn254PairingCheck => make_for_special(&BN254_PAIRING_CHECK_API, function),
     }
 }
 

@@ -890,6 +890,111 @@ fn check_groth16_verify(
     Ok(TypeSignature::BoolType)
 }
 
+fn check_bn254_g1_add(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(2, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_64)?;
+    checker.type_check_expects(&args[1], context, &TypeSignature::BUFFER_64)?;
+    Ok(TypeSignature::new_response(
+        TypeSignature::BUFFER_64,
+        TypeSignature::UIntType,
+    )?)
+}
+
+fn check_bn254_g1_mul(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(2, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_64)?;
+    checker.type_check_expects(&args[1], context, &TypeSignature::BUFFER_32)?;
+    Ok(TypeSignature::new_response(
+        TypeSignature::BUFFER_64,
+        TypeSignature::UIntType,
+    )?)
+}
+
+fn check_bn254_g1_neg(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(1, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_64)?;
+    Ok(TypeSignature::new_response(
+        TypeSignature::BUFFER_64,
+        TypeSignature::UIntType,
+    )?)
+}
+
+fn check_bn254_g1_msm(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(1, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_MAX)?;
+    Ok(TypeSignature::new_response(
+        TypeSignature::BUFFER_64,
+        TypeSignature::UIntType,
+    )?)
+}
+
+fn check_bn254_g2_add(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(2, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_128)?;
+    checker.type_check_expects(&args[1], context, &TypeSignature::BUFFER_128)?;
+    Ok(TypeSignature::new_response(
+        TypeSignature::BUFFER_128,
+        TypeSignature::UIntType,
+    )?)
+}
+
+fn check_bn254_g2_mul(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(2, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_128)?;
+    checker.type_check_expects(&args[1], context, &TypeSignature::BUFFER_32)?;
+    Ok(TypeSignature::new_response(
+        TypeSignature::BUFFER_128,
+        TypeSignature::UIntType,
+    )?)
+}
+
+fn check_bn254_g2_neg(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(1, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_128)?;
+    Ok(TypeSignature::new_response(
+        TypeSignature::BUFFER_128,
+        TypeSignature::UIntType,
+    )?)
+}
+
+fn check_bn254_pairing_check(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(1, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_MAX)?;
+    Ok(TypeSignature::BoolType)
+}
+
 impl TypedNativeFunction {
     pub fn type_check_application(
         &self,
@@ -1284,6 +1389,14 @@ impl TypedNativeFunction {
             Secp256r1Verify => Special(SpecialNativeFunction(&check_secp256r1_verify)),
             PlonkVerify => Special(SpecialNativeFunction(&check_plonk_verify)),
             Groth16Verify => Special(SpecialNativeFunction(&check_groth16_verify)),
+            Bn254G1Add => Special(SpecialNativeFunction(&check_bn254_g1_add)),
+            Bn254G1Mul => Special(SpecialNativeFunction(&check_bn254_g1_mul)),
+            Bn254G1Neg => Special(SpecialNativeFunction(&check_bn254_g1_neg)),
+            Bn254G1Msm => Special(SpecialNativeFunction(&check_bn254_g1_msm)),
+            Bn254G2Add => Special(SpecialNativeFunction(&check_bn254_g2_add)),
+            Bn254G2Mul => Special(SpecialNativeFunction(&check_bn254_g2_mul)),
+            Bn254G2Neg => Special(SpecialNativeFunction(&check_bn254_g2_neg)),
+            Bn254PairingCheck => Special(SpecialNativeFunction(&check_bn254_pairing_check)),
         };
 
         Ok(out)

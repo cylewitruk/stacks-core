@@ -15,9 +15,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
-use ark_ff::{PrimeField, Zero};
+use ark_ec::pairing::Pairing;
+use ark_ec::{AffineRepr as _, CurveGroup as _, PrimeGroup as _};
+use ark_ff::{BigInteger as _, One as _, PrimeField, Zero as _};
 use ark_groth16::Groth16;
-use ark_serialize::CanonicalDeserialize;
+use ark_serialize::CanonicalDeserialize as _;
 use jf_plonk::proof_system::{PlonkKzgSnark, UniversalSNARK};
 use jf_plonk::transcript::StandardTranscript;
 use stacks_common::address::{
@@ -114,6 +116,36 @@ fn parse_g2_be(x_im: &[u8], x_re: &[u8], y_im: &[u8], y_re: &[u8]) -> Option<G2A
         return None;
     }
     Some(p)
+}
+
+fn fq_to_be32(f: &Fq) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let bytes = f.into_bigint().to_bytes_be();
+    out[32 - bytes.len()..].copy_from_slice(&bytes);
+    out
+}
+
+fn g1_to_bytes(p: &G1Affine) -> Vec<u8> {
+    if p.is_zero() {
+        return vec![0u8; 64];
+    }
+    let mut out = Vec::with_capacity(64);
+    out.extend_from_slice(&fq_to_be32(&p.x));
+    out.extend_from_slice(&fq_to_be32(&p.y));
+    out
+}
+
+fn g2_to_bytes(p: &G2Affine) -> Vec<u8> {
+    if p.is_zero() {
+        return vec![0u8; 128];
+    }
+    let mut out = Vec::with_capacity(128);
+    // EVM order: x_im, x_re, y_im, y_re
+    out.extend_from_slice(&fq_to_be32(&p.x.c1)); // x_im
+    out.extend_from_slice(&fq_to_be32(&p.x.c0)); // x_re
+    out.extend_from_slice(&fq_to_be32(&p.y.c1)); // y_im
+    out.extend_from_slice(&fq_to_be32(&p.y.c0)); // y_re
+    out
 }
 
 // Note: Clarity1 had a bug in how the address is computed (issues/2619).
@@ -542,4 +574,265 @@ pub fn special_groth16_verify(
         .unwrap_or(false);
 
     Ok(Value::Bool(ok))
+}
+
+pub fn special_bn254_g1_add(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(2, args)?;
+    runtime_cost(ClarityCostFunction::Bn254G1Add, env, 0)?;
+
+    let p1_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_64)?;
+    let p2_bytes = expect_buffer(eval(&args[1], env, context)?, TypeSignature::BUFFER_64)?;
+
+    if p1_bytes.len() != 64 || p2_bytes.len() != 64 {
+        return Err(CheckErrorKind::TypeValueError(
+            Box::new(TypeSignature::BUFFER_64),
+            Box::new(Value::Sequence(SequenceData::Buffer(BuffData {
+                data: p1_bytes,
+            }))),
+        )
+        .into());
+    }
+
+    let p1 = parse_g1_be(&p1_bytes[0..32], &p1_bytes[32..64]);
+    let p2 = parse_g1_be(&p2_bytes[0..32], &p2_bytes[32..64]);
+
+    let (Some(p1), Some(p2)) = (p1, p2) else {
+        return Ok(Value::err_uint(1));
+    };
+
+    let sum = (p1.into_group() + p2.into_group()).into_affine();
+    let out = Value::buff_from(g1_to_bytes(&sum))
+        .map_err(|_| VmInternalError::Expect("Failed to construct buff".into()))?;
+    Ok(Value::okay(out).map_err(|_| VmInternalError::Expect("Failed to construct ok".into()))?)
+}
+
+pub fn special_bn254_g1_mul(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(2, args)?;
+    runtime_cost(ClarityCostFunction::Bn254G1Mul, env, 0)?;
+
+    let p_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_64)?;
+    let s_bytes = expect_buffer(eval(&args[1], env, context)?, TypeSignature::BUFFER_32)?;
+
+    if p_bytes.len() != 64 || s_bytes.len() != 32 {
+        return Ok(Value::err_uint(1));
+    }
+
+    let p = parse_g1_be(&p_bytes[0..32], &p_bytes[32..64]);
+    let Some(p) = p else {
+        return Ok(Value::err_uint(1));
+    };
+
+    let scalar = Fr::from_be_bytes_mod_order(&s_bytes);
+    let prod = p
+        .into_group()
+        .mul_bigint(scalar.into_bigint())
+        .into_affine();
+
+    let out = Value::buff_from(g1_to_bytes(&prod))
+        .map_err(|_| VmInternalError::Expect("Failed to construct buff".into()))?;
+    Ok(Value::okay(out).map_err(|_| VmInternalError::Expect("Failed to construct ok".into()))?)
+}
+
+pub fn special_bn254_pairing_check(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(1, args)?;
+    runtime_cost(ClarityCostFunction::Bn254PairingCheck, env, 0)?;
+
+    let input = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_MAX)?;
+    if input.len() % 192 != 0 {
+        return Ok(Value::Bool(false));
+    }
+
+    let mut g1s = Vec::new();
+    let mut g2s = Vec::new();
+
+    for chunk in input.chunks(192) {
+        let g1 = parse_g1_be(&chunk[0..32], &chunk[32..64]);
+        let g2 = parse_g2_be(
+            &chunk[64..96],   // x_im
+            &chunk[96..128],  // x_re
+            &chunk[128..160], // y_im
+            &chunk[160..192], // y_re
+        );
+        let (Some(g1), Some(g2)) = (g1, g2) else {
+            return Ok(Value::Bool(false));
+        };
+        g1s.push(g1);
+        g2s.push(g2);
+    }
+
+    let f = Bn254::multi_miller_loop(g1s, g2s);
+    let ok = match Bn254::final_exponentiation(f) {
+        Some(t) => t.0 == <Bn254 as Pairing>::TargetField::one(),
+        None => false,
+    };
+
+    Ok(Value::Bool(ok))
+}
+
+pub fn special_bn254_g1_neg(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(1, args)?;
+    runtime_cost(ClarityCostFunction::Bn254G1Neg, env, 0)?;
+
+    let p_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_64)?;
+    if p_bytes.len() != 64 {
+        return Ok(Value::err_uint(1));
+    }
+
+    let p = parse_g1_be(&p_bytes[0..32], &p_bytes[32..64]);
+    let Some(p) = p else {
+        return Ok(Value::err_uint(1));
+    };
+
+    let neg = (-p.into_group()).into_affine();
+    let out = Value::buff_from(g1_to_bytes(&neg))
+        .map_err(|_| VmInternalError::Expect("Failed to construct buff".into()))?;
+    Ok(Value::okay(out).map_err(|_| VmInternalError::Expect("Failed to construct ok".into()))?)
+}
+
+pub fn special_bn254_g2_add(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(2, args)?;
+    runtime_cost(ClarityCostFunction::Bn254G2Add, env, 0)?;
+
+    let p1_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_128)?;
+    let p2_bytes = expect_buffer(eval(&args[1], env, context)?, TypeSignature::BUFFER_128)?;
+
+    if p1_bytes.len() != 128 || p2_bytes.len() != 128 {
+        return Ok(Value::err_uint(1));
+    }
+
+    let p1 = parse_g2_be(
+        &p1_bytes[0..32],
+        &p1_bytes[32..64],
+        &p1_bytes[64..96],
+        &p1_bytes[96..128],
+    );
+    let p2 = parse_g2_be(
+        &p2_bytes[0..32],
+        &p2_bytes[32..64],
+        &p2_bytes[64..96],
+        &p2_bytes[96..128],
+    );
+
+    let (Some(p1), Some(p2)) = (p1, p2) else {
+        return Ok(Value::err_uint(1));
+    };
+
+    let sum = (p1.into_group() + p2.into_group()).into_affine();
+    let out = Value::buff_from(g2_to_bytes(&sum))
+        .map_err(|_| VmInternalError::Expect("Failed to construct buff".into()))?;
+    Ok(Value::okay(out).map_err(|_| VmInternalError::Expect("Failed to construct ok".into()))?)
+}
+
+pub fn special_bn254_g2_mul(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(2, args)?;
+    runtime_cost(ClarityCostFunction::Bn254G2Mul, env, 0)?;
+
+    let p_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_128)?;
+    let s_bytes = expect_buffer(eval(&args[1], env, context)?, TypeSignature::BUFFER_32)?;
+
+    if p_bytes.len() != 128 || s_bytes.len() != 32 {
+        return Ok(Value::err_uint(1));
+    }
+
+    let p = parse_g2_be(
+        &p_bytes[0..32],
+        &p_bytes[32..64],
+        &p_bytes[64..96],
+        &p_bytes[96..128],
+    );
+    let Some(p) = p else {
+        return Ok(Value::err_uint(1));
+    };
+
+    let scalar = Fr::from_be_bytes_mod_order(&s_bytes);
+    let prod = p
+        .into_group()
+        .mul_bigint(scalar.into_bigint())
+        .into_affine();
+
+    let out = Value::buff_from(g2_to_bytes(&prod))
+        .map_err(|_| VmInternalError::Expect("Failed to construct buff".into()))?;
+    Ok(Value::okay(out).map_err(|_| VmInternalError::Expect("Failed to construct ok".into()))?)
+}
+
+pub fn special_bn254_g2_neg(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(1, args)?;
+    runtime_cost(ClarityCostFunction::Bn254G2Neg, env, 0)?;
+
+    let p_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_128)?;
+    if p_bytes.len() != 128 {
+        return Ok(Value::err_uint(1));
+    }
+
+    let p = parse_g2_be(
+        &p_bytes[0..32],
+        &p_bytes[32..64],
+        &p_bytes[64..96],
+        &p_bytes[96..128],
+    );
+    let Some(p) = p else {
+        return Ok(Value::err_uint(1));
+    };
+
+    let neg = (-p.into_group()).into_affine();
+    let out = Value::buff_from(g2_to_bytes(&neg))
+        .map_err(|_| VmInternalError::Expect("Failed to construct buff".into()))?;
+    Ok(Value::okay(out).map_err(|_| VmInternalError::Expect("Failed to construct ok".into()))?)
+}
+
+pub fn special_bn254_g1_msm(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(1, args)?;
+
+    let input = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_MAX)?;
+    if input.len() % 96 != 0 {
+        return Ok(Value::err_uint(1));
+    }
+    let terms = (input.len() / 96) as u64;
+    runtime_cost(ClarityCostFunction::Bn254G1Msm, env, terms)?;
+
+    let mut acc = G1Affine::identity().into_group();
+    for chunk in input.chunks(96) {
+        let p = parse_g1_be(&chunk[0..32], &chunk[32..64]);
+        let Some(p) = p else {
+            return Ok(Value::err_uint(1));
+        };
+        let scalar = Fr::from_be_bytes_mod_order(&chunk[64..96]);
+        acc += p.into_group().mul_bigint(scalar.into_bigint());
+    }
+
+    let out = Value::buff_from(g1_to_bytes(&acc.into_affine()))
+        .map_err(|_| VmInternalError::Expect("Failed to construct buff".into()))?;
+    Ok(Value::okay(out).map_err(|_| VmInternalError::Expect("Failed to construct ok".into()))?)
 }

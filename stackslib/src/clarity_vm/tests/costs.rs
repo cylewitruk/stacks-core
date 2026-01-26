@@ -190,6 +190,14 @@ pub fn get_simple_test(function: &NativeFunctions) -> Option<&'static str> {
         Secp256r1Verify => "(secp256r1-verify 0xc3abef6a775793dfbc8e0719e7a1de1fc2f90d37a7912b1ce8e300a5a03b06a8 0xf2b8c0645caa7250e3b96d633cf40a88456e4ffbddffb69200c4e019039dfd310eac59293c23e6d6aa8b0c5d9e4e48fa4c4fdf1ace2ba618dc0263b5e90a0903 0x031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e)",
         PlonkVerify => "(plonk-verify 0x00 0x00 0x00)",
         Groth16Verify => "(groth16-verify 0x00 0x00 0x00)",
+        Bn254G1Add => "(bn254-g1-add 0x00 0x00)",
+        Bn254G1Mul => "(bn254-g1-mul 0x00 0x00)",
+        Bn254G1Neg => "(bn254-g1-neg 0x00)",
+        Bn254G1Msm => "(bn254-g1-msm (list 0x00) (list 0x00))",
+        Bn254G2Add => "(bn254-g2-add 0x00 0x00)",
+        Bn254G2Mul => "(bn254-g2-mul 0x00 0x00)",
+        Bn254G2Neg => "(bn254-g2-neg 0x00)",
+        Bn254PairingCheck => "(bn254-pairing-check 0x00)",
         // These expressions are not usable in this context, since they are
         // only allowed within `restrict-assets?` or `as-contract?`
         AllowanceWithStx

@@ -483,4 +483,44 @@ impl CostValues for Costs4 {
         // TODO: Replace with actual cost from benchmarking
         Ok(ExecutionCost::runtime(250_000))
     }
+
+    fn cost_bn254_g1_add(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
+
+    fn cost_bn254_g1_mul(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
+
+    fn cost_bn254_g1_neg(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
+
+    fn cost_bn254_g1_msm(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
+
+    fn cost_bn254_g2_add(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
+
+    fn cost_bn254_g2_mul(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
+
+    fn cost_bn254_g2_neg(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
+
+    fn cost_bn254_pairing_check(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
 }
