@@ -14,6 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use ark_bn254::{Bn254, Fr};
+use ark_serialize::CanonicalDeserialize;
+use jf_plonk::proof_system::structs::{Proof, VerifyingKey};
+use jf_plonk::proof_system::{PlonkKzgSnark, UniversalSNARK};
+use jf_plonk::transcript::StandardTranscript;
 use stacks_common::address::{
     AddressHashMode, C32_ADDRESS_VERSION_MAINNET_SINGLESIG, C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
 };
@@ -56,6 +61,13 @@ native_hash_func!(native_sha256, hash::Sha256Sum);
 native_hash_func!(native_sha512, hash::Sha512Sum);
 native_hash_func!(native_sha512trunc256, hash::Sha512Trunc256Sum);
 native_hash_func!(native_keccak256, hash::Keccak256Hash);
+
+fn expect_buffer(value: Value, ty: TypeSignature) -> Result<Vec<u8>, VmExecutionError> {
+    match value {
+        Value::Sequence(SequenceData::Buffer(BuffData { data })) => Ok(data),
+        _ => Err(CheckErrorKind::TypeValueError(Box::new(ty), Box::new(value)).into()),
+    }
+}
 
 // Note: Clarity1 had a bug in how the address is computed (issues/2619).
 // This method preserves the old, incorrect behavior for those running Clarity1.
@@ -377,4 +389,45 @@ pub fn special_secp256r1_verify(
     Ok(Value::Bool(
         secp256r1_verify(message, signature, pubkey).is_ok(),
     ))
+}
+
+pub fn special_plonk_verify(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    // (plonk-verify proof vk public-inputs)
+    check_argument_count(3, args)?;
+    runtime_cost(ClarityCostFunction::PlonkVerify, env, 0)?;
+
+    let proof_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_MAX)?;
+    let vk_bytes = expect_buffer(eval(&args[1], env, context)?, TypeSignature::BUFFER_MAX)?;
+    let inputs_bytes = expect_buffer(eval(&args[2], env, context)?, TypeSignature::BUFFER_MAX)?;
+
+    let proof = Proof::<Bn254>::deserialize_compressed(&*proof_bytes).ok();
+    let vk = VerifyingKey::<Bn254>::deserialize_compressed(&*vk_bytes).ok();
+    if proof.is_none() || vk.is_none() {
+        return Ok(Value::Bool(false));
+    }
+
+    let proof = proof.unwrap();
+    let vk = vk.unwrap();
+
+    // public inputs: concatenated 32-byte chunks (BN254 Fr)
+    if inputs_bytes.len() % 32 != 0 {
+        return Ok(Value::Bool(false));
+    }
+    let mut inputs = Vec::new();
+    for chunk in inputs_bytes.chunks(32) {
+        let fr = Fr::deserialize_compressed(chunk).ok();
+        if fr.is_none() {
+            return Ok(Value::Bool(false));
+        }
+        inputs.push(fr.unwrap());
+    }
+
+    let ok =
+        PlonkKzgSnark::<Bn254>::verify::<StandardTranscript>(&vk, &inputs, &proof, None).is_ok();
+
+    Ok(Value::Bool(ok))
 }

@@ -1,5 +1,6 @@
 use clarity_types::errors::CheckErrorKind;
 use clarity_types::VmExecutionError;
+use jf_relation::Arithmetization as _;
 use proptest::prelude::*;
 use stacks_common::types::chainstate::{StacksPrivateKey, StacksPublicKey};
 use stacks_common::types::{PrivateKey, StacksEpochId};
@@ -48,6 +49,62 @@ fn buff_literal(bytes: &[u8]) -> String {
 
 fn zeroed_buff_literal(len: usize) -> String {
     buff_literal(&vec![0u8; len])
+}
+
+/// Helper to build a tiny TurboPlonk proof/vk/inputs (BN254)
+fn make_minimal_plonk_proof_bytes() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    use ark_bn254::{Bn254, Fr};
+    use ark_serialize::CanonicalSerialize;
+    use jf_plonk::proof_system::{PlonkKzgSnark, UniversalSNARK};
+    use jf_plonk::transcript::StandardTranscript;
+    use jf_relation::{Circuit, PlonkCircuit};
+    use jf_utils::test_rng;
+
+    // Build a tiny circuit with two public inputs:
+    // public inputs: b = 1, f = 8
+    // checks: a=3, b boolean, e=(a+b)*(a-b)=8
+    let mut circuit = PlonkCircuit::<Fr>::new_turbo_plonk();
+    let a = circuit.create_variable(Fr::from(3u32)).unwrap();
+    let b = circuit.create_public_variable(Fr::from(1u32)).unwrap();
+    circuit.enforce_constant(a, Fr::from(3u32)).unwrap();
+    circuit.enforce_bool(b).unwrap();
+
+    let c = circuit.add(a, b).unwrap();
+    let d = circuit.sub(a, b).unwrap();
+    let e = circuit.mul(c, d).unwrap();
+
+    let f = circuit.create_public_variable(Fr::from(8u32)).unwrap();
+    circuit.enforce_equal(e, f).unwrap();
+
+    circuit.finalize_for_arithmetization().unwrap();
+
+    let mut rng = test_rng();
+
+    // For tests: requires jf-plonk with "test-srs" feature enabled.
+    let srs_size = circuit.srs_size().unwrap();
+    let srs = PlonkKzgSnark::<Bn254>::universal_setup_for_testing(srs_size, &mut rng).unwrap();
+
+    let (pk, vk) = PlonkKzgSnark::<Bn254>::preprocess(&srs, &circuit).unwrap();
+    let proof =
+        PlonkKzgSnark::<Bn254>::prove::<_, _, StandardTranscript>(&mut rng, &circuit, &pk, None)
+            .unwrap();
+
+    let public_inputs = circuit.public_input().unwrap();
+
+    // Serialize proof + vk compressed
+    let mut proof_bytes = Vec::new();
+    proof.serialize_compressed(&mut proof_bytes).unwrap();
+
+    let mut vk_bytes = Vec::new();
+    vk.serialize_compressed(&mut vk_bytes).unwrap();
+
+    // Serialize public inputs as concatenated 32-byte Frs
+    let mut inputs_bytes = Vec::new();
+    for fr in public_inputs {
+        fr.serialize_compressed(&mut inputs_bytes).unwrap();
+    }
+
+    (proof_bytes, vk_bytes, inputs_bytes)
 }
 
 #[test]
@@ -371,6 +428,59 @@ fn test_secp256k1_recover_invalid_signature_returns_err_code() {
         }
         other => panic!("expected err response, found {other:?}"),
     }
+}
+
+#[test]
+fn test_plonk_verify_valid_proof_returns_true() {
+    let (proof_bytes, vk_bytes, inputs_bytes) = make_minimal_plonk_proof_bytes();
+
+    let program = format!(
+        "(plonk-verify {} {} {})",
+        buff_literal(&proof_bytes),
+        buff_literal(&vk_bytes),
+        buff_literal(&inputs_bytes),
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_plonk_verify_invalid_proof_returns_false() {
+    let (proof_bytes, vk_bytes, mut inputs_bytes) = make_minimal_plonk_proof_bytes();
+
+    // Corrupt public inputs (fixed-size) to avoid proof deserialization panics.
+    if !inputs_bytes.is_empty() {
+        inputs_bytes[0] ^= 0x01;
+    }
+
+    let program = format!(
+        "(plonk-verify {} {} {})",
+        buff_literal(&proof_bytes),
+        buff_literal(&vk_bytes),
+        buff_literal(&inputs_bytes),
+    );
+
+    assert_eq!(
+        Value::Bool(false),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
 }
 
 proptest! {

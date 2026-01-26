@@ -31,7 +31,15 @@ rstest = { version = "0.17.0", optional = true }
 rstest_reuse = { version = "0.5.0", optional = true }
 rusqlite = { workspace = true, optional = true }
 
+# Dependencies supporting ZK proof verification
+jf-plonk = { workspace = true }
+jf-utils = { workspace = true }
+jf-relation = { workspace = true }
+ark-bn254 = { workspace = true }
+ark-serialize = { workspace = true }
+
 [dev-dependencies]
+jf-plonk = { workspace = true, features = ["test-srs"] }
 assert-json-diff = "1.0.0"
 clarity-types = { package = "clarity-types", path = "../clarity-types", default-features = false, features = ["testing"] }
 mutants = "0.0.3"

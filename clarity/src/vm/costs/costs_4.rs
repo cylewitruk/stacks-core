@@ -473,4 +473,9 @@ impl CostValues for Costs4 {
     fn cost_secp256r1verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
         Ok(ExecutionCost::runtime(51750))
     }
+
+    fn cost_plonk_verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
 }

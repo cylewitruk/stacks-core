@@ -1420,6 +1420,15 @@ NIST P-256 curve (also known as secp256r1).",
     0x037a6b62e3c8b14f1b5933f5d5ab0509a8e7d95a111b8d3b264d95bfa753b00296) ;; Returns false"
 };
 
+const PLONK_VERIFY_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff P), (buff V), (buff I)",
+    snippet: "plonk-verify ${1:proof} ${2:verification-key} ${3:public-inputs}",
+    output_type: "bool",
+    signature: "(plonk-verify proof verification-key public-inputs)",
+    description: "The `plonk-verify` function verifies a TurboPlonk proof using BN254 and a StandardTranscript. Public inputs are concatenated 32-byte field elements (little-endian, canonical compressed).",
+    example: "(plonk-verify 0x00 0x00 0x00) ;; Returns false",
+};
+
 const CONTRACT_CALL_API: SpecialAPI = SpecialAPI {
     input_type: "ContractName, PublicFunctionName, Arg0, ...",
     snippet: "contract-call? ${1:contract-principal} ${2:func} ${3:arg1}",
@@ -2901,6 +2910,7 @@ pub fn make_api_reference(function: &NativeFunctions) -> FunctionAPI {
         AllowanceWithStacking => make_for_special(&ALLOWANCE_WITH_STACKING, function),
         AllowanceAll => make_for_special(&ALLOWANCE_WITH_ALL, function),
         Secp256r1Verify => make_for_special(&SECP256R1VERIFY_API, function),
+        PlonkVerify => make_for_special(&PLONK_VERIFY_API, function),
     }
 }
 

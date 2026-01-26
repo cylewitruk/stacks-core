@@ -35,6 +35,13 @@ tikv-jemallocator = "0.5.4"
 thiserror = "1.0.65"
 toml = "0.5.6"
 
+# Dependencies supporting ZK proof verification
+jf-plonk = { git = "https://github.com/EspressoSystems/jellyfish", package = "jf-plonk", rev = "713e8a207d60c9742ba5b85ea15d9fc01cefa65a" }
+jf-utils = { git = "https://github.com/EspressoSystems/jellyfish", package = "jf-utils", tag = "jf-utils-v0.5.0" }
+jf-relation = { git = "https://github.com/EspressoSystems/jellyfish", package = "jf-relation", tag = "jf-relation-v0.5.0" }
+ark-bn254 = "0.5.0"
+ark-serialize = "0.5.0"
+
 # Use a bit more than default optimization for
 # dev builds to speed up test execution
 [profile.dev]

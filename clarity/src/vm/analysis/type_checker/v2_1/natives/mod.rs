@@ -866,6 +866,18 @@ fn check_get_tenure_info(
     Ok(TypeSignature::new_option(block_info_prop.type_result())?)
 }
 
+fn check_plonk_verify(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(3, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_MAX)?;
+    checker.type_check_expects(&args[1], context, &TypeSignature::BUFFER_MAX)?;
+    checker.type_check_expects(&args[2], context, &TypeSignature::BUFFER_MAX)?;
+    Ok(TypeSignature::BoolType)
+}
+
 impl TypedNativeFunction {
     pub fn type_check_application(
         &self,
@@ -1258,6 +1270,7 @@ impl TypedNativeFunction {
             | AllowanceWithStacking
             | AllowanceAll => Special(SpecialNativeFunction(&post_conditions::check_allowance_err)),
             Secp256r1Verify => Special(SpecialNativeFunction(&check_secp256r1_verify)),
+            PlonkVerify => Special(SpecialNativeFunction(&check_plonk_verify)),
         };
 
         Ok(out)
