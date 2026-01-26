@@ -478,4 +478,9 @@ impl CostValues for Costs4 {
         // TODO: Replace with actual cost from benchmarking
         Ok(ExecutionCost::runtime(250_000))
     }
+
+    fn cost_groth16_verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        // TODO: Replace with actual cost from benchmarking
+        Ok(ExecutionCost::runtime(250_000))
+    }
 }

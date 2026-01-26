@@ -1,3 +1,12 @@
+use ark_bn254::{Bn254, Fq, Fr};
+use ark_ff::{BigInteger, PrimeField};
+use ark_groth16::Groth16;
+use ark_relations::r1cs::{
+    ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError,
+};
+use ark_serialize::CanonicalSerialize;
+use ark_snark::SNARK;
+use ark_std::rand::rngs::OsRng;
 use clarity_types::errors::CheckErrorKind;
 use clarity_types::VmExecutionError;
 use jf_relation::Arithmetization as _;
@@ -103,6 +112,84 @@ fn make_minimal_plonk_proof_bytes() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     for fr in public_inputs {
         fr.serialize_compressed(&mut inputs_bytes).unwrap();
     }
+
+    (proof_bytes, vk_bytes, inputs_bytes)
+}
+
+#[derive(Clone)]
+struct MulCircuit {
+    a: Fr,
+    b: Fr,
+}
+
+impl ConstraintSynthesizer<Fr> for MulCircuit {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
+        let a_var = cs.new_input_variable(|| Ok(self.a))?;
+        let b_var = cs.new_input_variable(|| Ok(self.b))?;
+        let c = self.a * self.b;
+        let c_var = cs.new_witness_variable(|| Ok(c))?;
+
+        cs.enforce_constraint(
+            LinearCombination::from(a_var),
+            LinearCombination::from(b_var),
+            LinearCombination::from(c_var),
+        )?;
+        Ok(())
+    }
+}
+
+fn fq_to_be32(f: &Fq) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    let bytes = f.into_bigint().to_bytes_be();
+    out[32 - bytes.len()..].copy_from_slice(&bytes);
+    out
+}
+
+/// Helper to build a tiny Groth16 proof/vk/inputs (BN254), with EVM-style proof encoding
+fn make_minimal_groth16_proof_bytes() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let mut rng = OsRng;
+
+    // public inputs: a = 3, b = 5
+    let a = Fr::from(3u32);
+    let b = Fr::from(5u32);
+
+    let circuit = MulCircuit { a, b };
+
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(circuit.clone(), &mut rng).unwrap();
+    let proof = Groth16::<Bn254>::prove(&pk, circuit, &mut rng).unwrap();
+
+    // vk bytes (arkworks compressed) for PoC
+    let mut vk_bytes = Vec::new();
+    vk.serialize_compressed(&mut vk_bytes).unwrap();
+
+    // proof bytes in EVM-like layout:
+    // [A.x, A.y, B.x_im, B.x_re, B.y_im, B.y_re, C.x, C.y]
+    let mut proof_bytes = Vec::with_capacity(256);
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.a.x));
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.a.y));
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.b.x.c1)); // x_im
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.b.x.c0)); // x_re
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.b.y.c1)); // y_im
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.b.y.c0)); // y_re
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.c.x));
+    proof_bytes.extend_from_slice(&fq_to_be32(&proof.c.y));
+
+    // public inputs: big-endian 32-byte Fr elements
+    let mut inputs_bytes = Vec::new();
+    inputs_bytes.extend_from_slice(&a.into_bigint().to_bytes_be().as_slice());
+    if inputs_bytes.len() < 32 {
+        let mut padded = vec![0u8; 32 - inputs_bytes.len()];
+        padded.extend_from_slice(&inputs_bytes);
+        inputs_bytes = padded;
+    }
+
+    let mut b_bytes = b.into_bigint().to_bytes_be();
+    if b_bytes.len() < 32 {
+        let mut padded = vec![0u8; 32 - b_bytes.len()];
+        padded.append(&mut b_bytes);
+        b_bytes = padded;
+    }
+    inputs_bytes.extend_from_slice(&b_bytes);
 
     (proof_bytes, vk_bytes, inputs_bytes)
 }
@@ -465,6 +552,59 @@ fn test_plonk_verify_invalid_proof_returns_false() {
 
     let program = format!(
         "(plonk-verify {} {} {})",
+        buff_literal(&proof_bytes),
+        buff_literal(&vk_bytes),
+        buff_literal(&inputs_bytes),
+    );
+
+    assert_eq!(
+        Value::Bool(false),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_groth16_verify_valid_proof_returns_true() {
+    let (proof_bytes, vk_bytes, inputs_bytes) = make_minimal_groth16_proof_bytes();
+
+    let program = format!(
+        "(groth16-verify {} {} {})",
+        buff_literal(&proof_bytes),
+        buff_literal(&vk_bytes),
+        buff_literal(&inputs_bytes),
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        execute_with_parameters(
+            program.as_str(),
+            ClarityVersion::Clarity4,
+            StacksEpochId::Epoch33,
+            false
+        )
+        .expect("execution should succeed")
+        .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_groth16_verify_invalid_proof_returns_false() {
+    let (proof_bytes, vk_bytes, mut inputs_bytes) = make_minimal_groth16_proof_bytes();
+
+    // Corrupt public inputs to force failure
+    if !inputs_bytes.is_empty() {
+        inputs_bytes[0] ^= 0x01;
+    }
+
+    let program = format!(
+        "(groth16-verify {} {} {})",
         buff_literal(&proof_bytes),
         buff_literal(&vk_bytes),
         buff_literal(&inputs_bytes),

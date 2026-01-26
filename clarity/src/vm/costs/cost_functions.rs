@@ -162,6 +162,7 @@ define_named_enum!(ClarityCostFunction {
     AsContractSafe("cost_as_contract_safe"),
     Secp256r1verify("cost_secp256r1verify"),
     PlonkVerify("cost_plonk_verify"),
+    Groth16Verify("cost_groth16_verify"),
     Unimplemented("cost_unimplemented"),
 });
 
@@ -341,6 +342,7 @@ pub trait CostValues {
     fn cost_as_contract_safe(n: u64) -> Result<ExecutionCost, VmExecutionError>;
     fn cost_secp256r1verify(n: u64) -> Result<ExecutionCost, VmExecutionError>;
     fn cost_plonk_verify(n: u64) -> Result<ExecutionCost, VmExecutionError>;
+    fn cost_groth16_verify(n: u64) -> Result<ExecutionCost, VmExecutionError>;
 }
 
 impl ClarityCostFunction {
@@ -499,6 +501,7 @@ impl ClarityCostFunction {
             ClarityCostFunction::AsContractSafe => C::cost_as_contract_safe(n),
             ClarityCostFunction::Secp256r1verify => C::cost_secp256r1verify(n),
             ClarityCostFunction::PlonkVerify => C::cost_plonk_verify(n),
+            ClarityCostFunction::Groth16Verify => C::cost_groth16_verify(n),
             ClarityCostFunction::Unimplemented => Err(RuntimeError::NotImplemented.into()),
         }
     }

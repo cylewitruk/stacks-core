@@ -174,7 +174,9 @@ impl ArithmeticOnlyChecker<'_> {
             | InsertEntry | SetVar | MintAsset | MintToken | TransferAsset | TransferToken
             | ContractCall | StxTransfer | StxTransferMemo | StxBurn | AtBlock | GetStxBalance
             | GetTokenSupply | BurnToken | FromConsensusBuff | ToConsensusBuff | BurnAsset
-            | StxGetAccount | PlonkVerify => Err(Error::FunctionNotPermitted(function)),
+            | StxGetAccount | PlonkVerify | Groth16Verify => {
+                Err(Error::FunctionNotPermitted(function))
+            }
             Append
             | Concat
             | AsMaxLen

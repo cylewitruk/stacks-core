@@ -878,6 +878,18 @@ fn check_plonk_verify(
     Ok(TypeSignature::BoolType)
 }
 
+fn check_groth16_verify(
+    checker: &mut TypeChecker,
+    args: &[SymbolicExpression],
+    context: &TypingContext,
+) -> Result<TypeSignature, StaticCheckError> {
+    check_argument_count(3, args)?;
+    checker.type_check_expects(&args[0], context, &TypeSignature::BUFFER_MAX)?;
+    checker.type_check_expects(&args[1], context, &TypeSignature::BUFFER_MAX)?;
+    checker.type_check_expects(&args[2], context, &TypeSignature::BUFFER_MAX)?;
+    Ok(TypeSignature::BoolType)
+}
+
 impl TypedNativeFunction {
     pub fn type_check_application(
         &self,
@@ -1271,6 +1283,7 @@ impl TypedNativeFunction {
             | AllowanceAll => Special(SpecialNativeFunction(&post_conditions::check_allowance_err)),
             Secp256r1Verify => Special(SpecialNativeFunction(&check_secp256r1_verify)),
             PlonkVerify => Special(SpecialNativeFunction(&check_plonk_verify)),
+            Groth16Verify => Special(SpecialNativeFunction(&check_groth16_verify)),
         };
 
         Ok(out)

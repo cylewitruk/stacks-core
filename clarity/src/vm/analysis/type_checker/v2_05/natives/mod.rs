@@ -840,7 +840,8 @@ impl TypedNativeFunction {
             | AllowanceWithStacking
             | AllowanceAll
             | Secp256r1Verify
-            | PlonkVerify => {
+            | PlonkVerify
+            | Groth16Verify => {
                 return Err(StaticCheckErrorKind::Expects(
                     "Clarity 2+ keywords should not show up in 2.05".into(),
                 ));

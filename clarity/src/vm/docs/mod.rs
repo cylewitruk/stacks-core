@@ -1429,6 +1429,15 @@ const PLONK_VERIFY_API: SpecialAPI = SpecialAPI {
     example: "(plonk-verify 0x00 0x00 0x00) ;; Returns false",
 };
 
+const GROTH16_VERIFY_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff P), (buff V), (buff I)",
+    snippet: "groth16-verify ${1:proof} ${2:verification-key} ${3:public-inputs}",
+    output_type: "bool",
+    signature: "(groth16-verify proof verification-key public-inputs)",
+    description: "The `groth16-verify` function verifies a Groth16 proof using BN254. Public inputs are concatenated 32-byte field elements (big-endian, canonical compressed).",
+    example: "(groth16-verify 0x00 0x00 0x00) ;; Returns false",
+};
+
 const CONTRACT_CALL_API: SpecialAPI = SpecialAPI {
     input_type: "ContractName, PublicFunctionName, Arg0, ...",
     snippet: "contract-call? ${1:contract-principal} ${2:func} ${3:arg1}",
@@ -2911,6 +2920,7 @@ pub fn make_api_reference(function: &NativeFunctions) -> FunctionAPI {
         AllowanceAll => make_for_special(&ALLOWANCE_WITH_ALL, function),
         Secp256r1Verify => make_for_special(&SECP256R1VERIFY_API, function),
         PlonkVerify => make_for_special(&PLONK_VERIFY_API, function),
+        Groth16Verify => make_for_special(&GROTH16_VERIFY_API, function),
     }
 }
 

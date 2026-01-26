@@ -787,4 +787,8 @@ impl CostValues for Costs3 {
     fn cost_plonk_verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
         Err(RuntimeError::NotImplemented.into())
     }
+
+    fn cost_groth16_verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Err(RuntimeError::NotImplemented.into())
+    }
 }

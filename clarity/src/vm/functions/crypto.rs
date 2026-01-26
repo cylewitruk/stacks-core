@@ -14,9 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use ark_bn254::{Bn254, Fr};
+use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
+use ark_ff::{PrimeField, Zero};
+use ark_groth16::Groth16;
 use ark_serialize::CanonicalDeserialize;
-use jf_plonk::proof_system::structs::{Proof, VerifyingKey};
 use jf_plonk::proof_system::{PlonkKzgSnark, UniversalSNARK};
 use jf_plonk::transcript::StandardTranscript;
 use stacks_common::address::{
@@ -67,6 +68,52 @@ fn expect_buffer(value: Value, ty: TypeSignature) -> Result<Vec<u8>, VmExecution
         Value::Sequence(SequenceData::Buffer(BuffData { data })) => Ok(data),
         _ => Err(CheckErrorKind::TypeValueError(Box::new(ty), Box::new(value)).into()),
     }
+}
+
+fn parse_fq_be(bytes: &[u8]) -> Option<Fq> {
+    if bytes.len() != 32 {
+        return None;
+    }
+    Some(Fq::from_be_bytes_mod_order(bytes))
+}
+
+fn parse_fr_be(bytes: &[u8]) -> Option<Fr> {
+    if bytes.len() != 32 {
+        return None;
+    }
+    Some(Fr::from_be_bytes_mod_order(bytes))
+}
+
+fn parse_g1_be(x: &[u8], y: &[u8]) -> Option<G1Affine> {
+    let x = parse_fq_be(x)?;
+    let y = parse_fq_be(y)?;
+    if x.is_zero() && y.is_zero() {
+        return Some(G1Affine::identity());
+    }
+    let p = G1Affine::new_unchecked(x, y);
+    if !p.is_on_curve() {
+        return None;
+    }
+    if !p.is_in_correct_subgroup_assuming_on_curve() {
+        return None;
+    }
+    Some(p)
+}
+
+fn parse_g2_be(x_im: &[u8], x_re: &[u8], y_im: &[u8], y_re: &[u8]) -> Option<G2Affine> {
+    let x = Fq2::new(parse_fq_be(x_re)?, parse_fq_be(x_im)?);
+    let y = Fq2::new(parse_fq_be(y_re)?, parse_fq_be(y_im)?);
+    if x.is_zero() && y.is_zero() {
+        return Some(G2Affine::identity());
+    }
+    let p = G2Affine::new_unchecked(x, y);
+    if !p.is_on_curve() {
+        return None;
+    }
+    if !p.is_in_correct_subgroup_assuming_on_curve() {
+        return None;
+    }
+    Some(p)
 }
 
 // Note: Clarity1 had a bug in how the address is computed (issues/2619).
@@ -404,8 +451,11 @@ pub fn special_plonk_verify(
     let vk_bytes = expect_buffer(eval(&args[1], env, context)?, TypeSignature::BUFFER_MAX)?;
     let inputs_bytes = expect_buffer(eval(&args[2], env, context)?, TypeSignature::BUFFER_MAX)?;
 
-    let proof = Proof::<Bn254>::deserialize_compressed(&*proof_bytes).ok();
-    let vk = VerifyingKey::<Bn254>::deserialize_compressed(&*vk_bytes).ok();
+    let proof =
+        jf_plonk::proof_system::structs::Proof::<Bn254>::deserialize_compressed(&*proof_bytes).ok();
+    let vk =
+        jf_plonk::proof_system::structs::VerifyingKey::<Bn254>::deserialize_compressed(&*vk_bytes)
+            .ok();
     if proof.is_none() || vk.is_none() {
         return Ok(Value::Bool(false));
     }
@@ -428,6 +478,68 @@ pub fn special_plonk_verify(
 
     let ok =
         PlonkKzgSnark::<Bn254>::verify::<StandardTranscript>(&vk, &inputs, &proof, None).is_ok();
+
+    Ok(Value::Bool(ok))
+}
+
+pub fn special_groth16_verify(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    // (groth16-verify proof vk public-inputs)
+    check_argument_count(3, args)?;
+    runtime_cost(ClarityCostFunction::Groth16Verify, env, 0)?;
+
+    let proof_bytes = expect_buffer(eval(&args[0], env, context)?, TypeSignature::BUFFER_MAX)?;
+    let vk_bytes = expect_buffer(eval(&args[1], env, context)?, TypeSignature::BUFFER_MAX)?;
+    let inputs_bytes = expect_buffer(eval(&args[2], env, context)?, TypeSignature::BUFFER_MAX)?;
+
+    if proof_bytes.len() != 256 {
+        return Ok(Value::Bool(false));
+    }
+
+    // Proof decoding (A, B, C)
+    let a = parse_g1_be(&proof_bytes[0..32], &proof_bytes[32..64]);
+    let b = parse_g2_be(
+        &proof_bytes[64..96],   // x_im
+        &proof_bytes[96..128],  // x_re
+        &proof_bytes[128..160], // y_im
+        &proof_bytes[160..192], // y_re
+    );
+    let c = parse_g1_be(&proof_bytes[192..224], &proof_bytes[224..256]);
+
+    let (Some(a), Some(b), Some(c)) = (a, b, c) else {
+        return Ok(Value::Bool(false));
+    };
+    let proof = ark_groth16::Proof::<Bn254> { a, b, c };
+
+    // VK: for PoC, accept arkworks compressed VK bytes
+    let vk = ark_groth16::VerifyingKey::<Bn254>::deserialize_compressed(&*vk_bytes).ok();
+    let Some(vk) = vk else {
+        return Ok(Value::Bool(false));
+    };
+    let pvk = ark_groth16::prepare_verifying_key(&vk);
+
+    // public inputs: concatenated 32‑byte big‑endian Fr
+    if inputs_bytes.len() % 32 != 0 {
+        return Ok(Value::Bool(false));
+    }
+    let mut inputs = Vec::with_capacity(inputs_bytes.len() / 32);
+    for chunk in inputs_bytes.chunks(32) {
+        let Some(fr) = parse_fr_be(chunk) else {
+            return Ok(Value::Bool(false));
+        };
+        inputs.push(fr);
+    }
+
+    let prepared_inputs = match Groth16::<Bn254>::prepare_inputs(&pvk, &inputs) {
+        Ok(v) => v,
+        Err(_) => return Ok(Value::Bool(false)),
+    };
+
+    let ok = Groth16::<Bn254>::verify_proof_with_prepared_inputs(&pvk, &proof, &prepared_inputs)
+        .unwrap_or(false);
 
     Ok(Value::Bool(ok))
 }
