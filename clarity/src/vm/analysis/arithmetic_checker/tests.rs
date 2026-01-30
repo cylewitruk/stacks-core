@@ -328,6 +328,19 @@ fn test_functions_clarity1() {
 }
 
 #[test]
+fn test_bitcoin_spv_verify_not_permitted_in_arithmetic_contracts() {
+    let contract = "(define-private (foo)
+        (bitcoin-spv-verify 0x0000000000000000000000000000000000000000000000000000000000000000
+            (list (tuple (hash 0x0000000000000000000000000000000000000000000000000000000000000000) (left true)))
+            u1))";
+
+    assert_eq!(
+        arithmetic_check(contract, ClarityVersion::Clarity4, StacksEpochId::Epoch33),
+        Err(FunctionNotPermitted(NativeFunctions::BitcoinSpvVerify))
+    );
+}
+
+#[test]
 fn test_functions_clarity2() {
     // Tests functions against Clarity2 VM. The Clarity1 functions should still cause an error.
     let tests = [

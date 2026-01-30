@@ -5439,6 +5439,8 @@ impl StacksChainState {
         .expect("BUG: Failed to load snapshot for block snapshot during Stacks block processing")
         .parent_burn_header_hash;
 
+        let root_path = chainstate_tx.root_path.clone();
+        let burn_state_db = BurnStateDBContext::from_root_path(&root_path, burn_dbconn);
         let SetupBlockResult {
             mut clarity_tx,
             mut tx_receipts,
@@ -5458,7 +5460,7 @@ impl StacksChainState {
         } = StacksChainState::setup_block(
             chainstate_tx,
             clarity_instance,
-            burn_dbconn,
+            burn_state_db.as_burn_state_db(),
             burn_dbconn,
             burn_dbconn.tx(),
             pox_constants,

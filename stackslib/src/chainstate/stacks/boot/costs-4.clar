@@ -672,3 +672,6 @@
 
 (define-read-only (cost_secp256r1verify (n uint))
     (runtime u51750))
+
+(define-read-only (cost_bitcoin_spv_verify (n uint))
+    (runtime (linear n u400 u1200)))

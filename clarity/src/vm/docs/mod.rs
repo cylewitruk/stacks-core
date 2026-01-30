@@ -1420,6 +1420,21 @@ NIST P-256 curve (also known as secp256r1).",
     0x037a6b62e3c8b14f1b5933f5d5ab0509a8e7d95a111b8d3b264d95bfa753b00296) ;; Returns false"
 };
 
+const BITCOIN_SPV_VERIFY_API: SpecialAPI = SpecialAPI {
+    input_type: "(buff 32), (list 0..32 (tuple (hash (buff 32)) (left bool))), uint",
+    snippet: "bitcoin-spv-verify ${1:txid} ${2:proof} ${3:burn-block-height}",
+    output_type: "bool",
+    signature: "(bitcoin-spv-verify txid proof burn-block-height)",
+    description: "The `bitcoin-spv-verify` function verifies a Bitcoin transaction Merkle proof
+against the burnchain header at the given burn block height on the current burnchain fork.
+The `txid` and proof hashes must be 32-byte buffers in internal Bitcoin hash byte order
+(little-endian). Each proof entry is a tuple with the sibling `hash` and a `left` boolean
+indicating whether the sibling hash is to the left of the running accumulator.",
+    example: "(bitcoin-spv-verify 0x0000000000000000000000000000000000000000000000000000000000000000
+  (list (tuple (hash 0x1111111111111111111111111111111111111111111111111111111111111111) (left true)))
+  u0) ;; Returns false",
+};
+
 const CONTRACT_CALL_API: SpecialAPI = SpecialAPI {
     input_type: "ContractName, PublicFunctionName, Arg0, ...",
     snippet: "contract-call? ${1:contract-principal} ${2:func} ${3:arg1}",
@@ -2901,6 +2916,7 @@ pub fn make_api_reference(function: &NativeFunctions) -> FunctionAPI {
         AllowanceWithStacking => make_for_special(&ALLOWANCE_WITH_STACKING, function),
         AllowanceAll => make_for_special(&ALLOWANCE_WITH_ALL, function),
         Secp256r1Verify => make_for_special(&SECP256R1VERIFY_API, function),
+        BitcoinSpvVerify => make_for_special(&BITCOIN_SPV_VERIFY_API, function),
     }
 }
 

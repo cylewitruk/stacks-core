@@ -221,6 +221,45 @@ pub trait BurnStateDB {
         sortition_id: &SortitionId,
     ) -> Option<BurnchainHeaderHash>;
 
+    /// Returns the burnchain header hash at `height` on the current tip's fork.
+    fn get_burn_header_hash_at_tip(&self, height: u32) -> Option<BurnchainHeaderHash> {
+        let sortition_id = self.get_tip_sortition_id()?;
+        self.get_burn_header_hash(height, &sortition_id)
+    }
+
+    /// Returns the burnchain block height for `burn_header_hash` on the given fork.
+    ///
+    /// Returns None if `burn_header_hash` is not on that fork.
+    fn get_burn_block_height_for_header_hash(
+        &self,
+        _burn_header_hash: &BurnchainHeaderHash,
+        _sortition_id: &SortitionId,
+    ) -> Option<u32> {
+        None
+    }
+
+    /// Returns the burnchain block height for `burn_header_hash` on the current tip's fork.
+    fn get_burn_block_height_for_header_hash_at_tip(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+    ) -> Option<u32> {
+        let sortition_id = self.get_tip_sortition_id()?;
+        self.get_burn_block_height_for_header_hash(burn_header_hash, &sortition_id)
+    }
+
+    /// Returns the SPV header height for `burn_header_hash` if available.
+    fn get_spv_header_height(&self, _burn_header_hash: &BurnchainHeaderHash) -> Option<u64> {
+        None
+    }
+
+    /// Returns the SPV header merkle root for `burn_header_hash` as raw bytes if available.
+    fn get_spv_header_merkle_root(
+        &self,
+        _burn_header_hash: &BurnchainHeaderHash,
+    ) -> Option<Vec<u8>> {
+        None
+    }
+
     /// Lookup a `SortitionId` keyed to a `ConsensusHash`.
     ///
     /// Returns None if no block found.
@@ -228,6 +267,35 @@ pub trait BurnStateDB {
         &self,
         consensus_hash: &ConsensusHash,
     ) -> Option<SortitionId>;
+
+    /// Returns the burnchain block height for the given consensus hash, if known.
+    fn get_burn_block_height_for_consensus_hash(
+        &self,
+        consensus_hash: &ConsensusHash,
+    ) -> Option<u32> {
+        let sortition_id = self.get_sortition_id_from_consensus_hash(consensus_hash)?;
+        self.get_burn_block_height(&sortition_id)
+    }
+
+    /// Returns the burnchain header hash at `height` for the given consensus hash's fork.
+    fn get_burn_header_hash_for_consensus_hash(
+        &self,
+        consensus_hash: &ConsensusHash,
+        height: u32,
+    ) -> Option<BurnchainHeaderHash> {
+        let sortition_id = self.get_sortition_id_from_consensus_hash(consensus_hash)?;
+        self.get_burn_header_hash(height, &sortition_id)
+    }
+
+    /// Returns the burnchain block height for `burn_header_hash` on the given consensus hash's fork.
+    fn get_burn_block_height_for_header_hash_on_consensus_hash(
+        &self,
+        consensus_hash: &ConsensusHash,
+        burn_header_hash: &BurnchainHeaderHash,
+    ) -> Option<u32> {
+        let sortition_id = self.get_sortition_id_from_consensus_hash(consensus_hash)?;
+        self.get_burn_block_height_for_header_hash(burn_header_hash, &sortition_id)
+    }
 
     /// The epoch is defined as by a start and end height. This returns
     /// the epoch enclosing `height`.
@@ -1247,6 +1315,23 @@ impl ClarityDatabase<'_> {
         Ok(self
             .burn_state_db
             .get_burn_header_hash(burnchain_block_height, &sortition_id))
+    }
+
+    /// Fetch the SPV header merkle root for a given burnchain height on the current fork.
+    pub fn get_spv_header_merkle_root_for_burnchain_height(
+        &mut self,
+        burnchain_block_height: u32,
+    ) -> Result<Option<Vec<u8>>, VmExecutionError> {
+        let burn_header_hash = match self
+            .get_burnchain_block_header_hash_for_burnchain_height(burnchain_block_height)?
+        {
+            Some(hash) => hash,
+            None => return Ok(None),
+        };
+
+        Ok(self
+            .burn_state_db
+            .get_spv_header_merkle_root(&burn_header_hash))
     }
 
     /// Get the PoX reward addresses and per-address payout for a given burnchain height.  Because the burnchain can fork,

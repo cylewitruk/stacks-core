@@ -70,7 +70,7 @@ use crate::clarity_vm::clarity::{
     ClarityReadOnlyConnection, PreCommitClarityBlock,
 };
 use crate::clarity_vm::database::marf::MarfedKV;
-use crate::clarity_vm::database::HeadersDBConn;
+use crate::clarity_vm::database::{BurnStateDBWithSpv, HeadersDBConn};
 use crate::core::*;
 use crate::monitoring;
 use crate::net::atlas::BNS_CHARS_REGEX;
@@ -485,6 +485,41 @@ impl FromRow<StacksHeaderInfo> for StacksHeaderInfo {
 pub type StacksDBTx<'a> = IndexDBTx<'a, (), StacksBlockId>;
 pub type StacksDBConn<'a> = IndexDBConn<'a, (), StacksBlockId>;
 
+/// Holds a burn state DB reference and keeps an optional SPV-backed wrapper alive.
+pub struct BurnStateDBContext<'a> {
+    inner: &'a (dyn BurnStateDB + 'a),
+    spv: Option<BurnStateDBWithSpv<'a, dyn BurnStateDB + 'a>>,
+}
+
+impl BurnStateDBContext<'_> {
+    pub fn from_root_path<'a>(
+        root_path: &str,
+        burn_dbconn: &'a (dyn BurnStateDB + 'a),
+    ) -> BurnStateDBContext<'a> {
+        let spv = spv_headers_path_from_root(root_path)
+            .and_then(|path| BurnStateDBWithSpv::open(burn_dbconn, &path).ok());
+        BurnStateDBContext {
+            inner: burn_dbconn,
+            spv,
+        }
+    }
+
+    pub fn as_burn_state_db(&self) -> &dyn BurnStateDB {
+        match self.spv.as_ref() {
+            Some(spv) => spv as &dyn BurnStateDB,
+            None => self.inner,
+        }
+    }
+}
+
+fn spv_headers_path_from_root(root_path: &str) -> Option<String> {
+    let mut path = PathBuf::from(root_path);
+    path.pop();
+    path.push("burnchain");
+    path.push("headers.sqlite");
+    path.to_str().map(|s| s.to_string())
+}
+
 pub struct ClarityTx<'a, 'b> {
     block: ClarityBlockConnection<'a, 'b>,
     pub config: DBConfig,
@@ -640,6 +675,13 @@ impl<'a> ChainstateTx<'a> {
 
     pub fn get_config(&self) -> &DBConfig {
         &self.config
+    }
+
+    pub fn wrap_burn_state_db<'b>(
+        &'b self,
+        burn_dbconn: &'b (dyn BurnStateDB + 'b),
+    ) -> BurnStateDBContext<'b> {
+        BurnStateDBContext::from_root_path(&self.root_path, burn_dbconn)
     }
 
     pub fn log_transactions_processed(&self, events: &[StacksTransactionReceipt]) {
@@ -1947,6 +1989,13 @@ impl StacksChainState {
         }
     }
 
+    pub fn wrap_burn_state_db<'a>(
+        &'a self,
+        burn_dbconn: &'a (dyn BurnStateDB + 'a),
+    ) -> BurnStateDBContext<'a> {
+        BurnStateDBContext::from_root_path(&self.root_path, burn_dbconn)
+    }
+
     /// Begin a transaction against the (indexed) stacks chainstate DB.
     /// Does not create a Clarity instance.
     pub fn index_tx_begin(&mut self) -> StacksDBTx<'_> {
@@ -1988,10 +2037,12 @@ impl StacksChainState {
         contract: &QualifiedContractIdentifier,
         code: &str,
     ) -> Value {
+        let root_path = self.root_path.clone();
+        let burn_state_db = BurnStateDBContext::from_root_path(&root_path, burn_dbconn);
         let result = self.clarity_state.eval_read_only(
             parent_id_bhh,
             &HeadersDBConn(StacksDBConn::new(&self.state_index, ())),
-            burn_dbconn,
+            burn_state_db.as_burn_state_db(),
             contract,
             code,
         );
@@ -2006,10 +2057,12 @@ impl StacksChainState {
         contract: &QualifiedContractIdentifier,
         code: &str,
     ) -> Result<Value, ClarityError> {
+        let root_path = self.root_path.clone();
+        let burn_state_db = BurnStateDBContext::from_root_path(&root_path, burn_dbconn);
         self.clarity_state.eval_read_only(
             parent_id_bhh,
             &HeadersDBConn(StacksDBConn::new(&self.state_index, ())),
-            burn_dbconn,
+            burn_state_db.as_burn_state_db(),
             contract,
             code,
         )
@@ -2027,10 +2080,12 @@ impl StacksChainState {
         args: &[Value],
     ) -> Result<Value, ClarityError> {
         let headers_db = HeadersDBConn(StacksDBConn::new(&self.state_index, ()));
+        let root_path = self.root_path.clone();
+        let burn_state_db = BurnStateDBContext::from_root_path(&root_path, burn_dbconn);
         let mut conn = self.clarity_state.read_only_connection_checked(
             parent_id_bhh,
             &headers_db,
-            burn_dbconn,
+            burn_state_db.as_burn_state_db(),
         )?;
 
         let args: Vec<_> = args
@@ -2239,10 +2294,12 @@ impl StacksChainState {
                 return None;
             }
         }
+        let root_path = self.root_path.clone();
+        let burn_state_db = BurnStateDBContext::from_root_path(&root_path, burn_dbconn);
         let mut conn = match self.clarity_state.read_only_connection_checked(
             parent_tip,
             &self.state_index,
-            burn_dbconn,
+            burn_state_db.as_burn_state_db(),
         ) {
             Ok(x) => Some(x),
             Err(e) => {
@@ -2271,12 +2328,14 @@ impl StacksChainState {
 
         let mut unconfirmed_state_opt = self.unconfirmed_state.take();
         let res = if let Some(ref mut unconfirmed_state) = unconfirmed_state_opt {
+            let root_path = self.root_path.clone();
+            let burn_state_db = BurnStateDBContext::from_root_path(&root_path, burn_dbconn);
             let mut conn = unconfirmed_state
                 .clarity_inst
                 .read_only_connection_checked(
                     &unconfirmed_state.unconfirmed_chain_tip,
                     &self.state_index,
-                    burn_dbconn,
+                    burn_state_db.as_burn_state_db(),
                 )?;
             let result = to_do(&mut conn);
             Some(result)
@@ -2872,9 +2931,16 @@ pub mod test {
     use std::{env, fs};
 
     use clarity::vm::test_util::TEST_BURN_STATE_DB;
+    use stacks_common::deps_common::bitcoin::blockdata::block::{BlockHeader, LoneBlockHeader};
+    use stacks_common::deps_common::bitcoin::network::encodable::VarInt;
+    use stacks_common::deps_common::bitcoin::network::serialize::BitcoinHash;
+    use stacks_common::deps_common::bitcoin::util::hash::Sha256dHash;
+    use stacks_common::types::chainstate::{ConsensusHash, PoxId, SortitionId};
     use stx_genesis::GenesisData;
 
     use super::*;
+    use crate::burnchains::bitcoin::spv::SpvClient;
+    use crate::burnchains::bitcoin::BitcoinNetworkType;
     use crate::chainstate::stacks::*;
     use crate::util_lib::boot::boot_code_test_addr;
 
@@ -2929,6 +2995,163 @@ pub mod test {
 
     pub fn chainstate_path(test_name: &str) -> String {
         format!("/tmp/stacks-node-tests/cs-{}", test_name)
+    }
+
+    struct DummyBurnStateDb {
+        burn_header_hash: BurnchainHeaderHash,
+        tip_sortition_id: SortitionId,
+    }
+
+    impl DummyBurnStateDb {
+        fn new(burn_header_hash: BurnchainHeaderHash) -> Self {
+            let tip_sortition_id = SortitionId::new(&burn_header_hash, &PoxId::stubbed());
+            Self {
+                burn_header_hash,
+                tip_sortition_id,
+            }
+        }
+    }
+
+    impl BurnStateDB for DummyBurnStateDb {
+        fn get_tip_burn_block_height(&self) -> Option<u32> {
+            Some(1)
+        }
+
+        fn get_tip_sortition_id(&self) -> Option<SortitionId> {
+            Some(self.tip_sortition_id.clone())
+        }
+
+        fn get_v1_unlock_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_v2_unlock_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_v3_unlock_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_pox_3_activation_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_pox_4_activation_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_burn_block_height(&self, _sortition_id: &SortitionId) -> Option<u32> {
+            Some(1)
+        }
+
+        fn get_burn_start_height(&self) -> u32 {
+            0
+        }
+
+        fn get_pox_prepare_length(&self) -> u32 {
+            1
+        }
+
+        fn get_pox_reward_cycle_length(&self) -> u32 {
+            1
+        }
+
+        fn get_pox_rejection_fraction(&self) -> u64 {
+            1
+        }
+
+        fn get_burn_header_hash(
+            &self,
+            height: u32,
+            _sortition_id: &SortitionId,
+        ) -> Option<BurnchainHeaderHash> {
+            if height == 1 {
+                Some(self.burn_header_hash.clone())
+            } else {
+                None
+            }
+        }
+
+        fn get_sortition_id_from_consensus_hash(
+            &self,
+            _consensus_hash: &ConsensusHash,
+        ) -> Option<SortitionId> {
+            Some(self.tip_sortition_id.clone())
+        }
+
+        fn get_stacks_epoch(&self, _height: u32) -> Option<StacksEpoch> {
+            None
+        }
+
+        fn get_stacks_epoch_by_epoch_id(&self, _epoch_id: &StacksEpochId) -> Option<StacksEpoch> {
+            None
+        }
+
+        fn get_pox_payout_addrs(
+            &self,
+            _height: u32,
+            _sortition_id: &SortitionId,
+        ) -> Option<(Vec<TupleData>, u128)> {
+            None
+        }
+    }
+
+    #[test]
+    fn test_burn_state_db_context_uses_spv_headers() {
+        let root_dir = "/tmp/test-burnstate-context";
+        if fs::metadata(root_dir).is_ok() {
+            fs::remove_dir_all(root_dir).unwrap();
+        }
+
+        let chainstate_root = format!("{root_dir}/chainstate");
+        let burnchain_dir = format!("{root_dir}/burnchain");
+        let headers_path = format!("{burnchain_dir}/headers.sqlite");
+        fs::create_dir_all(&chainstate_root).unwrap();
+        fs::create_dir_all(&burnchain_dir).unwrap();
+
+        let header = LoneBlockHeader {
+            header: BlockHeader {
+                bits: 545259519,
+                merkle_root: Sha256dHash::from_hex(
+                    "20bee96458517fc5082a9720ce6207b5742f2b18e4e0a7e7373342725d80f88c",
+                )
+                .unwrap(),
+                nonce: 2,
+                prev_blockhash: Sha256dHash::from_hex(
+                    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
+                )
+                .unwrap(),
+                time: 1587626881,
+                version: 0x20000000,
+            },
+            tx_count: VarInt(0),
+        };
+
+        let mut spv_client = SpvClient::new(
+            headers_path.as_str(),
+            0,
+            None,
+            BitcoinNetworkType::Regtest,
+            true,
+            false,
+        )
+        .expect("failed to open spv db");
+        spv_client
+            .write_block_headers(1, vec![header.clone()])
+            .unwrap();
+
+        let burn_header_hash =
+            BurnchainHeaderHash::from_bitcoin_hash(&header.header.bitcoin_hash());
+        let burn_state_db = DummyBurnStateDb::new(burn_header_hash.clone());
+        let context = BurnStateDBContext::from_root_path(&chainstate_root, &burn_state_db);
+
+        assert_eq!(
+            context
+                .as_burn_state_db()
+                .get_spv_header_merkle_root(&burn_header_hash),
+            Some(header.header.merkle_root.as_bytes().to_vec())
+        );
     }
 
     #[test]

@@ -1,14 +1,25 @@
 use clarity_types::errors::CheckErrorKind;
 use clarity_types::VmExecutionError;
 use proptest::prelude::*;
-use stacks_common::types::chainstate::{StacksPrivateKey, StacksPublicKey};
+use stacks_common::consts::{BITCOIN_REGTEST_FIRST_BLOCK_HASH, PEER_VERSION_EPOCH_2_0};
+use stacks_common::deps_common::bitcoin::util::hash::Sha256dHash;
+use stacks_common::types::chainstate::{
+    BurnchainHeaderHash, ConsensusHash, PoxId, SortitionId, StacksPrivateKey, StacksPublicKey,
+};
 use stacks_common::types::{PrivateKey, StacksEpochId};
 use stacks_common::util::hash::{to_hex, Sha256Sum};
 use stacks_common::util::secp256k1::MessageSignature as Secp256k1Signature;
 use stacks_common::util::secp256r1::{Secp256r1PrivateKey, Secp256r1PublicKey};
 
-use crate::vm::types::{ResponseData, TypeSignature, Value};
-use crate::vm::{execute_with_parameters, ClarityVersion};
+use crate::vm::ast::build_ast;
+use crate::vm::contexts::{ContractContext, LocalContext, OwnedEnvironment};
+use crate::vm::costs::ExecutionCost;
+use crate::vm::database::{BurnStateDB, ClarityDatabase, MemoryBackingStore};
+use crate::vm::test_util::TEST_HEADER_DB;
+use crate::vm::types::{
+    QualifiedContractIdentifier, ResponseData, TupleData, TypeSignature, Value,
+};
+use crate::vm::{eval, execute_with_parameters, ClarityVersion, StacksEpoch};
 
 fn secp256r1_vectors() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let privk = Secp256r1PrivateKey::from_seed(&[7u8; 32]);
@@ -50,6 +61,175 @@ fn zeroed_buff_literal(len: usize) -> String {
     buff_literal(&vec![0u8; len])
 }
 
+struct TestSpvBurnStateDb {
+    epoch_id: StacksEpochId,
+    burn_header_hash: BurnchainHeaderHash,
+    tip_sortition_id: SortitionId,
+    merkle_root: Option<Vec<u8>>,
+}
+
+impl TestSpvBurnStateDb {
+    fn new(epoch_id: StacksEpochId, merkle_root: Option<Vec<u8>>) -> Self {
+        let burn_header_hash = BurnchainHeaderHash::from_hex(BITCOIN_REGTEST_FIRST_BLOCK_HASH)
+            .expect("failed to parse burn header hash");
+        let tip_sortition_id = SortitionId::new(&burn_header_hash, &PoxId::stubbed());
+        Self {
+            epoch_id,
+            burn_header_hash,
+            tip_sortition_id,
+            merkle_root,
+        }
+    }
+}
+
+impl BurnStateDB for TestSpvBurnStateDb {
+    fn get_tip_burn_block_height(&self) -> Option<u32> {
+        Some(1)
+    }
+
+    fn get_tip_sortition_id(&self) -> Option<SortitionId> {
+        Some(self.tip_sortition_id.clone())
+    }
+
+    fn get_v1_unlock_height(&self) -> u32 {
+        u32::MAX
+    }
+
+    fn get_v2_unlock_height(&self) -> u32 {
+        u32::MAX
+    }
+
+    fn get_v3_unlock_height(&self) -> u32 {
+        u32::MAX
+    }
+
+    fn get_pox_3_activation_height(&self) -> u32 {
+        u32::MAX
+    }
+
+    fn get_pox_4_activation_height(&self) -> u32 {
+        u32::MAX
+    }
+
+    fn get_burn_block_height(&self, _sortition_id: &SortitionId) -> Option<u32> {
+        Some(1)
+    }
+
+    fn get_burn_start_height(&self) -> u32 {
+        0
+    }
+
+    fn get_pox_prepare_length(&self) -> u32 {
+        1
+    }
+
+    fn get_pox_reward_cycle_length(&self) -> u32 {
+        1
+    }
+
+    fn get_pox_rejection_fraction(&self) -> u64 {
+        1
+    }
+
+    fn get_burn_header_hash(
+        &self,
+        height: u32,
+        _sortition_id: &SortitionId,
+    ) -> Option<BurnchainHeaderHash> {
+        if height == 1 {
+            Some(self.burn_header_hash.clone())
+        } else {
+            None
+        }
+    }
+
+    fn get_spv_header_height(&self, burn_header_hash: &BurnchainHeaderHash) -> Option<u64> {
+        if burn_header_hash == &self.burn_header_hash {
+            Some(1)
+        } else {
+            None
+        }
+    }
+
+    fn get_spv_header_merkle_root(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+    ) -> Option<Vec<u8>> {
+        if burn_header_hash == &self.burn_header_hash {
+            self.merkle_root.clone()
+        } else {
+            None
+        }
+    }
+
+    fn get_sortition_id_from_consensus_hash(
+        &self,
+        _consensus_hash: &ConsensusHash,
+    ) -> Option<SortitionId> {
+        Some(self.tip_sortition_id.clone())
+    }
+
+    fn get_stacks_epoch(&self, _height: u32) -> Option<StacksEpoch> {
+        Some(StacksEpoch {
+            epoch_id: self.epoch_id,
+            start_height: 0,
+            end_height: u64::MAX,
+            block_limit: ExecutionCost::max_value(),
+            network_epoch: PEER_VERSION_EPOCH_2_0,
+        })
+    }
+
+    fn get_stacks_epoch_by_epoch_id(&self, _epoch_id: &StacksEpochId) -> Option<StacksEpoch> {
+        self.get_stacks_epoch(0)
+    }
+
+    fn get_pox_payout_addrs(
+        &self,
+        _height: u32,
+        _sortition_id: &SortitionId,
+    ) -> Option<(Vec<TupleData>, u128)> {
+        None
+    }
+}
+
+fn eval_in_custom_env(program: &str, burn_state_db: &dyn BurnStateDB) -> Value {
+    let epoch = StacksEpochId::Epoch33;
+    let version = ClarityVersion::Clarity4;
+    let contract_id = QualifiedContractIdentifier::transient();
+    let contract_context = ContractContext::new(contract_id.clone(), version);
+
+    let mut marf = MemoryBackingStore::new();
+    let mut db = ClarityDatabase::new(&mut marf, &TEST_HEADER_DB, burn_state_db);
+    db.begin();
+    db.set_clarity_epoch_version(epoch).unwrap();
+    db.commit().unwrap();
+    if epoch.clarity_uses_tip_burn_block() {
+        db.begin();
+        db.set_tenure_height(1).unwrap();
+        db.commit().unwrap();
+    }
+    if epoch.uses_marfed_block_time() {
+        db.begin();
+        db.setup_block_metadata(Some(1)).unwrap();
+        db.commit().unwrap();
+    }
+
+    let parsed = build_ast(&contract_id, program, &mut (), version, epoch)
+        .expect("failed to parse program")
+        .expressions;
+    let context = LocalContext::new();
+    let mut env = OwnedEnvironment::new(db, epoch);
+    env.begin();
+    let result = eval(
+        &parsed[0],
+        &mut env.get_exec_environment(None, None, &contract_context),
+        &context,
+    )
+    .expect("failed to evaluate program");
+    env.commit().expect("failed to commit test env");
+    result
+}
+
 #[test]
 fn test_secp256r1_verify_valid_signature_returns_true() {
     let (message, signature, pubkey) = secp256r1_vectors();
@@ -70,6 +250,51 @@ fn test_secp256r1_verify_valid_signature_returns_true() {
         )
         .expect("execution should succeed")
         .expect("should return a value")
+    );
+}
+
+#[test]
+fn test_bitcoin_spv_verify_valid_proof_returns_true() {
+    let txid_bytes = [1u8; 32];
+    let sibling_bytes = [2u8; 32];
+    let txid = Sha256dHash(txid_bytes);
+    let sibling = Sha256dHash(sibling_bytes);
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(sibling.as_bytes());
+    data.extend_from_slice(txid.as_bytes());
+    let expected_root = Sha256dHash::from_data(&data);
+
+    let burn_state_db = TestSpvBurnStateDb::new(
+        StacksEpochId::Epoch33,
+        Some(expected_root.as_bytes().to_vec()),
+    );
+    let program = format!(
+        "(bitcoin-spv-verify {} (list (tuple (hash {}) (left true))) u1)",
+        buff_literal(&txid_bytes),
+        buff_literal(&sibling_bytes)
+    );
+
+    assert_eq!(
+        Value::Bool(true),
+        eval_in_custom_env(program.as_str(), &burn_state_db)
+    );
+}
+
+#[test]
+fn test_bitcoin_spv_verify_missing_merkle_root_returns_false() {
+    let txid_bytes = [7u8; 32];
+    let sibling_bytes = [9u8; 32];
+
+    let burn_state_db = TestSpvBurnStateDb::new(StacksEpochId::Epoch33, None);
+    let program = format!(
+        "(bitcoin-spv-verify {} (list (tuple (hash {}) (left true))) u1)",
+        buff_literal(&txid_bytes),
+        buff_literal(&sibling_bytes)
+    );
+
+    assert_eq!(
+        Value::Bool(false),
+        eval_in_custom_env(program.as_str(), &burn_state_db)
     );
 }
 

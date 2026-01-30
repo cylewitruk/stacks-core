@@ -122,6 +122,8 @@ pub fn get_simple_test(function: &NativeFunctions) -> Option<&'static str> {
         Secp256k1Verify => {
             "(secp256k1-verify 0xde5b9eb9e7c5592930eb2e30a01369c36586d872082ed8181ee83d2a0ec20f04 0x8738487ebe69b93d8e51583be8eee50bb4213fc49c767d329632730cc193b873554428fc936ca3569afc15f1c9365f6591d6251a89fee9c9ac661116824d3a1301 0x03adb8de4bfb65db2cfd6120d55c6526ae9c52e675db7e47308636534ba7786110)"
         }
+        Secp256r1Verify => "(secp256r1-verify 0xc3abef6a775793dfbc8e0719e7a1de1fc2f90d37a7912b1ce8e300a5a03b06a8 0xf2b8c0645caa7250e3b96d633cf40a88456e4ffbddffb69200c4e019039dfd310eac59293c23e6d6aa8b0c5d9e4e48fa4c4fdf1ace2ba618dc0263b5e90a0903 0x031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e)",
+        BitcoinSpvVerify => "(bitcoin-spv-verify 0x0000000000000000000000000000000000000000000000000000000000000000 (list (tuple (hash 0x0000000000000000000000000000000000000000000000000000000000000000) (left true))) u0)",
         Print => "(print 1)",
         ContractCall => "(contract-call? .contract-other foo-exec 1)",
         ContractOf => "(contract-of contract)",
@@ -187,7 +189,6 @@ pub fn get_simple_test(function: &NativeFunctions) -> Option<&'static str> {
         ToAscii => "(to-ascii? 65)",
         RestrictAssets => "(restrict-assets? tx-sender () (+ u1 u2))",
         AsContractSafe => "(as-contract? () (+ u1 u2))",
-        Secp256r1Verify => "(secp256r1-verify 0xc3abef6a775793dfbc8e0719e7a1de1fc2f90d37a7912b1ce8e300a5a03b06a8 0xf2b8c0645caa7250e3b96d633cf40a88456e4ffbddffb69200c4e019039dfd310eac59293c23e6d6aa8b0c5d9e4e48fa4c4fdf1ace2ba618dc0263b5e90a0903 0x031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e)",
         // These expressions are not usable in this context, since they are
         // only allowed within `restrict-assets?` or `as-contract?`
         AllowanceWithStx

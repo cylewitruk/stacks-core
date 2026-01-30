@@ -2293,6 +2293,7 @@ pub mod test {
     use stacks::util::hash::Hash160;
     use stacks::util::secp256k1::Secp256k1PublicKey;
     use stacks::util::vrf::VRFPublicKey;
+    use tempfile::NamedTempFile;
 
     use super::{BurnBlockCommitTimer, RelayerThread};
     use crate::nakamoto_node::save_activated_vrf_key;
@@ -2305,10 +2306,12 @@ pub mod test {
         let pk = Secp256k1PublicKey::from_private(keychain.get_nakamoto_sk());
         let pubkey_hash = Hash160::from_node_public_key(&pk);
 
-        let path = "/tmp/does_not_exist.json";
-        _ = std::fs::remove_file(path);
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp_file.path().to_path_buf();
+        drop(temp_file);
 
-        let res = RelayerThread::load_saved_vrf_key(path, &pubkey_hash);
+        let path_str = path.to_str().expect("Temp path is not valid UTF-8");
+        let res = RelayerThread::load_saved_vrf_key(path_str, &pubkey_hash);
         assert!(res.is_none());
     }
 
@@ -2318,11 +2321,14 @@ pub mod test {
         let pk = Secp256k1PublicKey::from_private(keychain.get_nakamoto_sk());
         let pubkey_hash = Hash160::from_node_public_key(&pk);
 
-        let path = "/tmp/empty.json";
-        File::create(path).expect("Failed to create test file");
-        assert!(Path::new(path).exists());
+        let temp_path = NamedTempFile::new()
+            .expect("Failed to create temp file")
+            .into_temp_path();
+        let path = temp_path.to_path_buf();
+        assert!(Path::new(&path).exists());
 
-        let res = RelayerThread::load_saved_vrf_key(path, &pubkey_hash);
+        let path_str = path.to_str().expect("Temp path is not valid UTF-8");
+        let res = RelayerThread::load_saved_vrf_key(path_str, &pubkey_hash);
         assert!(res.is_none());
 
         std::fs::remove_file(path).expect("Failed to delete test file");
@@ -2364,13 +2370,15 @@ pub mod test {
             .unwrap(),
             memo: pubkey_hash.as_ref().to_vec(),
         };
-        let path = "/tmp/vrf_key.json";
-        save_activated_vrf_key(path, &key);
+        let temp_path = NamedTempFile::new()
+            .expect("Failed to create temp file")
+            .into_temp_path();
+        let path = temp_path.to_path_buf();
+        let path_str = path.to_str().expect("Temp path is not valid UTF-8");
+        save_activated_vrf_key(path_str, &key);
 
-        let res = RelayerThread::load_saved_vrf_key(path, &pubkey_hash);
+        let res = RelayerThread::load_saved_vrf_key(path_str, &pubkey_hash);
         assert!(res.is_some());
-
-        std::fs::remove_file(path).expect("Failed to delete test file");
     }
 
     #[test]
@@ -2388,17 +2396,19 @@ pub mod test {
             .unwrap(),
             memo: pubkey_hash.as_ref().to_vec(),
         };
-        let path = "/tmp/vrf_key.json";
-        save_activated_vrf_key(path, &key);
+        let temp_path = NamedTempFile::new()
+            .expect("Failed to create temp file")
+            .into_temp_path();
+        let path = temp_path.to_path_buf();
+        let path_str = path.to_str().expect("Temp path is not valid UTF-8");
+        save_activated_vrf_key(path_str, &key);
 
         let keychain = Keychain::default(vec![1u8; 32]);
         let pk = Secp256k1PublicKey::from_private(keychain.get_nakamoto_sk());
         let pubkey_hash = Hash160::from_node_public_key(&pk);
 
-        let res = RelayerThread::load_saved_vrf_key(path, &pubkey_hash);
+        let res = RelayerThread::load_saved_vrf_key(path_str, &pubkey_hash);
         assert!(res.is_none());
-
-        std::fs::remove_file(path).expect("Failed to delete test file");
     }
 
     #[test]

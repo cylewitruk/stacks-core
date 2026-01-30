@@ -119,6 +119,48 @@ pub struct SpvClient {
     check_txcount: bool,
 }
 
+/// Read-only access to the SPV headers DB for simple header lookups.
+pub struct SpvHeadersDb {
+    headers_db: DBConn,
+}
+
+impl SpvHeadersDb {
+    pub fn open_readonly(headers_path: &str) -> Result<SpvHeadersDb, btc_error> {
+        let conn = SpvClient::db_open(headers_path, false, false)?;
+        Ok(SpvHeadersDb { headers_db: conn })
+    }
+
+    pub fn get_header_height(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+    ) -> Result<Option<u64>, btc_error> {
+        let mut stmt = self
+            .headers_db
+            .prepare("SELECT height FROM headers WHERE hash = ?1")
+            .map_err(|e| btc_error::DBError(db_error::SqliteError(e)))?;
+        let height: Option<u64> = stmt
+            .query_row(params![burn_header_hash], |row| row.get(0))
+            .optional()
+            .map_err(|e| btc_error::DBError(db_error::SqliteError(e)))?;
+        Ok(height)
+    }
+
+    pub fn get_merkle_root(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+    ) -> Result<Option<Vec<u8>>, btc_error> {
+        let mut stmt = self
+            .headers_db
+            .prepare("SELECT merkle_root FROM headers WHERE hash = ?1")
+            .map_err(|e| btc_error::DBError(db_error::SqliteError(e)))?;
+        let merkle_root: Option<Sha256dHash> = stmt
+            .query_row(params![burn_header_hash], |row| row.get(0))
+            .optional()
+            .map_err(|e| btc_error::DBError(db_error::SqliteError(e)))?;
+        Ok(merkle_root.map(|hash| hash.as_bytes().to_vec()))
+    }
+}
+
 impl FromColumn<Sha256dHash> for Sha256dHash {
     fn from_column(row: &Row, column_name: &str) -> Result<Sha256dHash, db_error> {
         Ok(row.get_unwrap::<_, Self>(column_name))
@@ -1284,6 +1326,7 @@ mod test {
         deserialize, serialize, BitcoinHash,
     };
     use stacks_common::deps_common::bitcoin::util::hash::Sha256dHash;
+    use stacks_common::types::chainstate::BurnchainHeaderHash;
 
     use super::*;
     use crate::burnchains::bitcoin::{Error as btc_error, *};
@@ -1407,6 +1450,55 @@ mod test {
         assert_eq!(
             spv_client.read_block_headers(0, 10).unwrap(),
             vec![genesis_regtest_header, first_regtest_header]
+        );
+    }
+
+    #[test]
+    fn test_spv_headers_db_merkle_root_lookup() {
+        let path = "/tmp/test-spv-headers-db.sqlite";
+        if fs::metadata(path).is_ok() {
+            fs::remove_file(path).unwrap();
+        }
+
+        let first_regtest_header = LoneBlockHeader {
+            header: BlockHeader {
+                bits: 545259519,
+                merkle_root: Sha256dHash::from_hex(
+                    "20bee96458517fc5082a9720ce6207b5742f2b18e4e0a7e7373342725d80f88c",
+                )
+                .unwrap(),
+                nonce: 2,
+                prev_blockhash: Sha256dHash::from_hex(
+                    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
+                )
+                .unwrap(),
+                time: 1587626881,
+                version: 0x20000000,
+            },
+            tx_count: VarInt(0),
+        };
+
+        let mut spv_client =
+            SpvClient::new(path, 0, None, BitcoinNetworkType::Regtest, true, false)
+                .expect("failed to open spv client");
+        {
+            let mut tx = spv_client.tx_begin().unwrap();
+            SpvClient::insert_block_header(&mut tx, first_regtest_header.header.clone(), 1)
+                .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let headers_db = SpvHeadersDb::open_readonly(path).expect("failed to open headers db");
+        let header_hash = first_regtest_header.header.bitcoin_hash();
+        let burn_header_hash = BurnchainHeaderHash::from_bitcoin_hash(&header_hash);
+
+        assert_eq!(
+            headers_db.get_header_height(&burn_header_hash).unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            headers_db.get_merkle_root(&burn_header_hash).unwrap(),
+            Some(first_regtest_header.header.merkle_root.as_bytes().to_vec())
         );
     }
 

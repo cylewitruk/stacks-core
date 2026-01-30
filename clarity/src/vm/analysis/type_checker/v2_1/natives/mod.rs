@@ -1057,6 +1057,52 @@ impl TypedNativeFunction {
             ))),
             Secp256k1Recover => Special(SpecialNativeFunction(&check_secp256k1_recover)),
             Secp256k1Verify => Special(SpecialNativeFunction(&check_secp256k1_verify)),
+            BitcoinSpvVerify => Simple(SimpleNativeFunction(FunctionType::Fixed(FixedFunction {
+                args: vec![
+                    FunctionArg::new(
+                        TypeSignature::BUFFER_32,
+                        ClarityName::try_from("txid".to_owned()).map_err(|_| {
+                            StaticCheckErrorKind::Expects(
+                                "FAIL: ClarityName failed to accept default arg name".into(),
+                            )
+                        })?,
+                    ),
+                    FunctionArg::new(
+                        TypeSignature::list_of(
+                            TupleTypeSignature::try_from(vec![
+                                ("hash".into(), TypeSignature::BUFFER_32),
+                                ("left".into(), TypeSignature::BoolType),
+                            ])
+                            .map_err(|_| {
+                                StaticCheckErrorKind::Expects(
+                                    "FAIL: BitcoinSpvVerify failed to initialize tuple type".into(),
+                                )
+                            })?
+                            .into(),
+                            32,
+                        )
+                        .map_err(|_| {
+                            StaticCheckErrorKind::Expects(
+                                "FAIL: BitcoinSpvVerify failed to initialize list type".into(),
+                            )
+                        })?,
+                        ClarityName::try_from("proof".to_owned()).map_err(|_| {
+                            StaticCheckErrorKind::Expects(
+                                "FAIL: ClarityName failed to accept default arg name".into(),
+                            )
+                        })?,
+                    ),
+                    FunctionArg::new(
+                        TypeSignature::UIntType,
+                        ClarityName::try_from("burn-block-height".to_owned()).map_err(|_| {
+                            StaticCheckErrorKind::Expects(
+                                "FAIL: ClarityName failed to accept default arg name".into(),
+                            )
+                        })?,
+                    ),
+                ],
+                returns: TypeSignature::BoolType,
+            }))),
             GetStxBalance => Simple(SimpleNativeFunction(FunctionType::Fixed(FixedFunction {
                 args: vec![FunctionArg::new(
                     TypeSignature::PrincipalType,

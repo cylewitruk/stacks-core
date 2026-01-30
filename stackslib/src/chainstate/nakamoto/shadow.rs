@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use clarity::vm::costs::ExecutionCost;
+use clarity::vm::database::BurnStateDB;
 use rusqlite::params;
 /// Shadow blocks
 ///
@@ -367,6 +368,7 @@ impl NakamotoChainState {
         chainstate_tx: &'b mut ChainstateTx,
         clarity_instance: &'a mut ClarityInstance,
         sortition_dbconn: &'b dyn SortitionDBRef,
+        burn_state_db: &'b dyn BurnStateDB,
         first_block_height: u64,
         pox_constants: &PoxConstants,
         parent_consensus_hash: &ConsensusHash,
@@ -405,6 +407,7 @@ impl NakamotoChainState {
             chainstate_tx,
             clarity_instance,
             sortition_dbconn,
+            burn_state_db,
             first_block_height,
             pox_constants,
             parent_consensus_hash,
@@ -461,6 +464,7 @@ impl NakamotoBlockBuilder {
             &mut info.chainstate_tx,
             info.clarity_instance,
             burn_dbconn,
+            info.burn_state_db.as_burn_state_db(),
             burn_dbconn.context.first_block_height,
             &burn_dbconn.context.pox_constants,
             &info.parent_consensus_hash,

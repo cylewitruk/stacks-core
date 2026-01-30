@@ -1,3 +1,174 @@
+#[cfg(test)]
+mod tests {
+    use stacks_common::deps_common::bitcoin::blockdata::block::{BlockHeader, LoneBlockHeader};
+    use stacks_common::deps_common::bitcoin::network::encodable::VarInt;
+    use stacks_common::deps_common::bitcoin::network::serialize::BitcoinHash;
+    use stacks_common::deps_common::bitcoin::util::hash::Sha256dHash;
+    use stacks_common::types::chainstate::{
+        BurnchainHeaderHash, ConsensusHash, PoxId, SortitionId,
+    };
+    use stacks_common::types::StacksEpochId;
+
+    use super::*;
+    use crate::burnchains::bitcoin::spv::SpvClient;
+    use crate::burnchains::bitcoin::BitcoinNetworkType;
+
+    struct DummyBurnStateDb {
+        tip_height: u32,
+        burn_header_hash: BurnchainHeaderHash,
+        tip_sortition_id: SortitionId,
+    }
+
+    impl DummyBurnStateDb {
+        fn new(tip_height: u32, burn_header_hash: BurnchainHeaderHash) -> Self {
+            let tip_sortition_id = SortitionId::new(&burn_header_hash, &PoxId::stubbed());
+            Self {
+                tip_height,
+                burn_header_hash,
+                tip_sortition_id,
+            }
+        }
+    }
+
+    impl BurnStateDB for DummyBurnStateDb {
+        fn get_tip_burn_block_height(&self) -> Option<u32> {
+            Some(self.tip_height)
+        }
+
+        fn get_tip_sortition_id(&self) -> Option<SortitionId> {
+            Some(self.tip_sortition_id.clone())
+        }
+
+        fn get_v1_unlock_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_v2_unlock_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_v3_unlock_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_pox_3_activation_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_pox_4_activation_height(&self) -> u32 {
+            u32::MAX
+        }
+
+        fn get_burn_block_height(&self, _sortition_id: &SortitionId) -> Option<u32> {
+            Some(self.tip_height)
+        }
+
+        fn get_burn_start_height(&self) -> u32 {
+            0
+        }
+
+        fn get_pox_prepare_length(&self) -> u32 {
+            1
+        }
+
+        fn get_pox_reward_cycle_length(&self) -> u32 {
+            1
+        }
+
+        fn get_pox_rejection_fraction(&self) -> u64 {
+            1
+        }
+
+        fn get_burn_header_hash(
+            &self,
+            height: u32,
+            _sortition_id: &SortitionId,
+        ) -> Option<BurnchainHeaderHash> {
+            if height == self.tip_height {
+                Some(self.burn_header_hash.clone())
+            } else {
+                None
+            }
+        }
+
+        fn get_sortition_id_from_consensus_hash(
+            &self,
+            _consensus_hash: &ConsensusHash,
+        ) -> Option<SortitionId> {
+            Some(self.tip_sortition_id.clone())
+        }
+
+        fn get_stacks_epoch(&self, _height: u32) -> Option<StacksEpoch> {
+            None
+        }
+
+        fn get_stacks_epoch_by_epoch_id(&self, _epoch_id: &StacksEpochId) -> Option<StacksEpoch> {
+            None
+        }
+
+        fn get_pox_payout_addrs(
+            &self,
+            _height: u32,
+            _sortition_id: &SortitionId,
+        ) -> Option<(Vec<TupleData>, u128)> {
+            None
+        }
+    }
+
+    fn setup_spv_db(path: &str) -> (BurnchainHeaderHash, Vec<u8>) {
+        let header = LoneBlockHeader {
+            header: BlockHeader {
+                bits: 545259519,
+                merkle_root: Sha256dHash::from_hex(
+                    "20bee96458517fc5082a9720ce6207b5742f2b18e4e0a7e7373342725d80f88c",
+                )
+                .unwrap(),
+                nonce: 2,
+                prev_blockhash: Sha256dHash::from_hex(
+                    "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
+                )
+                .unwrap(),
+                time: 1587626881,
+                version: 0x20000000,
+            },
+            tx_count: VarInt(0),
+        };
+
+        let mut spv_client =
+            SpvClient::new(path, 0, None, BitcoinNetworkType::Regtest, true, false)
+                .expect("failed to open spv db");
+        spv_client
+            .write_block_headers(1, vec![header.clone()])
+            .unwrap();
+
+        let burn_header_hash =
+            BurnchainHeaderHash::from_bitcoin_hash(&header.header.bitcoin_hash());
+        (
+            burn_header_hash,
+            header.header.merkle_root.as_bytes().to_vec(),
+        )
+    }
+
+    #[test]
+    fn test_burn_state_db_with_spv_merkle_root_lookup() {
+        let path = "/tmp/test-burnstate-with-spv.sqlite";
+        if std::fs::metadata(path).is_ok() {
+            std::fs::remove_file(path).unwrap();
+        }
+
+        let (burn_header_hash, merkle_root) = setup_spv_db(path);
+        let burn_state_db = DummyBurnStateDb::new(7, burn_header_hash.clone());
+        let wrapper = BurnStateDBWithSpv::open(&burn_state_db, path)
+            .expect("failed to open burn state wrapper");
+
+        assert_eq!(wrapper.get_tip_burn_block_height(), Some(7));
+        assert_eq!(wrapper.get_spv_header_height(&burn_header_hash), Some(1));
+        assert_eq!(
+            wrapper.get_spv_header_merkle_root(&burn_header_hash),
+            Some(merkle_root)
+        );
+    }
+}
 use std::ops::Deref;
 
 use clarity::types::chainstate::TrieHash;
@@ -21,6 +192,8 @@ use stacks_common::types::chainstate::{
 use stacks_common::types::Address;
 use stacks_common::util::vrf::VRFProof;
 
+use crate::burnchains::bitcoin::spv::SpvHeadersDb;
+use crate::burnchains::bitcoin::Error as btc_error;
 use crate::chainstate::burn::db::sortdb::{
     get_ancestor_sort_id, SortitionDB, SortitionHandle, SortitionHandleConn, SortitionHandleTx,
 };
@@ -37,6 +210,133 @@ use crate::util_lib::db::{DBConn, Error as DBError, FromColumn, FromRow};
 
 pub mod ephemeral;
 pub mod marf;
+
+/// BurnStateDB wrapper that provides SPV header lookups.
+pub struct BurnStateDBWithSpv<'a, B: BurnStateDB + ?Sized> {
+    inner: &'a B,
+    spv_headers_db: SpvHeadersDb,
+}
+
+impl<'a, B: BurnStateDB + ?Sized> BurnStateDBWithSpv<'a, B> {
+    pub fn open(inner: &'a B, spv_headers_path: &str) -> Result<Self, btc_error> {
+        Ok(Self {
+            inner,
+            spv_headers_db: SpvHeadersDb::open_readonly(spv_headers_path)?,
+        })
+    }
+
+    pub fn inner(&self) -> &'a B {
+        self.inner
+    }
+}
+
+impl<B: BurnStateDB + ?Sized> BurnStateDB for BurnStateDBWithSpv<'_, B> {
+    fn get_tip_burn_block_height(&self) -> Option<u32> {
+        self.inner.get_tip_burn_block_height()
+    }
+
+    fn get_tip_sortition_id(&self) -> Option<SortitionId> {
+        self.inner.get_tip_sortition_id()
+    }
+
+    fn get_v1_unlock_height(&self) -> u32 {
+        self.inner.get_v1_unlock_height()
+    }
+
+    fn get_v2_unlock_height(&self) -> u32 {
+        self.inner.get_v2_unlock_height()
+    }
+
+    fn get_v3_unlock_height(&self) -> u32 {
+        self.inner.get_v3_unlock_height()
+    }
+
+    fn get_pox_3_activation_height(&self) -> u32 {
+        self.inner.get_pox_3_activation_height()
+    }
+
+    fn get_pox_4_activation_height(&self) -> u32 {
+        self.inner.get_pox_4_activation_height()
+    }
+
+    fn get_burn_block_height(&self, sortition_id: &SortitionId) -> Option<u32> {
+        self.inner.get_burn_block_height(sortition_id)
+    }
+
+    fn get_burn_start_height(&self) -> u32 {
+        self.inner.get_burn_start_height()
+    }
+
+    fn get_pox_prepare_length(&self) -> u32 {
+        self.inner.get_pox_prepare_length()
+    }
+
+    fn get_pox_reward_cycle_length(&self) -> u32 {
+        self.inner.get_pox_reward_cycle_length()
+    }
+
+    fn get_pox_rejection_fraction(&self) -> u64 {
+        self.inner.get_pox_rejection_fraction()
+    }
+
+    fn get_burn_header_hash(
+        &self,
+        height: u32,
+        sortition_id: &SortitionId,
+    ) -> Option<BurnchainHeaderHash> {
+        self.inner.get_burn_header_hash(height, sortition_id)
+    }
+
+    fn get_burn_block_height_for_header_hash(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+        sortition_id: &SortitionId,
+    ) -> Option<u32> {
+        self.inner
+            .get_burn_block_height_for_header_hash(burn_header_hash, sortition_id)
+    }
+
+    fn get_sortition_id_from_consensus_hash(
+        &self,
+        consensus_hash: &ConsensusHash,
+    ) -> Option<SortitionId> {
+        self.inner
+            .get_sortition_id_from_consensus_hash(consensus_hash)
+    }
+
+    fn get_stacks_epoch(&self, height: u32) -> Option<StacksEpoch> {
+        self.inner.get_stacks_epoch(height)
+    }
+
+    fn get_stacks_epoch_by_epoch_id(&self, epoch_id: &StacksEpochId) -> Option<StacksEpoch> {
+        self.inner.get_stacks_epoch_by_epoch_id(epoch_id)
+    }
+
+    fn get_pox_payout_addrs(
+        &self,
+        height: u32,
+        sortition_id: &SortitionId,
+    ) -> Option<(Vec<TupleData>, u128)> {
+        self.inner.get_pox_payout_addrs(height, sortition_id)
+    }
+
+    fn get_spv_header_height(&self, burn_header_hash: &BurnchainHeaderHash) -> Option<u64> {
+        self.spv_headers_db
+            .get_header_height(burn_header_hash)
+            .ok()
+            .flatten()
+    }
+
+    fn get_spv_header_merkle_root(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+    ) -> Option<Vec<u8>> {
+        self.spv_headers_db
+            .get_merkle_root(burn_header_hash)
+            .ok()
+            .flatten()
+    }
+}
 
 pub trait GetTenureStartId {
     fn get_tenure_block_id(
@@ -955,6 +1255,24 @@ impl BurnStateDB for SortitionHandleTx<'_> {
         }
     }
 
+    fn get_burn_block_height_for_header_hash(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+        sortition_id: &SortitionId,
+    ) -> Option<u32> {
+        let readonly_marf = self
+            .index()
+            .reopen_readonly()
+            .expect("BUG: failure trying to get a read-only interface into the sortition db.");
+        let mut context = self.context.clone();
+        context.chain_tip = sortition_id.clone();
+        let db_handle = SortitionHandleConn::new(&readonly_marf, context);
+        match db_handle.get_block_snapshot(burn_header_hash) {
+            Ok(Some(snapshot)) => snapshot.block_height.try_into().ok(),
+            _ => None,
+        }
+    }
+
     fn get_sortition_id_from_consensus_hash(
         &self,
         consensus_hash: &ConsensusHash,
@@ -1090,6 +1408,21 @@ impl BurnStateDB for SortitionHandleConn<'_> {
         match self.get_block_snapshot_by_height(height as u64) {
             Ok(Some(x)) => Some(x.burn_header_hash),
             _ => return None,
+        }
+    }
+
+    fn get_burn_block_height_for_header_hash(
+        &self,
+        burn_header_hash: &BurnchainHeaderHash,
+        sortition_id: &SortitionId,
+    ) -> Option<u32> {
+        let readonly_marf = self.index.reopen_readonly().ok()?;
+        let mut context = self.context.clone();
+        context.chain_tip = sortition_id.clone();
+        let db_handle = SortitionHandleConn::new(&readonly_marf, context);
+        match db_handle.get_block_snapshot(burn_header_hash) {
+            Ok(Some(snapshot)) => snapshot.block_height.try_into().ok(),
+            _ => None,
         }
     }
 

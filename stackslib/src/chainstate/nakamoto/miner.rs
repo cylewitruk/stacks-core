@@ -30,7 +30,8 @@ use crate::chainstate::nakamoto::{
 use crate::chainstate::stacks::address::StacksAddressExtensions;
 use crate::chainstate::stacks::db::blocks::{DummyEventDispatcher, MAX_RECEIPT_SIZES};
 use crate::chainstate::stacks::db::{
-    ChainstateTx, ClarityTx, StacksBlockHeaderTypes, StacksChainState, StacksHeaderInfo,
+    BurnStateDBContext, ChainstateTx, ClarityTx, StacksBlockHeaderTypes, StacksChainState,
+    StacksHeaderInfo,
 };
 use crate::chainstate::stacks::miner::{
     BlockBuilder, BlockBuilderSettings, BlockLimitFunction, TransactionEvent, TransactionResult,
@@ -189,6 +190,7 @@ impl MinerTenureInfoCause {
 pub struct MinerTenureInfo<'a> {
     pub chainstate_tx: ChainstateTx<'a>,
     pub clarity_instance: &'a mut ClarityInstance,
+    pub burn_state_db: BurnStateDBContext<'a>,
     pub burn_tip: BurnchainHeaderHash,
     /// This is the expected burn tip height (i.e., the current burnchain tip + 1)
     ///  of the mined block
@@ -473,11 +475,14 @@ impl NakamotoBlockBuilder {
         };
 
         // data won't be committed, so do a concurrent transaction
+        let root_path = chainstate.root_path.clone();
         let (chainstate_tx, clarity_instance) = chainstate.chainstate_tx_begin()?;
+        let burn_state_db = BurnStateDBContext::from_root_path(&root_path, burn_dbconn);
 
         Ok(MinerTenureInfo {
             chainstate_tx,
             clarity_instance,
+            burn_state_db,
             burn_tip,
             burn_tip_height,
             mainnet,
@@ -518,6 +523,7 @@ impl NakamotoBlockBuilder {
                 &mut info.chainstate_tx,
                 info.clarity_instance,
                 burn_dbconn,
+                info.burn_state_db.as_burn_state_db(),
                 burn_dbconn.context.first_block_height,
                 &burn_dbconn.context.pox_constants,
                 &info.parent_consensus_hash,
@@ -537,6 +543,7 @@ impl NakamotoBlockBuilder {
                 &mut info.chainstate_tx,
                 info.clarity_instance,
                 burn_dbconn,
+                info.burn_state_db.as_burn_state_db(),
                 burn_dbconn.context.first_block_height,
                 &burn_dbconn.context.pox_constants,
                 &info.parent_consensus_hash,

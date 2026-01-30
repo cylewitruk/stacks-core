@@ -473,4 +473,8 @@ impl CostValues for Costs4 {
     fn cost_secp256r1verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
         Ok(ExecutionCost::runtime(51750))
     }
+
+    fn cost_bitcoin_spv_verify(n: u64) -> Result<ExecutionCost, VmExecutionError> {
+        Ok(ExecutionCost::runtime(linear(n, 400, 1200)))
+    }
 }

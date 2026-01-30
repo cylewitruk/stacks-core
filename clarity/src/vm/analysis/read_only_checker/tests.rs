@@ -169,6 +169,17 @@ fn test_simple_read_only_violations() {
 }
 
 #[test]
+fn test_bitcoin_spv_verify_allowed_in_read_only() {
+    let contract = "(define-read-only (spv)
+        (bitcoin-spv-verify 0x0000000000000000000000000000000000000000000000000000000000000000
+            (list (tuple (hash 0x0000000000000000000000000000000000000000000000000000000000000000) (left true)))
+            u1))";
+
+    let result = mem_type_check(contract);
+    assert!(result.is_ok());
+}
+
+#[test]
 fn test_nested_writing_closure() {
     let bad_contracts = ["(define-data-var cursor int 0)
         (define-public (bad-at-block-function)

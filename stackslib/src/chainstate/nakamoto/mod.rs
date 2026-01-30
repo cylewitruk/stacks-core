@@ -19,6 +19,7 @@ use std::ops::{Deref, DerefMut, Range};
 
 use clarity::util::secp256k1::Secp256k1PublicKey;
 use clarity::vm::costs::ExecutionCost;
+use clarity::vm::database::BurnStateDB;
 use clarity::vm::events::{STXEventType, STXMintEventData, StacksTransactionEvent};
 use clarity::vm::types::PrincipalData;
 use clarity::vm::{ClarityVersion, Value};
@@ -77,7 +78,7 @@ use crate::chainstate::nakamoto::tenure::{
 use crate::chainstate::stacks::boot::SIP_031_NAME;
 use crate::chainstate::stacks::db::blocks::DummyEventDispatcher;
 use crate::chainstate::stacks::db::{
-    DBConfig as ChainstateConfig, StacksChainState, StacksDBConn, StacksDBTx,
+    BurnStateDBContext, DBConfig as ChainstateConfig, StacksChainState, StacksDBConn, StacksDBTx,
 };
 use crate::chainstate::stacks::{
     TenureChangeCause, MINER_BLOCK_CONSENSUS_HASH, MINER_BLOCK_HEADER_HASH,
@@ -3901,6 +3902,7 @@ impl NakamotoChainState {
         chainstate_tx: &'b mut ChainstateTx,
         clarity_instance: &'a mut ClarityInstance,
         sortition_dbconn: &'b dyn SortitionDBRef,
+        burn_state_db: &'b dyn BurnStateDB,
         first_block_height: u64,
         pox_constants: &PoxConstants,
         parent_consensus_hash: &ConsensusHash,
@@ -3921,6 +3923,7 @@ impl NakamotoChainState {
             chainstate_tx,
             clarity_instance,
             sortition_dbconn,
+            burn_state_db,
             first_block_height,
             pox_constants,
             parent_consensus_hash,
@@ -3941,6 +3944,7 @@ impl NakamotoChainState {
         chainstate_tx: &'b mut ChainstateTx,
         clarity_instance: &'a mut ClarityInstance,
         sortition_dbconn: &'b dyn SortitionDBRef,
+        burn_state_db: &'b dyn BurnStateDB,
         first_block_height: u64,
         pox_constants: &PoxConstants,
         parent_consensus_hash: &ConsensusHash,
@@ -3961,6 +3965,7 @@ impl NakamotoChainState {
             chainstate_tx,
             clarity_instance,
             sortition_dbconn,
+            burn_state_db,
             first_block_height,
             pox_constants,
             parent_consensus_hash,
@@ -3983,6 +3988,7 @@ impl NakamotoChainState {
         chainstate_tx: &'b mut ChainstateTx,
         clarity_instance: &'a mut ClarityInstance,
         sortition_dbconn: &'b dyn SortitionDBRef,
+        burn_state_db: &'b dyn BurnStateDB,
         first_block_height: u64,
         pox_constants: &PoxConstants,
         parent_chain_tip: &StacksHeaderInfo,
@@ -4059,6 +4065,7 @@ impl NakamotoChainState {
             chainstate_tx,
             clarity_instance,
             sortition_dbconn,
+            burn_state_db,
             first_block_height,
             pox_constants,
             parent_consensus_hash,
@@ -4108,6 +4115,7 @@ impl NakamotoChainState {
         chainstate_tx: &'b mut ChainstateTx,
         clarity_instance: &'a mut ClarityInstance,
         sortition_dbconn: &'b dyn SortitionDBRef,
+        burn_state_db: &'b dyn BurnStateDB,
         first_block_height: u64,
         pox_constants: &PoxConstants,
         parent_consensus_hash: &ConsensusHash,
@@ -4210,7 +4218,7 @@ impl NakamotoChainState {
             StacksChainState::chainstate_ephemeral_block_begin(
                 chainstate_tx,
                 clarity_instance,
-                sortition_dbconn.as_burn_state_db(),
+                burn_state_db,
                 &parent_consensus_hash,
                 &parent_header_hash,
                 &MINER_BLOCK_CONSENSUS_HASH,
@@ -4220,7 +4228,7 @@ impl NakamotoChainState {
             StacksChainState::chainstate_block_begin(
                 chainstate_tx,
                 clarity_instance,
-                sortition_dbconn.as_burn_state_db(),
+                burn_state_db,
                 &parent_consensus_hash,
                 &parent_header_hash,
                 &MINER_BLOCK_CONSENSUS_HASH,
@@ -4759,6 +4767,10 @@ impl NakamotoChainState {
             ));
         }
 
+        let root_path = chainstate_tx.root_path.clone();
+        let burn_state_db =
+            BurnStateDBContext::from_root_path(&root_path, burn_dbconn.as_burn_state_db());
+
         // begin processing this block
         let SetupBlockResult {
             mut clarity_tx,
@@ -4778,6 +4790,7 @@ impl NakamotoChainState {
                 chainstate_tx,
                 clarity_instance,
                 burn_dbconn,
+                burn_state_db.as_burn_state_db(),
                 first_block_height,
                 pox_constants,
                 &parent_ch,
@@ -4793,6 +4806,7 @@ impl NakamotoChainState {
                 chainstate_tx,
                 clarity_instance,
                 burn_dbconn,
+                burn_state_db.as_burn_state_db(),
                 first_block_height,
                 pox_constants,
                 parent_chain_tip,

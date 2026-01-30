@@ -332,7 +332,7 @@ impl<T: MarfTrieId> TrieCache<T> {
 
 #[cfg(test)]
 pub mod test {
-    use std::time::SystemTime;
+    use std::time::Instant;
     use std::{cmp, fs};
 
     use clarity::util::hash::to_hex;
@@ -446,7 +446,7 @@ pub mod test {
                 let path = TrieHash::from_key(key);
                 let marf_leaf = TrieLeaf::from_value(&[], value.clone());
 
-                let read_time = SystemTime::now();
+                let read_time = Instant::now();
                 let leaf = MARF::get_path(
                     &mut marf.borrow_storage_backend(),
                     &last_block_header,
@@ -455,7 +455,7 @@ pub mod test {
                 .unwrap()
                 .unwrap();
 
-                let read_time = read_time.elapsed().unwrap().as_nanos();
+                let read_time = read_time.elapsed().as_nanos();
                 total_read_time += read_time;
 
                 assert_eq!(leaf.data.to_vec(), marf_leaf.data.to_vec());

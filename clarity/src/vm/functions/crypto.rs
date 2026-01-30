@@ -17,6 +17,7 @@
 use stacks_common::address::{
     AddressHashMode, C32_ADDRESS_VERSION_MAINNET_SINGLESIG, C32_ADDRESS_VERSION_TESTNET_SINGLESIG,
 };
+use stacks_common::deps_common::bitcoin::util::hash::Sha256dHash;
 use stacks_common::types::chainstate::StacksAddress;
 use stacks_common::util::hash;
 use stacks_common::util::secp256k1::{secp256k1_recover, secp256k1_verify, Secp256k1PublicKey};
@@ -26,7 +27,9 @@ use crate::vm::costs::cost_functions::ClarityCostFunction;
 use crate::vm::costs::runtime_cost;
 use crate::vm::errors::{check_argument_count, CheckErrorKind, VmExecutionError, VmInternalError};
 use crate::vm::representations::SymbolicExpression;
-use crate::vm::types::{BuffData, SequenceData, TypeSignature, Value};
+use crate::vm::types::{
+    BuffData, ListData, SequenceData, TupleTypeSignature, TypeSignature, Value,
+};
 use crate::vm::{eval, ClarityVersion, Environment, LocalContext};
 
 macro_rules! native_hash_func {
@@ -377,4 +380,184 @@ pub fn special_secp256r1_verify(
     Ok(Value::Bool(
         secp256r1_verify(message, signature, pubkey).is_ok(),
     ))
+}
+
+fn bitcoin_merkle_parent(left: &Sha256dHash, right: &Sha256dHash) -> Sha256dHash {
+    let mut data = Vec::with_capacity(64);
+    data.extend_from_slice(left.as_bytes());
+    data.extend_from_slice(right.as_bytes());
+    Sha256dHash::from_data(&data)
+}
+
+pub fn special_bitcoin_spv_verify(
+    args: &[SymbolicExpression],
+    env: &mut Environment,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    // (bitcoin-spv-verify txid proof burn-block-height)
+    // txid: (buff 32)
+    // proof: (list 0..32 (tuple (hash (buff 32)) (left bool)))
+    // burn-block-height: uint
+    check_argument_count(3, args)?;
+
+    let txid_value = eval(
+        args.first()
+            .ok_or(CheckErrorKind::IncorrectArgumentCount(0, 3))?,
+        env,
+        context,
+    )?;
+    let txid = match txid_value {
+        Value::Sequence(SequenceData::Buffer(BuffData { ref data })) => {
+            if data.len() != 32 {
+                return Err(CheckErrorKind::TypeValueError(
+                    Box::new(TypeSignature::BUFFER_32),
+                    Box::new(txid_value),
+                )
+                .into());
+            }
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(data);
+            Sha256dHash(bytes)
+        }
+        _ => {
+            return Err(CheckErrorKind::TypeValueError(
+                Box::new(TypeSignature::BUFFER_32),
+                Box::new(txid_value),
+            )
+            .into())
+        }
+    };
+
+    let proof_value = eval(
+        args.get(1)
+            .ok_or(CheckErrorKind::IncorrectArgumentCount(1, 3))?,
+        env,
+        context,
+    )?;
+    let ListData { data: proof, .. } = match proof_value {
+        Value::Sequence(SequenceData::List(list)) => list,
+        _ => {
+            let expected_tuple_type = TupleTypeSignature::try_from(vec![
+                ("hash".into(), TypeSignature::BUFFER_32),
+                ("left".into(), TypeSignature::BoolType),
+            ])
+            .map_err(|_| VmInternalError::Expect("FATAL: bad tuple type for spv proof".into()))?;
+            let expected =
+                TypeSignature::list_of(TypeSignature::TupleType(expected_tuple_type), 32).map_err(
+                    |_| VmInternalError::Expect("FATAL: bad list type for spv proof".into()),
+                )?;
+            return Err(
+                CheckErrorKind::TypeValueError(Box::new(expected), Box::new(proof_value)).into(),
+            );
+        }
+    };
+
+    runtime_cost(
+        ClarityCostFunction::BitcoinSpvVerify,
+        env,
+        proof.len() as u64,
+    )?;
+
+    let height_value = eval(
+        args.get(2)
+            .ok_or(CheckErrorKind::IncorrectArgumentCount(2, 3))?,
+        env,
+        context,
+    )?;
+    let height_value = match height_value {
+        Value::UInt(result) => result,
+        x => {
+            return Err(CheckErrorKind::TypeValueError(
+                Box::new(TypeSignature::UIntType),
+                Box::new(x),
+            )
+            .into());
+        }
+    };
+    let height_value = match u32::try_from(height_value) {
+        Ok(result) => result,
+        Err(_) => return Ok(Value::Bool(false)),
+    };
+
+    let merkle_root_opt = env
+        .global_context
+        .database
+        .get_spv_header_merkle_root_for_burnchain_height(height_value)?;
+    let Some(merkle_root_bytes) = merkle_root_opt else {
+        return Ok(Value::Bool(false));
+    };
+    if merkle_root_bytes.len() != 32 {
+        return Err(VmInternalError::Expect(
+            "FATAL: SPV header merkle root must be 32 bytes".into(),
+        )
+        .into());
+    }
+
+    let mut root_bytes = [0u8; 32];
+    root_bytes.copy_from_slice(&merkle_root_bytes);
+    let expected_root = Sha256dHash(root_bytes);
+
+    let mut acc = txid;
+    for proof_step in proof.into_iter() {
+        let tuple = match proof_step {
+            Value::Tuple(tuple) => tuple,
+            _ => {
+                let expected_tuple_type = TupleTypeSignature::try_from(vec![
+                    ("hash".into(), TypeSignature::BUFFER_32),
+                    ("left".into(), TypeSignature::BoolType),
+                ])
+                .map_err(|_| {
+                    VmInternalError::Expect("FATAL: bad tuple type for spv proof".into())
+                })?;
+                return Err(CheckErrorKind::TypeValueError(
+                    Box::new(TypeSignature::TupleType(expected_tuple_type)),
+                    Box::new(proof_step),
+                )
+                .into());
+            }
+        };
+
+        let hash_value = tuple.get("hash")?.clone();
+        let sibling = match hash_value {
+            Value::Sequence(SequenceData::Buffer(BuffData { ref data })) => {
+                if data.len() != 32 {
+                    return Err(CheckErrorKind::TypeValueError(
+                        Box::new(TypeSignature::BUFFER_32),
+                        Box::new(hash_value),
+                    )
+                    .into());
+                }
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(data);
+                Sha256dHash(bytes)
+            }
+            _ => {
+                return Err(CheckErrorKind::TypeValueError(
+                    Box::new(TypeSignature::BUFFER_32),
+                    Box::new(hash_value),
+                )
+                .into())
+            }
+        };
+
+        let left_value = tuple.get("left")?.clone();
+        let left = match left_value {
+            Value::Bool(value) => value,
+            _ => {
+                return Err(CheckErrorKind::TypeValueError(
+                    Box::new(TypeSignature::BoolType),
+                    Box::new(left_value),
+                )
+                .into())
+            }
+        };
+
+        acc = if left {
+            bitcoin_merkle_parent(&sibling, &acc)
+        } else {
+            bitcoin_merkle_parent(&acc, &sibling)
+        };
+    }
+
+    Ok(Value::Bool(acc.as_bytes() == expected_root.as_bytes()))
 }
