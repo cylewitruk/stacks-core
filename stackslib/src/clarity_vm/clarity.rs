@@ -21,10 +21,10 @@ use clarity::consts::CHAIN_ID_TESTNET;
 use clarity::vm::analysis::AnalysisDatabase;
 use clarity::vm::clarity::TransactionConnection;
 pub use clarity::vm::clarity::{ClarityConnection, ClarityError};
-use clarity::vm::contexts::{AssetMap, OwnedEnvironment};
+use clarity::vm::contexts::{AbortCallback, AssetMap, OwnedEnvironment};
 use clarity::vm::costs::{CostTracker, ExecutionCost, LimitedCostTracker};
 use clarity::vm::database::{
-    BurnStateDB, ClarityBackingStore, ClarityDatabase, HeadersDB, RollbackWrapper,
+    BurnStateDB, ClarityBackingStore, ClarityDatabase, ContractCache, HeadersDB, RollbackWrapper,
     RollbackWrapperPersistedLog, STXBalance, NULL_BURN_STATE_DB, NULL_HEADER_DB,
 };
 use clarity::vm::errors::VmExecutionError;
@@ -62,7 +62,9 @@ use crate::util_lib::strings::StacksString;
 
 pub const SIP_031_INITIAL_MINT: u128 = 200_000_000_000_000;
 
-///
+/// Default byte budget for the parsed-contract cache (64 MiB).
+const DEFAULT_CONTRACT_CACHE_SIZE: usize = 64 * 1024 * 1024;
+
 /// A high-level interface for interacting with the Clarity VM.
 ///
 /// ClarityInstance takes ownership of a MARF + Sqlite store used for
@@ -83,7 +85,7 @@ pub const SIP_031_INITIAL_MINT: u128 = 200_000_000_000_000;
 ///   wish to benefit from some abstraction of high-level interfaces should implement the
 ///   `TransactionConnection` trait, which contains auto implementations for the typical transaction
 ///   types in a Clarity-based blockchain.
-///
+
 pub struct ClarityInstance {
     datastore: MarfedKV,
     mainnet: bool,
@@ -117,6 +119,13 @@ pub struct ClarityBlockConnection<'a, 'b> {
     mainnet: bool,
     chain_id: u32,
     epoch: StacksEpochId,
+    /// Callback checked at every Clarity `eval` call. Used by the miner to
+    /// abort block assembly when a resource limit is exceeded (e.g. heap
+    /// memory). Propagated to each `ClarityTransactionConnection` and from
+    /// there into `GlobalContext`.
+    ///
+    /// `AbortCallback::None` is the no-op default.
+    abort_callback: AbortCallback,
 }
 
 ///
@@ -133,6 +142,10 @@ pub struct ClarityTransactionConnection<'a, 'b> {
     mainnet: bool,
     chain_id: u32,
     epoch: StacksEpochId,
+    /// Parsed-contract cache scoped to this transaction. Dropped with the transaction, so loaded
+    /// contracts are never promoted to block- or node-wide cache layers.
+    contract_cache: ContractCache,
+    abort_callback: AbortCallback,
 }
 
 /// Unified API common to all MARF stores
@@ -250,6 +263,7 @@ impl<'a, 'b> ClarityTransactionConnection<'a, 'b> {
         mainnet: bool,
         chain_id: u32,
         epoch: StacksEpochId,
+        abort_callback: AbortCallback,
     ) -> ClarityTransactionConnection<'a, 'b> {
         let mut log = RollbackWrapperPersistedLog::new();
         log.nest();
@@ -262,6 +276,8 @@ impl<'a, 'b> ClarityTransactionConnection<'a, 'b> {
             mainnet,
             chain_id,
             epoch,
+            contract_cache: ContractCache::new(DEFAULT_CONTRACT_CACHE_SIZE),
+            abort_callback,
         }
     }
 }
@@ -318,6 +334,7 @@ impl ClarityBlockConnection<'_, '_> {
             mainnet: false,
             chain_id: CHAIN_ID_TESTNET,
             epoch,
+            abort_callback: AbortCallback::None,
         }
     }
 
@@ -336,6 +353,11 @@ impl ClarityBlockConnection<'_, '_> {
             .expect("BUG: Clarity block connection lost cost tracker instance");
         self.cost_track.replace(tracker);
         old
+    }
+
+    /// Set an abort callback that will be checked at every Clarity `eval` call.
+    pub fn set_abort_callback(&mut self, callback: AbortCallback) {
+        self.abort_callback = callback;
     }
 
     /// Get the current cost so far
@@ -424,6 +446,7 @@ impl ClarityInstance {
         let mut datastore = self.datastore.begin(current, next);
 
         let epoch = Self::get_epoch_of(current, header_db, burn_state_db);
+
         let cost_track = {
             let mut clarity_db = datastore.as_clarity_db(&NULL_HEADER_DB, &NULL_BURN_STATE_DB);
             Some(
@@ -446,6 +469,7 @@ impl ClarityInstance {
             mainnet: self.mainnet,
             chain_id: self.chain_id,
             epoch: epoch.epoch_id,
+            abort_callback: AbortCallback::None,
         }
     }
 
@@ -470,6 +494,7 @@ impl ClarityInstance {
             mainnet: self.mainnet,
             chain_id: self.chain_id,
             epoch,
+            abort_callback: AbortCallback::None,
         }
     }
 
@@ -496,6 +521,7 @@ impl ClarityInstance {
             mainnet: self.mainnet,
             chain_id: self.chain_id,
             epoch,
+            abort_callback: AbortCallback::None,
         };
 
         let use_mainnet = self.mainnet;
@@ -592,6 +618,7 @@ impl ClarityInstance {
             mainnet: self.mainnet,
             chain_id: self.chain_id,
             epoch,
+            abort_callback: AbortCallback::None,
         };
 
         let use_mainnet = self.mainnet;
@@ -700,6 +727,7 @@ impl ClarityInstance {
             mainnet: self.mainnet,
             chain_id: self.chain_id,
             epoch: epoch.epoch_id,
+            abort_callback: AbortCallback::None,
         }
     }
 
@@ -740,6 +768,7 @@ impl ClarityInstance {
             mainnet: self.mainnet,
             chain_id: self.chain_id,
             epoch: epoch.epoch_id,
+            abort_callback: AbortCallback::None,
         }
     }
 
@@ -798,6 +827,7 @@ impl ClarityInstance {
     ) -> Result<Value, ClarityError> {
         let mut read_only_conn = self.datastore.begin_read_only(Some(at_block));
         let mut clarity_db = read_only_conn.as_clarity_db(header_db, burn_state_db);
+
         let epoch_id = {
             clarity_db.begin();
             let result = clarity_db.get_clarity_epoch_version();
@@ -1978,6 +2008,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
             self.mainnet,
             self.chain_id,
             self.epoch,
+            self.abort_callback.clone(),
         )
     }
 
@@ -2050,6 +2081,7 @@ impl ClarityConnection for ClarityTransactionConnection<'_, '_> {
                 self.header_db,
                 self.burn_state_db,
             );
+            db.set_contract_cache(&self.contract_cache);
             db.begin();
             let (r, mut db) = to_do(db);
             db.roll_back()
@@ -2118,6 +2150,9 @@ impl TransactionConnection for ClarityTransactionConnection<'_, '_> {
                     self.burn_state_db,
                 );
 
+                // Use the transaction-local contract cache.
+                db.set_contract_cache(&self.contract_cache);
+
                 // wrap the whole contract-call in a claritydb transaction,
                 //   so we can abort on call_back's boolean retun
                 db.begin();
@@ -2128,6 +2163,7 @@ impl TransactionConnection for ClarityTransactionConnection<'_, '_> {
                     cost_track,
                     self.epoch,
                 );
+                vm_env.set_abort_callback(self.abort_callback.clone());
                 let result = to_do(&mut vm_env);
                 let (mut db, cost_track) = vm_env
                     .destruct()
@@ -2191,6 +2227,9 @@ impl ClarityTransactionConnection<'_, '_> {
                 self.header_db,
                 self.burn_state_db,
             );
+
+            // Use the transaction-local contract cache.
+            db.set_contract_cache(&self.contract_cache);
 
             db.begin();
             let result = to_do(&mut db);
@@ -3362,5 +3401,252 @@ mod tests {
 
             conn.commit_block();
         }
+    }
+
+    fn deploy_counter_contract(clarity_instance: &mut ClarityInstance, current: u8, next: u8) {
+        let contract_id = QualifiedContractIdentifier::local("counter").unwrap();
+        let mut conn = clarity_instance.begin_block(
+            &StacksBlockId([current; 32]),
+            &StacksBlockId([next; 32]),
+            &TEST_HEADER_DB,
+            &TEST_BURN_STATE_DB,
+        );
+        let src = "(define-data-var counter int 0)
+             (define-public (increment) (begin (var-set counter (+ (var-get counter) 1)) (ok (var-get counter))))";
+        conn.as_transaction(|tx| {
+            let (ast, analysis) = tx
+                .analyze_smart_contract(&contract_id, ClarityVersion::Clarity1, src)
+                .unwrap();
+            tx.initialize_smart_contract(
+                &contract_id,
+                ClarityVersion::Clarity1,
+                &ast,
+                src,
+                None,
+                |_, _| None,
+                None,
+            )
+            .unwrap();
+            tx.save_analysis(&contract_id, &analysis).unwrap();
+        });
+        conn.commit_block();
+    }
+
+    #[test]
+    pub fn contract_cache_is_scoped_to_transaction() {
+        let marf = MarfedKV::temporary();
+        let mut clarity_instance = ClarityInstance::new(false, CHAIN_ID_TESTNET, marf);
+        let contract_id = QualifiedContractIdentifier::local("counter").unwrap();
+        let sender = StandardPrincipalData::transient().into();
+
+        clarity_instance
+            .begin_test_genesis_block(
+                &StacksBlockId::sentinel(),
+                &StacksBlockId([0; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+            )
+            .commit_block();
+
+        deploy_counter_contract(&mut clarity_instance, 0, 1);
+
+        // A repeated load in the same transaction should hit the tx-local cache.
+        {
+            let mut conn = clarity_instance.begin_block(
+                &StacksBlockId([1; 32]),
+                &StacksBlockId([2; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+            );
+            conn.as_transaction(|tx| {
+                let result = tx
+                    .run_contract_call(
+                        &sender,
+                        None,
+                        &contract_id,
+                        "increment",
+                        &[],
+                        |_, _| None,
+                        None,
+                    )
+                    .unwrap()
+                    .0;
+                assert_eq!(result, Value::okay(Value::Int(1)).unwrap());
+
+                let hits_after_first_call = tx.contract_cache.hits();
+                let result = tx
+                    .run_contract_call(
+                        &sender,
+                        None,
+                        &contract_id,
+                        "increment",
+                        &[],
+                        |_, _| None,
+                        None,
+                    )
+                    .unwrap()
+                    .0;
+                assert_eq!(result, Value::okay(Value::Int(2)).unwrap());
+
+                assert!(
+                    tx.contract_cache.hits() > hits_after_first_call,
+                    "second load in the same tx should hit the tx-local cache"
+                );
+            });
+            conn.commit_block();
+        }
+
+        // A later transaction starts with a fresh cache.
+        {
+            let mut conn = clarity_instance.begin_block(
+                &StacksBlockId([2; 32]),
+                &StacksBlockId([3; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+            );
+            conn.as_transaction(|tx| {
+                assert_eq!(tx.contract_cache.hits(), 0);
+                assert_eq!(tx.contract_cache.misses(), 0);
+
+                let result = tx
+                    .run_contract_call(
+                        &sender,
+                        None,
+                        &contract_id,
+                        "increment",
+                        &[],
+                        |_, _| None,
+                        None,
+                    )
+                    .unwrap()
+                    .0;
+                assert_eq!(result, Value::okay(Value::Int(3)).unwrap());
+                assert!(
+                    tx.contract_cache.misses() > 0,
+                    "first load in a new tx should miss the fresh tx-local cache"
+                );
+            });
+            conn.commit_block();
+        }
+    }
+
+    /// Read-only connections should continue to go through the backing store. In this benchmark
+    /// configuration, they do not attach the tx-local cache or the unused instance cache.
+    #[test]
+    pub fn readonly_uses_backing_store_without_instance_cache() {
+        let marf = MarfedKV::temporary();
+        let mut clarity_instance = ClarityInstance::new(false, CHAIN_ID_TESTNET, marf);
+        let contract_id = QualifiedContractIdentifier::local("counter").unwrap();
+
+        clarity_instance
+            .begin_test_genesis_block(
+                &StacksBlockId::sentinel(),
+                &StacksBlockId([0; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+            )
+            .commit_block();
+
+        deploy_counter_contract(&mut clarity_instance, 0, 1);
+
+        let result = clarity_instance.eval_read_only(
+            &StacksBlockId([0; 32]),
+            &TEST_HEADER_DB,
+            &TEST_BURN_STATE_DB,
+            &contract_id,
+            "(var-get counter)",
+        );
+        assert!(result.is_err());
+
+        let result = clarity_instance
+            .eval_read_only(
+                &StacksBlockId([1; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+                &contract_id,
+                "(var-get counter)",
+            )
+            .expect("read-only at current tip should succeed");
+        assert_eq!(result, Value::Int(0));
+    }
+
+    /// A block rollback should not need cache invalidation for this benchmark configuration,
+    /// because no block- or instance-scoped contract cache is attached.
+    #[test]
+    pub fn rollback_with_tx_local_cache_keeps_readonly_correct() {
+        let marf = MarfedKV::temporary();
+        let mut clarity_instance = ClarityInstance::new(false, CHAIN_ID_TESTNET, marf);
+        let contract_id = QualifiedContractIdentifier::local("counter").unwrap();
+        let sender = StandardPrincipalData::transient().into();
+
+        // Genesis
+        clarity_instance
+            .begin_test_genesis_block(
+                &StacksBlockId::sentinel(),
+                &StacksBlockId([0; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+            )
+            .commit_block();
+
+        deploy_counter_contract(&mut clarity_instance, 0, 1);
+
+        // Block 2: call the contract, then commit.
+        {
+            let mut conn = clarity_instance.begin_block(
+                &StacksBlockId([1; 32]),
+                &StacksBlockId([2; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+            );
+            conn.as_transaction(|tx| {
+                tx.run_contract_call(
+                    &sender,
+                    None,
+                    &contract_id,
+                    "increment",
+                    &[],
+                    |_, _| None,
+                    None,
+                )
+            })
+            .unwrap();
+            conn.commit_block();
+        }
+
+        // Block 3: call the contract, then roll back.
+        {
+            let mut conn = clarity_instance.begin_block(
+                &StacksBlockId([2; 32]),
+                &StacksBlockId([3; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+            );
+            conn.as_transaction(|tx| {
+                tx.run_contract_call(
+                    &sender,
+                    None,
+                    &contract_id,
+                    "increment",
+                    &[],
+                    |_, _| None,
+                    None,
+                )
+            })
+            .unwrap();
+            conn.rollback_block();
+        }
+
+        let result = clarity_instance
+            .eval_read_only(
+                &StacksBlockId([2; 32]),
+                &TEST_HEADER_DB,
+                &TEST_BURN_STATE_DB,
+                &contract_id,
+                "(var-get counter)",
+            )
+            .expect("read-only at last committed block should succeed");
+        // counter was incremented once in block 2 (committed), block 3 was rolled back
+        assert_eq!(result, Value::Int(1));
     }
 }

@@ -20,8 +20,10 @@ use std::mem::replace;
 use std::time::{Duration, Instant};
 
 use clarity_types::representations::ClarityName;
+use clarity_types::resident_bytes::ResidentBytes;
 use serde::Serialize;
 use serde_json::json;
+use stacks_common::alloc_tracker::{AllocationCounter, thread_allocated};
 use stacks_common::types::StacksEpochId;
 use stacks_common::types::chainstate::StacksBlockId;
 
@@ -275,6 +277,58 @@ pub enum ExecutionTimeTracker {
     },
 }
 
+/// Per-`eval` abort check. This operates alongside the execution time
+/// tracker.
+///
+/// The `None` variant is a no-op (the common case during
+/// block append/replay); other variants encode specific abort
+/// conditions and are dispatched statically via match.
+#[derive(Clone)]
+pub enum AbortCallback {
+    /// No abort check.
+    None,
+    /// Abort when net heap allocation since `baseline` exceeds
+    /// `limit_bytes` (per-thread).
+    ///
+    /// Used by miner block assembly and proposal validation.
+    MemAbort {
+        baseline: AllocationCounter,
+        limit_bytes: u64,
+    },
+    /// Test fixture: always aborts with the given reason.
+    #[cfg(test)]
+    AlwaysAbort(String),
+}
+
+impl AbortCallback {
+    /// Run the abort check.
+    ///
+    /// Returns:
+    ///   * `Ok(())` to continue
+    ///   * `Err(reason)` to abort execution with
+    ///     `RuntimeCheckErrorKind::AbortedByExecutionHook`.
+    pub fn check(&self) -> Result<(), String> {
+        match self {
+            Self::None => Ok(()),
+            Self::MemAbort {
+                baseline,
+                limit_bytes,
+            } => {
+                let net_alloc = thread_allocated().net_allocated(baseline);
+                if net_alloc > *limit_bytes {
+                    Err(format!(
+                        "Transaction heap usage ({net_alloc} bytes) exceeded limit ({limit_bytes} bytes)"
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            #[cfg(test)]
+            Self::AlwaysAbort(reason) => Err(reason.clone()),
+        }
+    }
+}
+
 /** GlobalContext represents the outermost context for a single transaction's
      execution. It tracks an asset changes that occurred during the
      processing of the transaction, whether or not the current context is read_only,
@@ -294,6 +348,11 @@ pub struct GlobalContext<'a, 'hooks> {
     pub chain_id: u32,
     pub eval_hooks: Option<Vec<&'hooks mut dyn EvalHook>>,
     pub execution_time_tracker: ExecutionTimeTracker,
+    /// Callback checked at every `eval` call. When `check()` returns
+    /// `Err(reason)`, execution is aborted with
+    /// `VmExecutionError::RuntimeCheck(AbortedByExecutionHook)`. The
+    /// default `AbortCallback::None` is a no-op.
+    pub abort_callback: AbortCallback,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -328,6 +387,40 @@ pub struct ContractContext {
     /// after deployment, when their values are frozen.
     #[serde(skip)]
     pub is_deploying: bool,
+}
+
+impl ResidentBytes for ContractContext {
+    fn heap_bytes(&self) -> usize {
+        // Destructure to get a compile error when a field is added without accounting for it.
+        let ContractContext {
+            // Heap-allocated fields: accounted for by heap_bytes() calls below
+            contract_identifier,
+            variables,
+            functions,
+            defined_traits,
+            implemented_traits,
+            persisted_names,
+            meta_data_map,
+            meta_data_var,
+            meta_nft,
+            meta_ft,
+            // Inline-only fields: covered by size_of::<Self>()
+            data_size: _,
+            clarity_version: _,
+            is_deploying: _,
+        } = self;
+
+        contract_identifier.heap_bytes()
+            + variables.heap_bytes()
+            + functions.heap_bytes()
+            + defined_traits.heap_bytes()
+            + implemented_traits.heap_bytes()
+            + persisted_names.heap_bytes()
+            + meta_data_map.heap_bytes()
+            + meta_data_var.heap_bytes()
+            + meta_nft.heap_bytes()
+            + meta_ft.heap_bytes()
+    }
 }
 
 pub struct LocalContext<'a> {
@@ -739,6 +832,11 @@ impl<'a, 'hooks> OwnedEnvironment<'a, 'hooks> {
         }
     }
 
+    /// Set an abort callback that will be checked at every `eval` call.
+    pub fn set_abort_callback(&mut self, callback: AbortCallback) {
+        self.context.abort_callback = callback;
+    }
+
     pub fn get_exec_environment<'b>(
         &'b mut self,
         sender: Option<PrincipalData>,
@@ -1077,10 +1175,10 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
 
         self.global_context.begin();
 
-        let contract = self
+        let cached = self
             .global_context
             .database
-            .get_contract(contract_identifier)
+            .get_contract_cached(contract_identifier)
             .or_else(|e| {
                 self.global_context.roll_back()?;
                 Err(e)
@@ -1088,7 +1186,7 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
 
         let result = {
             let nested_view = InvocationContext {
-                contract_context: &contract.contract_context,
+                contract_context: &cached.contract.contract_context,
                 sender: invoke_ctx.sender.clone(),
                 caller: invoke_ctx.caller.clone(),
                 sponsor: invoke_ctx.sponsor.clone(),
@@ -1207,19 +1305,27 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         let _profiler_span =
             crate::profiler::begin_contract_call_span(contract_identifier, tx_name);
 
-        let contract_size = self
+        // Charge the load cost before loading the full contract. This matters when
+        // canonicalize_types() fails (e.g. CouldNotDetermineType); the cost must be charged even
+        // though the load itself errors.
+        let load_cost_size = self
             .global_context
             .database
-            .get_contract_size(contract_identifier)?;
-        runtime_cost(ClarityCostFunction::LoadContract, self, contract_size)?;
+            .get_contract_load_cost_size(contract_identifier)?;
 
-        self.global_context.add_memory(contract_size)?;
+        runtime_cost(ClarityCostFunction::LoadContract, self, load_cost_size)?;
 
-        finally_drop_memory!(self.global_context, contract_size; {
-            let contract = self.global_context.database.get_contract(contract_identifier)?;
+        self.global_context.add_memory(load_cost_size)?;
 
-            let func = contract.contract_context.lookup_function(tx_name)
+        finally_drop_memory!(self.global_context, load_cost_size; {
+            let cached = self
+                .global_context
+                .database
+                .get_contract_cached(contract_identifier)?;
+
+            let func = cached.contract.contract_context.lookup_function(tx_name)
                 .ok_or_else(|| { RuntimeCheckErrorKind::UndefinedFunction(tx_name.to_string()) })?;
+
             if !allow_private && !func.is_public() {
                 return Err(RuntimeCheckErrorKind::NoSuchPublicFunction(contract_identifier.to_string(), tx_name.to_string()).into());
             } else if read_only && !func.is_read_only() {
@@ -1254,7 +1360,7 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
                 return Err(RuntimeCheckErrorKind::CircularReference(vec![func_identifier.to_string()]).into())
             }
             self.call_stack.insert(&func_identifier, true);
-            let res = self.execute_function_as_transaction(invoke_ctx, &func, &args, Some(&contract.contract_context), allow_private);
+            let res = self.execute_function_as_transaction(invoke_ctx, &func, &args, Some(&cached.contract.contract_context), allow_private);
             self.call_stack.remove(&func_identifier, true)?;
 
             match res {
@@ -1709,6 +1815,7 @@ impl<'a, 'hooks> GlobalContext<'a, 'hooks> {
             chain_id,
             eval_hooks: None,
             execution_time_tracker: ExecutionTimeTracker::NoTracking,
+            abort_callback: AbortCallback::None,
         }
     }
 

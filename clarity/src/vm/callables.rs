@@ -17,6 +17,7 @@
 use std::collections::BTreeMap;
 
 use clarity_types::representations::ClarityName;
+use clarity_types::resident_bytes::ResidentBytes;
 pub use clarity_types::types::FunctionIdentifier;
 use stacks_common::types::StacksEpochId;
 
@@ -84,6 +85,17 @@ pub struct DefinedFunction {
     pub define_type: DefineType,
     arguments: Vec<ClarityName>,
     body: SymbolicExpression,
+}
+
+impl ResidentBytes for DefinedFunction {
+    fn heap_bytes(&self) -> usize {
+        self.identifier.heap_bytes()
+            + self.name.heap_bytes()
+            + self.arg_types.heap_bytes()
+            + self.arguments.heap_bytes()
+            + self.body.heap_bytes()
+        // define_type is a fieldless enum — no heap allocation
+    }
 }
 
 /// This enum handles the actual invocation of the method
@@ -788,5 +800,28 @@ mod test {
             f.arg_types[0],
             TypeSignature::CallableType(CallableSubtype::Trait(trait_id))
         );
+    }
+
+    #[test]
+    fn resident_bytes_defined_function_counts_all_heap_fields() {
+        let function = DefinedFunction {
+            identifier: FunctionIdentifier::new_native_function("map"),
+            name: ClarityName::try_from("resident-bytes-fn".to_string()).unwrap(),
+            arg_types: vec![TypeSignature::OptionalType(Box::new(
+                TypeSignature::UIntType,
+            ))],
+            define_type: DefineType::Private,
+            arguments: vec![ClarityName::try_from("arg".to_string()).unwrap()],
+            body: SymbolicExpression::atom_value(Value::Bool(true)),
+        };
+
+        let expected = function.identifier.heap_bytes()
+            + function.name.heap_bytes()
+            + function.arg_types.heap_bytes()
+            + function.arguments.heap_bytes()
+            + function.body.heap_bytes();
+
+        assert_eq!(function.heap_bytes(), expected);
+        assert!(function.heap_bytes() > 0);
     }
 }
