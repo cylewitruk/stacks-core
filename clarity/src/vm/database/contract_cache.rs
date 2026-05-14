@@ -71,13 +71,25 @@ impl Deref for CachedContract {
     }
 }
 
+/// Lineage validation mode for advancing the contract cache between blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractCacheLineageMode {
+    /// Clear cached entries if the next block's parent does not match the last block seen by the
+    /// cache.
+    Strict,
+    /// Trust the caller to process blocks in canonical order, even if replay uses synthetic block
+    /// ids that do not form the same lineage as the source chain. Epoch transitions still clear.
+    TrustReplayOrder,
+}
+
 /// LFU cache of parsed contracts (`TinyUFO`-backed), weighted by in-memory footprint.
 ///
-/// Invalidated on reorg or epoch transition. Call [`check_and_advance()`](Self::check_and_advance)
-/// at each block start.
+/// Invalidated on reorg or epoch transition by default. Call
+/// [`check_and_advance()`](Self::check_and_advance) at each block start.
 pub struct ContractCache {
     cache: TinyUfo<QualifiedContractIdentifier, CachedContract>,
     byte_limit: usize,
+    lineage_mode: ContractCacheLineageMode,
     last_epoch: Option<StacksEpochId>,
     last_block: RefCell<Option<StacksBlockId>>,
     hits: AtomicU64,
@@ -92,6 +104,7 @@ impl ContractCache {
         Self {
             cache: TinyUfo::new(byte_limit / CACHE_WEIGHT_UNIT as usize, 256),
             byte_limit,
+            lineage_mode: ContractCacheLineageMode::Strict,
             last_epoch: None,
             last_block: RefCell::new(None),
             hits: AtomicU64::new(0),
@@ -120,6 +133,11 @@ impl ContractCache {
     /// Gets the total number of cache misses since creation.
     pub fn misses(&self) -> u64 {
         self.misses.load(Ordering::Relaxed)
+    }
+
+    /// Set how parent/child lineage is validated when advancing the cache between blocks.
+    pub fn set_lineage_mode(&mut self, mode: ContractCacheLineageMode) {
+        self.lineage_mode = mode;
     }
 
     /// Insert a contract into the cache.
@@ -157,8 +175,8 @@ impl ContractCache {
 
     /// Validate cache against the current block and epoch.
     ///
-    /// If the parent block doesn't match the last seen block, or if the epoch has changed, we
-    /// assume a reorg or epoch transition has occurred and clear the cache to maintain correctness.
+    /// In strict lineage mode, if the parent block doesn't match the last seen block, we assume a
+    /// reorg has occurred and clear the cache to maintain correctness. Epoch changes always clear.
     ///
     /// Otherwise, the cache is updated to reflect the new `current_block` and preserved for
     /// continued use.
@@ -169,7 +187,10 @@ impl ContractCache {
         epoch: StacksEpochId,
     ) {
         let last_block = self.last_block.get_mut();
-        if last_block.as_ref() != Some(parent_block) || self.last_epoch != Some(epoch) {
+        let parent_mismatch = last_block.as_ref() != Some(parent_block);
+        let should_clear_for_lineage =
+            parent_mismatch && self.lineage_mode == ContractCacheLineageMode::Strict;
+        if should_clear_for_lineage || self.last_epoch != Some(epoch) {
             // TinyUFO doesn't have a clear() method, so replace it with a new instance.
             self.cache = TinyUfo::new(self.byte_limit / CACHE_WEIGHT_UNIT as usize, 256);
             self.last_epoch = Some(epoch);
@@ -271,6 +292,50 @@ mod tests {
             &fork_parent,
             &StacksBlockId([0xBB; 32]),
             StacksEpochId::Epoch21,
+        );
+        assert!(cache.get(&id).is_none());
+    }
+
+    #[test]
+    fn check_and_advance_preserves_on_reorg_when_trusting_replay_order() {
+        let mut cache = ContractCache::new(64 * 1024 * 1024);
+        cache.set_lineage_mode(ContractCacheLineageMode::TrustReplayOrder);
+        let block_a = StacksBlockId([0x01; 32]);
+        let block_b = StacksBlockId([0x02; 32]);
+
+        cache.check_and_advance(&block_a, &block_b, StacksEpochId::Epoch21);
+
+        let id = make_contract_id("cached");
+        cache.insert(id.clone(), make_cached(500));
+        assert!(cache.get(&id).is_some());
+
+        let synthetic_parent_mismatch = StacksBlockId([0xAA; 32]);
+        cache.check_and_advance(
+            &synthetic_parent_mismatch,
+            &StacksBlockId([0xBB; 32]),
+            StacksEpochId::Epoch21,
+        );
+        assert!(cache.get(&id).is_some());
+    }
+
+    #[test]
+    fn check_and_advance_still_clears_on_epoch_change_when_trusting_replay_order() {
+        let mut cache = ContractCache::new(64 * 1024 * 1024);
+        cache.set_lineage_mode(ContractCacheLineageMode::TrustReplayOrder);
+        let block_a = StacksBlockId([0x01; 32]);
+        let block_b = StacksBlockId([0x02; 32]);
+
+        cache.check_and_advance(&block_a, &block_b, StacksEpochId::Epoch21);
+
+        let id = make_contract_id("cached");
+        cache.insert(id.clone(), make_cached(500));
+        assert!(cache.get(&id).is_some());
+
+        let synthetic_parent_mismatch = StacksBlockId([0xAA; 32]);
+        cache.check_and_advance(
+            &synthetic_parent_mismatch,
+            &StacksBlockId([0xBB; 32]),
+            StacksEpochId::Epoch25,
         );
         assert!(cache.get(&id).is_none());
     }

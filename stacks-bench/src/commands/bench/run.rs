@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use blockstack_lib::burnchains::Txid;
 use chrono::Utc;
+use clarity::vm::database::ContractCacheLineageMode;
 use serde::{Deserialize, Serialize};
 use stacks_bench::bench_events::{self, BenchEvent, BenchEventSender};
 use stacks_bench::blocks::{BackwardsBlockStream, BlockRef};
@@ -32,6 +33,10 @@ use crate::commands::common::{
 };
 
 const BASELINE_MEASURED_BLOCKS: u32 = 1000;
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
 
 /// Non-clap parameter struct for benchmark runs. CLI converts from `RunArgs`
 /// via `From`; MCP constructs directly from tool parameters.
@@ -68,6 +73,11 @@ pub struct BenchRunParams {
     /// already normalized via `normalize_contract_args` at construction time.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contract: Vec<ContractArg>,
+    /// Trust benchmark replay order for the contract AST cache even when
+    /// synthetic replay block ids do not form the same lineage as the source
+    /// chain. Epoch transitions and explicit invalidation still clear.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub trust_contract_cache_replay_order: bool,
     pub no_profiler_kv: bool,
     pub include_pre_nakamoto_blocks: bool,
     /// Override the parent directory under which the shadow tempdir is
@@ -846,6 +856,11 @@ async fn execute_replay_plan(
         create_bench_run_model(app_db, chainstate_model_id, params, plan.name_prefix).await?;
 
     let (mut chainstate, burnchain) = bench_context.open_stacks_chainstate()?;
+    if params.trust_contract_cache_replay_order {
+        chainstate
+            .clarity_state
+            .set_contract_cache_lineage_mode(ContractCacheLineageMode::TrustReplayOrder);
+    }
 
     // --- Overhead baselines ---
     // Baseline measures per-machine overhead and is deliberately NOT scaled

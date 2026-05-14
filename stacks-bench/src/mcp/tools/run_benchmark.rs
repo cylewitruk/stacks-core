@@ -83,6 +83,14 @@ pub struct RunBenchmarkParams {
     #[serde(default)]
     pub contract: Vec<String>,
 
+    /// Trust benchmark replay order for contract AST cache lineage checks.
+    /// This disables cache clearing when synthetic replay block ids do not
+    /// appear to descend from the previous synthetic block. Use only for
+    /// canonical block/transaction replay experiments; epoch transitions and
+    /// explicit invalidation still clear the cache.
+    #[serde(default)]
+    pub trust_contract_cache_replay_order: bool,
+
     /// Network name (e.g. `"mainnet"`, `"testnet"`). Inferred from the
     /// chainstate if omitted.
     #[serde(default)]
@@ -231,6 +239,7 @@ impl RunBenchmarkParams {
             warmup: self.warmup.unwrap_or(0) as usize,
             filter,
             contract,
+            trust_contract_cache_replay_order: self.trust_contract_cache_replay_order,
             no_profiler_kv: false,
             include_pre_nakamoto_blocks: false,
             shadow_dir_root: self.shadow_dir_root.map(PathBuf::from),

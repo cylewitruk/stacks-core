@@ -141,6 +141,17 @@ pub struct RunArgs {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     contract: Vec<ContractArg>,
 
+    /// Trust benchmark replay order for contract AST cache lineage checks.
+    ///
+    /// This disables cache clearing when synthetic replay block ids do not
+    /// appear to descend from the previous synthetic block, which is useful
+    /// when benchmarking canonical block ranges through replay modes that
+    /// intentionally deviate from canonical block ids. Epoch transitions and
+    /// explicit invalidation still clear the cache.
+    #[arg(long = "trust-contract-cache-replay-order", default_value_t = false)]
+    #[serde(default)]
+    trust_contract_cache_replay_order: bool,
+
     /// Disable capturing of profiler key-value records generated via `record!` and `counter!`
     /// macros. This can provide a slight performance benefit and reduce storage if you do not need
     /// them.
@@ -219,6 +230,7 @@ impl From<&RunArgs> for BenchRunParams {
             warmup: args.warmup,
             filter: args.filter.as_ref().map(FilterKind::from),
             contract: normalize_contract_args(args.contract.clone()),
+            trust_contract_cache_replay_order: args.trust_contract_cache_replay_order,
             no_profiler_kv: args.no_profiler_kv,
             include_pre_nakamoto_blocks: args.include_pre_nakamoto_blocks,
             shadow_dir_root: args.shadow_dir_root.clone(),

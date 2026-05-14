@@ -24,8 +24,9 @@ pub use clarity::vm::clarity::{ClarityConnection, ClarityError};
 use clarity::vm::contexts::{AssetMap, OwnedEnvironment};
 use clarity::vm::costs::{CostTracker, ExecutionCost, LimitedCostTracker};
 use clarity::vm::database::{
-    BurnStateDB, ClarityBackingStore, ClarityDatabase, ContractCache, HeadersDB, RollbackWrapper,
-    RollbackWrapperPersistedLog, STXBalance, NULL_BURN_STATE_DB, NULL_HEADER_DB,
+    BurnStateDB, ClarityBackingStore, ClarityDatabase, ContractCache, ContractCacheLineageMode,
+    HeadersDB, RollbackWrapper, RollbackWrapperPersistedLog, STXBalance, NULL_BURN_STATE_DB,
+    NULL_HEADER_DB,
 };
 use clarity::vm::errors::VmExecutionError;
 use clarity::vm::events::{STXEventType, STXMintEventData};
@@ -391,6 +392,11 @@ impl ClarityInstance {
             chain_id,
             contract_cache: ContractCache::new(DEFAULT_CONTRACT_CACHE_SIZE),
         }
+    }
+
+    /// Set how the parsed-contract cache validates block lineage while advancing between blocks.
+    pub fn set_contract_cache_lineage_mode(&mut self, mode: ContractCacheLineageMode) {
+        self.contract_cache.set_lineage_mode(mode);
     }
 
     /// Inspect the contract cache (test-only).
