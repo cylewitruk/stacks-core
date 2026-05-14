@@ -703,6 +703,16 @@ impl<'a> ClarityDatabase<'a> {
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
     ) -> Result<Option<Sha512Trunc256Sum>, VmExecutionError> {
+        if !self.store.is_retargeted() {
+            if let Some(entry) = self
+                .contract_cache
+                .as_ref()
+                .and_then(|cc| cc.get(contract_identifier))
+            {
+                return Ok(Some(entry.content_hash.clone()));
+            }
+        }
+
         self.store.get_contract_hash(contract_identifier)
     }
 
@@ -925,8 +935,22 @@ impl<'a> ClarityDatabase<'a> {
         if self.store.is_retargeted() {
             let contract_size = self.get_contract_size(contract_identifier)?;
             let contract = self.get_contract(contract_identifier)?;
+            let content_hash = self
+                .store
+                .get_contract_hash(contract_identifier)?
+                .ok_or_else(|| {
+                    VmInternalError::Expect(
+                        "Failed to read contract content hash, even though contract exists in MARF."
+                            .into(),
+                    )
+                })?;
             let resident = contract.resident_bytes() as u64;
-            return Ok(CachedContract::new(contract, contract_size, resident));
+            return Ok(CachedContract::new(
+                contract,
+                content_hash,
+                contract_size,
+                resident,
+            ));
         }
 
         // Cache hit
@@ -942,8 +966,17 @@ impl<'a> ClarityDatabase<'a> {
         // can only target already-committed contracts.
         let contract_size = self.get_contract_size(contract_identifier)?;
         let contract = self.get_contract(contract_identifier)?;
+        let content_hash = self
+            .store
+            .get_contract_hash(contract_identifier)?
+            .ok_or_else(|| {
+                VmInternalError::Expect(
+                    "Failed to read contract content hash, even though contract exists in MARF."
+                        .into(),
+                )
+            })?;
         let resident = contract.resident_bytes() as u64;
-        let entry = CachedContract::new(contract, contract_size, resident);
+        let entry = CachedContract::new(contract, content_hash, contract_size, resident);
         if let Some(cc) = self.contract_cache.as_ref() {
             cc.insert(contract_identifier.clone(), entry.clone());
         }
@@ -2758,12 +2791,41 @@ mod contract_cache_tests {
         db.begin();
         let first = db.get_contract_cached(&id).expect("first load");
         assert_eq!(first.load_cost_size, db.get_contract_size(&id).unwrap());
+        assert_eq!(
+            first.content_hash,
+            Sha512Trunc256Sum::from_data("(define-public (noop) (ok true))".as_bytes())
+        );
 
         // The cache must now contain the entry
         assert!(
             cache.get(&id).is_some(),
             "cache should be populated after first load"
         );
+        db.roll_back().unwrap();
+    }
+
+    #[test]
+    fn get_contract_hash_returns_from_cache() {
+        let cache = ContractCache::new(64 * 1024 * 1024);
+        let id = QualifiedContractIdentifier::local("hash-cache-test").unwrap();
+        let sentinel_hash = Sha512Trunc256Sum([0xDD; 32]);
+
+        let contract = Contract {
+            contract_context: ContractContext::new(id.clone(), ClarityVersion::Clarity2),
+        };
+        cache.insert(
+            id.clone(),
+            CachedContract::new(contract, sentinel_hash.clone(), 128, 128),
+        );
+
+        let mut store = MemoryBackingStore::new();
+        let mut db = store.as_clarity_db();
+        db.set_contract_cache(&cache);
+
+        // No contract deployed to the backing store — a DB lookup would return None.
+        // The cache hit must return our sentinel content hash.
+        db.begin();
+        assert_eq!(db.get_contract_hash(&id).unwrap(), Some(sentinel_hash));
         db.roll_back().unwrap();
     }
 
@@ -2796,6 +2858,47 @@ mod contract_cache_tests {
     }
 
     #[test]
+    fn retargeted_bypasses_cache_for_get_contract_hash() {
+        let cache = ContractCache::new(64 * 1024 * 1024);
+        let mut store = MemoryBackingStore::new();
+        let mut db = store.as_clarity_db();
+        db.set_contract_cache(&cache);
+
+        let id = QualifiedContractIdentifier::local("retarget-hash").unwrap();
+
+        // TX1: deploy and commit
+        deploy_test_contract(&mut db, &id);
+
+        let sentinel_hash = Sha512Trunc256Sum([0xEE; 32]);
+        let sentinel_contract = Contract {
+            contract_context: ContractContext::new(id.clone(), ClarityVersion::Clarity2),
+        };
+        cache.insert(
+            id.clone(),
+            CachedContract::new(sentinel_contract, sentinel_hash.clone(), 128, 128),
+        );
+
+        db.begin();
+        db.store.test_set_retargeted(true);
+
+        let result = db.get_contract_hash(&id).unwrap();
+        assert_ne!(
+            result,
+            Some(sentinel_hash),
+            "retargeted path should bypass the cache sentinel"
+        );
+        assert_eq!(
+            result,
+            Some(Sha512Trunc256Sum::from_data(
+                "(define-public (noop) (ok true))".as_bytes()
+            ))
+        );
+
+        db.store.test_set_retargeted(false);
+        db.roll_back().unwrap();
+    }
+
+    #[test]
     fn is_retargeted_default_state() {
         let mut store = MemoryBackingStore::new();
         let mut db = store.as_clarity_db();
@@ -2821,7 +2924,7 @@ mod contract_cache_tests {
         };
         cache.insert(
             id.clone(),
-            CachedContract::new(contract, sentinel_cost, 128),
+            CachedContract::new(contract, Sha512Trunc256Sum([0xAA; 32]), sentinel_cost, 128),
         );
 
         let mut store = MemoryBackingStore::new();
@@ -2895,7 +2998,12 @@ mod contract_cache_tests {
         };
         cache.insert(
             id.clone(),
-            CachedContract::new(sentinel_contract, sentinel_cost, 128),
+            CachedContract::new(
+                sentinel_contract,
+                Sha512Trunc256Sum([0xBB; 32]),
+                sentinel_cost,
+                128,
+            ),
         );
 
         // TX2: retargeted call to get_contract_cached should bypass the cache and return the DB
@@ -2936,7 +3044,12 @@ mod contract_cache_tests {
         };
         cache.insert(
             id.clone(),
-            CachedContract::new(sentinel_contract, sentinel_cost, 128),
+            CachedContract::new(
+                sentinel_contract,
+                Sha512Trunc256Sum([0xCC; 32]),
+                sentinel_cost,
+                128,
+            ),
         );
 
         // TX2: retargeted call to get_contract_load_cost_size should bypass the cache and return the DB

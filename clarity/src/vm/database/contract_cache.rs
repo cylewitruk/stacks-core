@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use clarity_types::resident_bytes::ResidentBytes;
 use stacks_common::types::StacksEpochId;
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_common::util::hash::Sha512Trunc256Sum;
 use tinyufo::TinyUfo;
 
 use crate::vm::contracts::Contract;
@@ -40,6 +41,8 @@ const CACHE_WEIGHT_UNIT: u64 = 256;
 /// Backing data for [`CachedContract`].
 pub struct CachedContractInner {
     pub contract: Contract,
+    /// Content hash stored for `(contract-hash?)`.
+    pub content_hash: Sha512Trunc256Sum,
     /// `contract_size` + `data_size` (for load-contract runtime cost)
     pub load_cost_size: u64,
     /// Actual heap footprint (for cache eviction weight)
@@ -54,9 +57,15 @@ pub struct CachedContract(Arc<CachedContractInner>);
 
 impl CachedContract {
     /// Create a new cached contract entry.
-    pub fn new(contract: Contract, load_cost_size: u64, resident_bytes: u64) -> Self {
+    pub fn new(
+        contract: Contract,
+        content_hash: Sha512Trunc256Sum,
+        load_cost_size: u64,
+        resident_bytes: u64,
+    ) -> Self {
         CachedContract(Arc::new(CachedContractInner {
             contract,
+            content_hash,
             load_cost_size,
             resident_bytes,
         }))
@@ -223,7 +232,12 @@ mod tests {
             contract_context: ContractContext::new(id, ClarityVersion::Clarity4),
         };
         let resident = resident_override.unwrap_or_else(|| contract.resident_bytes() as u64);
-        CachedContract::new(contract, load_cost_size, resident)
+        CachedContract::new(
+            contract,
+            Sha512Trunc256Sum([0x42; 32]),
+            load_cost_size,
+            resident,
+        )
     }
 
     #[test]
@@ -361,6 +375,7 @@ mod tests {
     fn cached_contract_deref() {
         let entry = make_cached(42);
         assert_eq!(entry.load_cost_size, 42);
+        assert_eq!(entry.content_hash, Sha512Trunc256Sum([0x42; 32]));
         assert!(entry.resident_bytes > 0);
         assert_eq!(
             entry.contract.contract_context.contract_identifier,
