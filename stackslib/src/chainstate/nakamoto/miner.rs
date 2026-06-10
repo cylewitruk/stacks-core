@@ -651,6 +651,7 @@ impl NakamotoBlockBuilder {
     }
 
     /// Finish building the Nakamoto block
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn mine_nakamoto_block(
         &mut self,
         clarity_tx: &mut ClarityTx,
@@ -833,6 +834,7 @@ impl NakamotoBlockBuilder {
 impl BlockBuilder for NakamotoBlockBuilder {
     /// Append a transaction if doing so won't exceed the epoch data size.
     /// Errors out if we exceed budget, or the transaction is invalid.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn try_mine_tx_with_len(
         &mut self,
         clarity_tx: &mut ClarityTx,

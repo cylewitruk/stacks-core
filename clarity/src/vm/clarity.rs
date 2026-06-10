@@ -342,6 +342,7 @@ pub trait TransactionConnection: ClarityConnection {
 
     /// Execute a STX transfer in the current block.
     /// Will throw an error if it tries to spend STX that the 'from' principal doesn't have.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn run_stx_transfer(
         &mut self,
         from: &PrincipalData,

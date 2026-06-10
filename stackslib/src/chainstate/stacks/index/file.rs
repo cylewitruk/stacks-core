@@ -287,6 +287,7 @@ impl TrieFile {
 
     /// Append a new trie blob to external storage, and add the offset and length to the trie DB.
     /// Return the trie ID
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn store_trie_blob<T: MarfTrieId>(
         &mut self,
         db: &Connection,
@@ -299,6 +300,7 @@ impl TrieFile {
     }
 
     /// Read a trie blob in its entirety from the DB
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn read_trie_blob_from_db(db: &Connection, block_id: u32) -> Result<Vec<u8>, Error> {
         let trie_blob = {
             let mut fd = trie_sql::open_trie_blob_readonly(db, block_id)?;
@@ -482,6 +484,7 @@ impl<'a> TrieFileNodeHashReader<'a> {
 }
 
 impl NodeHashReader for TrieFileNodeHashReader<'_> {
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn read_node_hash_bytes<W: Write>(&mut self, ptr: &TriePtr, w: &mut W) -> Result<(), Error> {
         let trie_offset = self.file.get_trie_offset(self.db, self.block_id)?;
         self.file.seek(SeekFrom::Start(trie_offset + ptr.ptr()))?;
@@ -521,6 +524,7 @@ impl TrieFile {
     }
 
     /// Obtain a TrieHash for a node, given its block ID and pointer
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_node_hash_bytes(
         &mut self,
         db: &Connection,
@@ -603,6 +607,7 @@ impl TrieFile {
 
     /// Append a serialized trie to the TrieFile.
     /// Returns the offset at which it was appended.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn append_trie_blob(&mut self, db: &Connection, buf: &[u8]) -> Result<u64, Error> {
         let offset = trie_sql::get_external_blobs_length(db)?;
         test_debug!("Write trie of {} bytes at {}", buf.len(), offset);
