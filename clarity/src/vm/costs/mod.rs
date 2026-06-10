@@ -85,7 +85,10 @@ pub fn runtime_cost<T: TryInto<u64>, C: CostTracker>(
     input: T,
 ) -> Result<(), CostErrors> {
     let size: u64 = input.try_into().map_err(|_| CostErrors::CostOverflow)?;
-    let cost = tracker.compute_cost(cost_function, &[size])?;
+    let cost = tracker.compute_cost(cost_function.clone(), &[size])?;
+
+    #[cfg(feature = "profiler")]
+    crate::profiler::capture_costs(&cost, &cost_function, &[size]);
 
     tracker.add_cost(cost)
 }
