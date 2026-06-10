@@ -45,6 +45,7 @@ macro_rules! impl_serde_json_hex_string {
     ($name:ident, $len:expr) => {
         pub struct $name {}
         impl $name {
+            #[cfg_attr(feature = "profiler", ::stacks_profiler::profile(sample_rate = 128))]
             pub fn json_serialize<S: serde::Serializer>(
                 inst: &[u8; $len],
                 s: S,
@@ -53,6 +54,7 @@ macro_rules! impl_serde_json_hex_string {
                 s.serialize_str(&hex_inst.as_str())
             }
 
+            #[cfg_attr(feature = "profiler", ::stacks_profiler::profile(sample_rate = 128))]
             pub fn json_deserialize<'de, D: serde::Deserializer<'de>>(
                 d: D,
             ) -> Result<[u8; $len], D::Error> {

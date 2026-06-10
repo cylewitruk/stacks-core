@@ -365,6 +365,7 @@ pub fn special_as_contract(
         memory_use += cost_constants::AS_CONTRACT_MEMORY;
 
         let contract_principal: PrincipalData = env.contract_context.contract_identifier.clone().into();
+        crate::profiler::record_name!(contract_principal.to_string());
         let mut nested_env = env.nest_as_principal(contract_principal.clone());
 
         // Create a new evaluation context, so that we can rollback if the

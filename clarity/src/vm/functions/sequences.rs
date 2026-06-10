@@ -63,6 +63,7 @@ pub fn special_filter(
     let function_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(function_name);
 
     let mut sequence = eval(&args[1], env, context)?;
     let function = lookup_function(function_name, env)?;
@@ -117,6 +118,7 @@ pub fn special_fold(
     let function_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(function_name);
 
     let function = lookup_function(function_name, env)?;
     let mut sequence = eval(&args[1], env, context)?;
@@ -158,6 +160,7 @@ pub fn special_map(
     let function_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(function_name);
     let function = lookup_function(function_name, env)?;
 
     // Let's consider a function f (f a b c ...)

@@ -329,6 +329,7 @@ pub fn special_mint_token(
     let token_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::BadTokenName)?;
+    crate::profiler::record_name!(token_name);
 
     let amount = eval(&args[1], env, context)?;
     let to = eval(&args[2], env, context)?;
@@ -740,6 +741,7 @@ pub fn special_transfer_token(
     let token_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::BadTokenName)?;
+    crate::profiler::record_name!(token_name);
 
     let amount = eval(&args[1], env, context)?;
     let from = eval(&args[2], env, context)?;
@@ -845,6 +847,7 @@ pub fn special_get_balance(
     let token_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::BadTokenName)?;
+    crate::profiler::record_name!(token_name);
 
     let owner = eval(&args[1], env, context)?;
 
@@ -980,6 +983,7 @@ pub fn special_get_token_supply(
     let token_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::BadTokenName)?;
+    crate::profiler::record_name!(token_name);
 
     let supply = env
         .global_context
@@ -1000,6 +1004,7 @@ pub fn special_burn_token(
     let token_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::BadTokenName)?;
+    crate::profiler::record_name!(token_name);
 
     let amount = eval(&args[1], env, context)?;
     let from = eval(&args[2], env, context)?;
@@ -1069,6 +1074,7 @@ pub fn special_burn_asset_v200(
     let asset_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::BadTokenName)?;
+    crate::profiler::record_name!(asset_name);
 
     let asset = eval(&args[1], env, context)?;
     let sender = eval(&args[2], env, context)?;
@@ -1161,6 +1167,7 @@ pub fn special_burn_asset_v205(
     let asset_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::BadTokenName)?;
+    crate::profiler::record_name!(asset_name);
 
     let asset = eval(&args[1], env, context)?;
     let sender = eval(&args[2], env, context)?;

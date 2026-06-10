@@ -43,6 +43,7 @@ impl<'a> AnalysisDatabase<'a> {
         AnalysisDatabase { store }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn execute<F, T, E>(&mut self, f: F) -> Result<T, E>
     where
         F: FnOnce(&mut Self) -> Result<T, E>,
@@ -63,12 +64,14 @@ impl<'a> AnalysisDatabase<'a> {
         self.store.nest();
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit(&mut self) -> Result<(), StaticCheckError> {
         self.store
             .commit()
             .map_err(|e| StaticCheckErrorKind::ExpectsRejectable(format!("{e:?}")).into())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn roll_back(&mut self) -> Result<(), StaticCheckError> {
         self.store
             .rollback()
@@ -90,12 +93,14 @@ impl<'a> AnalysisDatabase<'a> {
             .unwrap();
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn has_contract(&mut self, contract_identifier: &QualifiedContractIdentifier) -> bool {
         self.store
             .has_metadata_entry(contract_identifier, AnalysisDatabase::storage_key())
     }
 
     /// Load a contract from the database, without canonicalizing its types.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn load_contract_non_canonical(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -115,6 +120,7 @@ impl<'a> AnalysisDatabase<'a> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn load_contract(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -139,6 +145,7 @@ impl<'a> AnalysisDatabase<'a> {
             }))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_contract(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -158,6 +165,7 @@ impl<'a> AnalysisDatabase<'a> {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_clarity_version(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -174,6 +182,7 @@ impl<'a> AnalysisDatabase<'a> {
         Ok(contract.clarity_version)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_public_function_type(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -194,6 +203,7 @@ impl<'a> AnalysisDatabase<'a> {
             .map(|x| x.canonicalize(epoch)))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_read_only_function_type(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -214,6 +224,7 @@ impl<'a> AnalysisDatabase<'a> {
             .map(|x| x.canonicalize(epoch)))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_defined_trait(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -237,6 +248,7 @@ impl<'a> AnalysisDatabase<'a> {
         }))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_implemented_traits(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
