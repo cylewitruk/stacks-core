@@ -5,14 +5,14 @@ Lightweight single-page app for exploring profiler traces with a true tree view.
 ## Setup
 
 ```bash
-cd stacks-bench/tools/profiler-explorer
+cd contrib/stacks-bench/tools/profiler-explorer
 npm install
 ```
 
 Install the UI dependencies (once):
 
 ```bash
-cd stacks-bench/tools/profiler-explorer/web
+cd contrib/stacks-bench/tools/profiler-explorer/web
 npm install
 ```
 
@@ -38,7 +38,7 @@ Then open <http://127.0.0.1:8800/>.
 ## UI Dev (optional)
 
 ```bash
-cd stacks-bench/tools/profiler-explorer/web
+cd contrib/stacks-bench/tools/profiler-explorer/web
 npm run dev
 ```
 

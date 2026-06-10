@@ -24,19 +24,23 @@ COPY clarity/Cargo.toml clarity/Cargo.toml
 COPY clarity-types/Cargo.toml clarity-types/Cargo.toml
 COPY stackslib/Cargo.toml stackslib/Cargo.toml
 COPY stacks-common/Cargo.toml stacks-common/Cargo.toml
-COPY stacks-bench/Cargo.toml stacks-bench/Cargo.toml
+COPY stacks-codec/Cargo.toml stacks-codec/Cargo.toml
+COPY stacks-profiler/Cargo.toml stacks-profiler/Cargo.toml
+COPY stacks-profiler-macros/Cargo.toml stacks-profiler-macros/Cargo.toml
+COPY contrib/stacks-bench/Cargo.toml contrib/stacks-bench/Cargo.toml
 COPY libstackerdb/Cargo.toml libstackerdb/Cargo.toml
 COPY libsigner/Cargo.toml libsigner/Cargo.toml
 COPY stx-genesis/Cargo.toml stx-genesis/Cargo.toml
 COPY pox-locking/Cargo.toml pox-locking/Cargo.toml
 COPY stacks-signer/Cargo.toml stacks-signer/Cargo.toml
 COPY stacks-node/Cargo.toml stacks-node/Cargo.toml
+COPY contrib/clarity-cli/Cargo.toml contrib/clarity-cli/Cargo.toml
 COPY contrib/stacks-inspect/Cargo.toml contrib/stacks-inspect/Cargo.toml
 COPY contrib/stacks-cli/Cargo.toml contrib/stacks-cli/Cargo.toml
 
 # Dummy targets for all workspace members
-RUN mkdir -p stacks-bench/src && echo 'fn main(){}' > stacks-bench/src/main.rs && \
-    for c in clarity clarity-types stackslib stacks-common libstackerdb libsigner stx-genesis pox-locking stacks-signer stacks-node contrib/stacks-inspect contrib/stacks-cli; do \
+RUN mkdir -p contrib/stacks-bench/src && echo "// dummy" > contrib/stacks-bench/src/lib.rs && echo 'fn main(){}' > contrib/stacks-bench/src/main.rs && \
+    for c in clarity clarity-types stackslib stacks-common stacks-codec stacks-profiler stacks-profiler-macros libstackerdb libsigner stx-genesis pox-locking stacks-signer stacks-node contrib/clarity-cli contrib/stacks-inspect contrib/stacks-cli; do \
       mkdir -p "$c/src"; [ -f "$c/src/lib.rs" ] || echo "// dummy" > "$c/src/lib.rs"; \
     done
 

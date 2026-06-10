@@ -186,7 +186,7 @@ Heat keys: `wallTotalUs`, `selfWallUs`, `busyTotalUs`, `selfBusyUs`, `waitTotalU
 
 ```bash
 # Backend
-cd stacks-bench/tools/profiler-explorer
+cd contrib/stacks-bench/tools/profiler-explorer
 npm install
 node --experimental-strip-types server.ts  # Starts on port 8800
 

@@ -12,7 +12,7 @@ members = [
     "libsigner",
     "stacks-signer",
     "stacks-node",
-    "stacks-bench",
+    "contrib/stacks-bench",
     "stacks-profiler",
     "stacks-profiler-macros",
     "contrib/stacks-inspect",

@@ -2713,7 +2713,7 @@ mod tests {
     static BENCH_SPAN: SpanId = SpanId {
         name: "Segment",
         context: Some("stacks_bench::replay"),
-        file: "stacks-bench/src/replay.rs",
+        file: "contrib/stacks-bench/src/replay.rs",
         line: 1,
     };
 

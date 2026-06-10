@@ -18,10 +18,10 @@ path = "src/main.rs"
 
 [dependencies]
 # Local dependencies
-clarity = { path = "../clarity", features = ["rusqlite"] }
-stackslib = { path = "../stackslib", features = ["profiler"] }
-stacks-common = { path = "../stacks-common" }
-stx_genesis = { path = "../stx-genesis", package = "stx-genesis" }
+clarity = { path = "../../clarity", features = ["rusqlite"] }
+stackslib = { path = "../../stackslib", features = ["profiler"] }
+stacks-common = { path = "../../stacks-common" }
+stx_genesis = { path = "../../stx-genesis", package = "stx-genesis" }
 stacks-profiler.workspace = true
 # Filesystem
 tempfile.workspace = true
