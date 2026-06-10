@@ -518,6 +518,7 @@ impl<'a> ClarityDatabase<'a> {
         self.store.set_block_hash(bhh, query_pending_data)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn put_data<T: ClaritySerializable>(
         &mut self,
         key: &str,
@@ -527,6 +528,7 @@ impl<'a> ClarityDatabase<'a> {
     }
 
     /// Like `put()`, but returns the serialized byte size of the stored value
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn put_data_with_size<T: ClaritySerializable>(
         &mut self,
         key: &str,
@@ -537,6 +539,7 @@ impl<'a> ClarityDatabase<'a> {
         Ok(byte_len_of_serialization(&serialized))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_data<T>(&mut self, key: &str) -> Result<Option<T>, VmExecutionError>
     where
         T: ClarityDeserializable<T>,
@@ -544,6 +547,7 @@ impl<'a> ClarityDatabase<'a> {
         self.store.get_data::<T>(key)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_data_by_hash<T>(&mut self, hash: &TrieHash) -> Result<Option<T>, VmExecutionError>
     where
         T: ClarityDeserializable<T>,
@@ -551,6 +555,7 @@ impl<'a> ClarityDatabase<'a> {
         self.store.get_data_by_hash::<T>(hash)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn put_value(
         &mut self,
         key: &str,
@@ -561,6 +566,7 @@ impl<'a> ClarityDatabase<'a> {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn put_value_with_size(
         &mut self,
         key: &str,
@@ -599,6 +605,7 @@ impl<'a> ClarityDatabase<'a> {
         Ok(pre_sanitized_size.unwrap_or(size))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_value(
         &mut self,
         key: &str,
@@ -610,6 +617,7 @@ impl<'a> ClarityDatabase<'a> {
             .map_err(|e| VmInternalError::DBError(e.to_string()).into())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_data_with_proof<T>(
         &mut self,
         key: &str,
@@ -620,6 +628,7 @@ impl<'a> ClarityDatabase<'a> {
         self.store.get_data_with_proof(key)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_data_with_proof_by_hash<T>(
         &mut self,
         hash: &TrieHash,
@@ -733,6 +742,7 @@ impl<'a> ClarityDatabase<'a> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn fetch_metadata<T>(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -748,6 +758,7 @@ impl<'a> ClarityDatabase<'a> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn fetch_metadata_manual<T>(
         &mut self,
         at_height: u32,
@@ -770,6 +781,7 @@ impl<'a> ClarityDatabase<'a> {
     //   in unit testing, where the interpreter is invoked without
     //   an analysis pass, this function will fail to find contract
     //   analysis data
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn load_contract_analysis(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -789,6 +801,7 @@ impl<'a> ClarityDatabase<'a> {
     /// calculations.
     ///
     /// Reads through the rollback-aware metadata layer; does not consult or populate the cache.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn read_contract_size(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -834,6 +847,7 @@ impl<'a> ClarityDatabase<'a> {
     }
 
     /// used for adding the memory usage of `define-constant` variables.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn set_contract_data_size(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -871,6 +885,7 @@ impl<'a> ClarityDatabase<'a> {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn has_contract(&mut self, contract_identifier: &QualifiedContractIdentifier) -> bool {
         let key = ClarityDatabase::make_metadata_key(
             StoreType::Contract,
@@ -884,6 +899,7 @@ impl<'a> ClarityDatabase<'a> {
     ///
     /// Reads through the rollback-aware metadata layer; does not consult or populate the contract
     /// cache.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn read_contract(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -931,6 +947,7 @@ impl<'a> ClarityDatabase<'a> {
     ///
     /// Reads served from uncommitted pending metadata (e.g. a contract deployed earlier in the same
     /// rollback layer but not yet committed to the backing store) are not cached.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_contract(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1216,6 +1233,7 @@ impl ClarityDatabase<'_> {
     ///    at `tenure_height` has a stacks block height less than `current_height`
     ///
     /// If the block information isn't queryable, return `Ok(None)`
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_block_height_for_tenure_height(
         &mut self,
         tenure_height: u32,
@@ -1246,6 +1264,7 @@ impl ClarityDatabase<'_> {
     /// This is the burnchain block height of the parent of the Stacks block at the current Stacks
     /// block height (i.e. that returned by `get_index_block_header_hash` for
     /// `get_current_block_height`).
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_current_burnchain_block_height(&mut self) -> Result<u32, VmExecutionError> {
         let cur_stacks_height = self.store.get_current_block_height();
 
@@ -1670,6 +1689,7 @@ impl ClarityDatabase<'_> {
         Ok(variable_data)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn load_variable(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1735,6 +1755,7 @@ impl ClarityDatabase<'_> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn lookup_variable_unknown_descriptor(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1745,6 +1766,7 @@ impl ClarityDatabase<'_> {
         self.lookup_variable(contract_identifier, variable_name, &descriptor, epoch)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn lookup_variable(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1768,6 +1790,7 @@ impl ClarityDatabase<'_> {
 
     /// Same as lookup_variable, but returns the byte-size of the looked up
     ///  Clarity value as well as the value.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn lookup_variable_with_size(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1813,6 +1836,7 @@ impl ClarityDatabase<'_> {
         Ok(data)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn load_map(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1851,6 +1875,7 @@ impl ClarityDatabase<'_> {
         )
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn fetch_entry_unknown_descriptor(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1863,6 +1888,7 @@ impl ClarityDatabase<'_> {
     }
 
     /// Returns a Clarity optional type wrapping a found or not found result
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn fetch_entry(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -1894,6 +1920,7 @@ impl ClarityDatabase<'_> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn fetch_entry_with_size(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2036,6 +2063,7 @@ impl ClarityDatabase<'_> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     #[allow(clippy::too_many_arguments)]
     fn inner_set_entry(
         &mut self,
@@ -2100,6 +2128,7 @@ impl ClarityDatabase<'_> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn delete_entry(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2177,6 +2206,7 @@ impl ClarityDatabase<'_> {
         Ok(data)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn load_ft(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2203,6 +2233,7 @@ impl ClarityDatabase<'_> {
         Ok(data)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn load_nft(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2271,6 +2302,7 @@ impl ClarityDatabase<'_> {
         self.put_data(&key, &new_supply)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_ft_balance(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2328,6 +2360,7 @@ impl ClarityDatabase<'_> {
         Ok(supply)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_nft_owner(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2377,6 +2410,7 @@ impl ClarityDatabase<'_> {
         Ok(principal)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_nft_key_type(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,

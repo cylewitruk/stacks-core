@@ -426,6 +426,10 @@ pub fn ensure_no_migration_necessary<T: MarfTrieId>(conn: &mut Connection) -> Re
     Ok(())
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_block_identifier<T: MarfTrieId>(conn: &Connection, bhh: &T) -> Result<u32, Error> {
     conn.query_row(
         "SELECT block_id FROM marf_data WHERE block_hash = ?",
@@ -435,6 +439,10 @@ pub fn get_block_identifier<T: MarfTrieId>(conn: &Connection, bhh: &T) -> Result
     .map_err(|e| e.into())
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_mined_block_identifier<T: MarfTrieId>(conn: &Connection, bhh: &T) -> Result<u32, Error> {
     conn.query_row(
         "SELECT block_id FROM mined_blocks WHERE block_hash = ?",
@@ -444,6 +452,10 @@ pub fn get_mined_block_identifier<T: MarfTrieId>(conn: &Connection, bhh: &T) -> 
     .map_err(|e| e.into())
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_confirmed_block_identifier<T: MarfTrieId>(
     conn: &Connection,
     bhh: &T,
@@ -457,6 +469,10 @@ pub fn get_confirmed_block_identifier<T: MarfTrieId>(
     .map_err(|e| e.into())
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_unconfirmed_block_identifier<T: MarfTrieId>(
     conn: &Connection,
     bhh: &T,
@@ -494,6 +510,7 @@ pub fn get_block_hash<T: MarfTrieId>(conn: &Connection, local_id: u32) -> Result
 }
 
 /// Write a serialized trie to sqlite
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn write_trie_blob<T: MarfTrieId>(
     conn: &Connection,
     block_hash: &T,
@@ -516,6 +533,7 @@ pub fn write_trie_blob<T: MarfTrieId>(
 /// what guarantees that the blob is persisted.
 /// If block_id is Some(..), then an existing block ID's metadata will be updated.  Otherwise, a
 /// new row will be created.
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 fn inner_write_external_trie_blob<T: MarfTrieId>(
     conn: &Connection,
     block_hash: &T,
@@ -572,6 +590,7 @@ fn inner_write_external_trie_blob<T: MarfTrieId>(
 
 /// Update the row for an external trie blob -- i.e. we're migrating blobs from sqlite storage to
 /// file storage.
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn update_external_trie_blob<T: MarfTrieId>(
     conn: &Connection,
     block_hash: &T,
@@ -585,6 +604,7 @@ pub fn update_external_trie_blob<T: MarfTrieId>(
 /// Add a new row for an external trie blob -- i.e. we're creating a new trie whose blob will be
 /// stored in an external file, but its metadata will be in the DB.
 /// Returns the new row ID
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn write_external_trie_blob<T: MarfTrieId>(
     conn: &Connection,
     block_hash: &T,
@@ -595,6 +615,7 @@ pub fn write_external_trie_blob<T: MarfTrieId>(
 }
 
 /// Write a serialized trie blob for a trie that was mined
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn write_trie_blob_to_mined<T: MarfTrieId>(
     conn: &Connection,
     block_hash: &T,
@@ -624,6 +645,7 @@ pub fn write_trie_blob_to_mined<T: MarfTrieId>(
 }
 
 /// Write a serialized unconfirmed trie blob
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn write_trie_blob_to_unconfirmed<T: MarfTrieId>(
     conn: &Connection,
     block_hash: &T,
@@ -659,6 +681,10 @@ pub fn write_trie_blob_to_unconfirmed<T: MarfTrieId>(
 }
 
 /// Open a trie blob. Returns a Blob<'a> readable/writeable handle to it.
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn open_trie_blob(conn: &Connection, block_id: u32) -> Result<Blob<'_>, Error> {
     let blob = conn.blob_open(
         DatabaseName::Main,
@@ -671,6 +697,7 @@ pub fn open_trie_blob(conn: &Connection, block_id: u32) -> Result<Blob<'_>, Erro
 }
 
 /// Open a trie blob. Returns a Blob<'a> readable handle to it.
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn open_trie_blob_readonly(conn: &Connection, block_id: u32) -> Result<Blob<'_>, Error> {
     let blob = conn.blob_open(
         DatabaseName::Main,
@@ -703,6 +730,10 @@ pub fn read_all_block_hashes_and_roots<T: MarfTrieId>(
 }
 
 /// Read a node's hash from a sqlite-stored blob, given the block ID
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn read_node_hash_bytes<W: Write>(
     conn: &Connection,
     w: &mut W,
@@ -721,6 +752,10 @@ pub fn read_node_hash_bytes<W: Write>(
 }
 
 /// Read a node's hash from a sqlite-stored blob, given its block header hash
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn read_node_hash_bytes_by_bhh<W: Write, T: MarfTrieId>(
     conn: &Connection,
     w: &mut W,
@@ -738,6 +773,10 @@ pub fn read_node_hash_bytes_by_bhh<W: Write, T: MarfTrieId>(
 }
 
 /// Read a node and its hash from a sqlite-stored trie blob
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn read_node_type(
     conn: &Connection,
     block_id: u32,
@@ -754,6 +793,10 @@ pub fn read_node_type(
 }
 
 /// Read a node from a sqlite-stored trie blob, excluding its hash.
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn read_node_type_nohash(
     conn: &Connection,
     block_id: u32,
@@ -770,6 +813,10 @@ pub fn read_node_type_nohash(
 }
 
 /// Get the offset and length of a trie blob in the trie blobs file.
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_external_trie_offset_length(
     conn: &Connection,
     block_id: u32,
@@ -781,6 +828,10 @@ pub fn get_external_trie_offset_length(
 }
 
 /// Get the offset of a trie blob in the blobs file, given its block header hash.
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_external_trie_offset_length_by_bhh<T: MarfTrieId>(
     conn: &Connection,
     bhh: &T,
@@ -793,6 +844,10 @@ pub fn get_external_trie_offset_length_by_bhh<T: MarfTrieId>(
 
 /// Determine the offset in the blobs file at which the last trie ends.  This is also the offset at
 /// which the next trie will be appended.
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_external_blobs_length(conn: &Connection) -> Result<u64, Error> {
     let qry = "SELECT (external_offset + external_length) AS blobs_length FROM marf_data ORDER BY external_offset DESC LIMIT 1";
     let max_len: u64 = query_row(conn, qry, NO_PARAMS)?.unwrap_or(0);
@@ -832,6 +887,7 @@ pub fn set_migrated(conn: &Connection) -> Result<(), Error> {
     .map(|_| ())
 }
 
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn get_node_hash_bytes(
     conn: &Connection,
     block_id: u32,
@@ -848,6 +904,10 @@ pub fn get_node_hash_bytes(
     Ok(TrieHash(hash_buff))
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn get_node_hash_bytes_by_bhh<T: MarfTrieId>(
     conn: &Connection,
     bhh: &T,
@@ -863,6 +923,10 @@ pub fn get_node_hash_bytes_by_bhh<T: MarfTrieId>(
     Ok(TrieHash(hash_buff))
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn tx_lock_bhh_for_extension<T: MarfTrieId>(
     tx: &Connection,
     bhh: &T,
@@ -903,6 +967,10 @@ pub fn tx_lock_bhh_for_extension<T: MarfTrieId>(
     Ok(true)
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn lock_bhh_for_extension<T: MarfTrieId>(
     tx: &Transaction,
     bhh: &T,
@@ -912,6 +980,10 @@ pub fn lock_bhh_for_extension<T: MarfTrieId>(
     Ok(true)
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn count_blocks(conn: &Connection) -> Result<u32, Error> {
     let result = conn.query_row(
         "SELECT IFNULL(MAX(block_id), 0) AS count FROM marf_data WHERE unconfirmed = 0",
@@ -921,6 +993,10 @@ pub fn count_blocks(conn: &Connection) -> Result<u32, Error> {
     Ok(result)
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn is_unconfirmed_block(conn: &Connection, block_id: u32) -> Result<bool, Error> {
     let res: i64 = conn.query_row(
         "SELECT unconfirmed FROM marf_data WHERE block_id = ?1",
@@ -938,6 +1014,10 @@ pub fn drop_lock<T: MarfTrieId>(conn: &Connection, bhh: &T) -> Result<(), Error>
     Ok(())
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 pub fn drop_unconfirmed_trie<T: MarfTrieId>(conn: &Connection, bhh: &T) -> Result<(), Error> {
     debug!("Drop unconfirmed trie sqlite blob {}", bhh);
     conn.execute(
@@ -948,6 +1028,7 @@ pub fn drop_unconfirmed_trie<T: MarfTrieId>(conn: &Connection, bhh: &T) -> Resul
     Ok(())
 }
 
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn clear_lock_data(conn: &Connection) -> Result<(), Error> {
     conn.execute("DELETE FROM block_extension_locks", NO_PARAMS)?;
     Ok(())

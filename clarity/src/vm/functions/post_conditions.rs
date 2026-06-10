@@ -451,6 +451,7 @@ pub fn special_as_contract(
 
         let contract_principal: PrincipalData =
             invoke_ctx.contract_context.contract_identifier.clone().into();
+        crate::profiler::record_name!(contract_principal.to_string());
         let nested_view = invoke_ctx.with_principal(contract_principal.clone());
 
         evaluate_body_with_allowance_check(
