@@ -58,6 +58,7 @@ pub fn special_filter(
     runtime_cost(ClarityCostFunction::Filter, env, 0)?;
 
     let function_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(function_name);
 
     let mut sequence = eval(&args[1], env, context)?;
     let function = lookup_function(function_name, env)?;
@@ -97,6 +98,7 @@ pub fn special_fold(
     runtime_cost(ClarityCostFunction::Fold, env, 0)?;
 
     let function_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(function_name);
 
     let function = lookup_function(function_name, env)?;
     let mut sequence = eval(&args[1], env, context)?;
@@ -130,6 +132,7 @@ pub fn special_map(
     runtime_cost(ClarityCostFunction::Map, env, args.len())?;
 
     let function_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(function_name);
     let function = lookup_function(function_name, env)?;
 
     // Let's consider a function f (f a b c ...)

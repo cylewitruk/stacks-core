@@ -81,6 +81,7 @@ pub fn lookup_reserved_variable(
                 Ok(Some(sponsor))
             }
             NativeVariables::BlockHeight => {
+                let _span = crate::profiler::profile!("lookup_reserved_variable", "block-height");
                 runtime_cost(ClarityCostFunction::FetchVar, env, 1)?;
                 // In epoch 2.x, the `block-height` keyword returns the Stacks block height.
                 // For Clarity 1 and Clarity 2 contracts executing in epoch 3, `block-height`
@@ -97,6 +98,8 @@ pub fn lookup_reserved_variable(
                 }
             }
             NativeVariables::BurnBlockHeight => {
+                let _span =
+                    crate::profiler::profile!("lookup_reserved_variable", "burn-block-height");
                 runtime_cost(ClarityCostFunction::FetchVar, env, 1)?;
                 let burn_block_height = env
                     .global_context
@@ -108,6 +111,8 @@ pub fn lookup_reserved_variable(
             NativeVariables::NativeTrue => Ok(Some(Value::Bool(true))),
             NativeVariables::NativeFalse => Ok(Some(Value::Bool(false))),
             NativeVariables::TotalLiquidMicroSTX => {
+                let _span =
+                    crate::profiler::profile!("lookup_reserved_variable", "total-liquid-ustx");
                 runtime_cost(ClarityCostFunction::FetchVar, env, 1)?;
                 let liq = env.global_context.database.get_total_liquid_ustx()?;
                 Ok(Some(Value::UInt(liq)))
@@ -125,11 +130,14 @@ pub fn lookup_reserved_variable(
                 Ok(Some(Value::UInt(chain_id.into())))
             }
             NativeVariables::StacksBlockHeight => {
+                let _span =
+                    crate::profiler::profile!("lookup_reserved_variable", "stacks-block-height");
                 runtime_cost(ClarityCostFunction::FetchVar, env, 1)?;
                 let block_height = env.global_context.database.get_current_block_height();
                 Ok(Some(Value::UInt(block_height as u128)))
             }
             NativeVariables::TenureHeight => {
+                let _span = crate::profiler::profile!("lookup_reserved_variable", "tenure-height");
                 runtime_cost(ClarityCostFunction::FetchVar, env, 1)?;
                 let tenure_height = env.global_context.database.get_tenure_height()?;
                 Ok(Some(Value::UInt(tenure_height as u128)))
@@ -139,6 +147,8 @@ pub fn lookup_reserved_variable(
                 Ok(Some(Value::Principal(PrincipalData::Contract(contract))))
             }
             NativeVariables::StacksBlockTime => {
+                let _span =
+                    crate::profiler::profile!("lookup_reserved_variable", "stacks-block-time");
                 runtime_cost(ClarityCostFunction::FetchVar, env, 1)?;
                 let block_time = env.global_context.database.get_current_block_time()?;
                 Ok(Some(Value::UInt(u128::from(block_time))))

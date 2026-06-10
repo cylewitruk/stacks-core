@@ -70,6 +70,7 @@ pub fn special_contract_call(
     runtime_cost(ClarityCostFunction::ContractCall, env, 0)?;
 
     let function_name = args[1].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(function_name);
     let rest_args_slice = &args[2..];
     let rest_args_len = rest_args_slice.len();
     let mut rest_args = Vec::with_capacity(rest_args_len);
@@ -379,6 +380,7 @@ pub fn special_fetch_entry_v200(
     check_argument_count(2, args)?;
 
     let map_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let key = eval(&args[1], env, context)?;
 
@@ -412,6 +414,7 @@ pub fn special_fetch_entry_v205(
     check_argument_count(2, args)?;
 
     let map_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let key = eval(&args[1], env, context)?;
 
@@ -488,6 +491,7 @@ pub fn special_set_entry_v200(
     let value = eval(&args[2], env, context)?;
 
     let map_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -531,6 +535,7 @@ pub fn special_set_entry_v205(
     let value = eval(&args[2], env, context)?;
 
     let map_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -574,6 +579,7 @@ pub fn special_insert_entry_v200(
     let value = eval(&args[2], env, context)?;
 
     let map_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -618,6 +624,7 @@ pub fn special_insert_entry_v205(
     let value = eval(&args[2], env, context)?;
 
     let map_name = args[0].match_atom().ok_or(CheckErrorKind::ExpectedName)?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -758,6 +765,7 @@ pub fn special_get_block_info(
     let property_name = args[0]
         .match_atom()
         .ok_or(CheckErrorKind::GetBlockInfoExpectPropertyName)?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let version = env.contract_context.get_clarity_version();
 
@@ -909,6 +917,7 @@ pub fn special_get_burn_block_info(
     let property_name = args[0]
         .match_atom()
         .ok_or(CheckErrorKind::GetBlockInfoExpectPropertyName)?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let block_info_prop = BurnBlockInfoProperty::lookup_by_name(property_name).ok_or(
         CheckErrorKind::NoSuchBurnBlockInfoProperty(property_name.to_string()),
@@ -1011,6 +1020,7 @@ pub fn special_get_stacks_block_info(
     let property_name = args[0]
         .match_atom()
         .ok_or(CheckErrorKind::GetStacksBlockInfoExpectPropertyName)?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let block_info_prop = StacksBlockInfoProperty::lookup_by_name(property_name).ok_or(
         CheckErrorKind::NoSuchStacksBlockInfoProperty(property_name.to_string()),
@@ -1093,6 +1103,7 @@ pub fn special_get_tenure_info(
     let property_name = args[0]
         .match_atom()
         .ok_or(CheckErrorKind::GetTenureInfoExpectPropertyName)?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let block_info_prop = TenureInfoProperty::lookup_by_name(property_name)
         .ok_or(CheckErrorKind::GetTenureInfoExpectPropertyName)?;
