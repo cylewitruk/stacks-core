@@ -415,6 +415,11 @@ where
         // Grab all profiler roots for this segment.
         let segment_profiler_roots = if measure {
             stacks_profiler::Profiler::take_results()
+                .with_context(|| {
+                    format!(
+                        "Failed to drain profiler results for segment {seg_ix} from origin block {origin_id}"
+                    )
+                })?
         } else {
             vec![]
         };

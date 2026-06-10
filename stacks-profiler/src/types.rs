@@ -13,10 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Core value types used throughout the profiler.
-//!
-//! This module defines the data-carrying types that appear in profile results:
-//! [`RecordValue`], [`Record`], [`Counter`], and [`Tag`].
+//! Core value types: [`RecordValue`], [`Record`], [`Counter`], and [`Tag`].
 
 /// A dynamically-typed value that can be attached to a span via [`record!`](crate::record).
 #[derive(Debug, Clone)]
@@ -40,19 +37,19 @@ impl From<i64> for RecordValue {
     }
 }
 impl From<&str> for RecordValue {
-    #[inline(always)]
+    #[inline]
     fn from(v: &str) -> Self {
         RecordValue::Str(v.into())
     }
 }
 impl From<String> for RecordValue {
-    #[inline(always)]
+    #[inline]
     fn from(v: String) -> Self {
         RecordValue::Str(v.into_boxed_str())
     }
 }
 impl From<&[u8]> for RecordValue {
-    #[inline(always)]
+    #[inline]
     fn from(v: &[u8]) -> Self {
         RecordValue::Bytes(v.into())
     }
@@ -75,33 +72,24 @@ impl std::fmt::Display for RecordValue {
     }
 }
 
-/// A key/value record attached to a span via [`record!`](crate::record) or
-/// [`Profiler::record`](crate::Profiler::record).
-///
-/// Records are per-occurrence: each call appends a new entry (they are not aggregated).  Use
-/// [`Counter`] for additive metrics.
+/// A per-occurrence key/value record attached to a span via [`record!`](crate::record).
+/// Use [`Counter`] for additive metrics.
 #[derive(Debug, Clone)]
 pub struct Record {
     pub key: &'static str,
     pub value: RecordValue,
 }
 
-/// An aggregated counter attached to a span via [`counter_add!`](crate::counter_add) or
-/// [`Profiler::counter_add`](crate::Profiler::counter_add).
-///
-/// Counters with the same key on the same node are summed (saturating).
+/// An aggregated counter on a span via [`counter_add!`](crate::counter_add).
+/// Same-key counters are summed (saturating).
 #[derive(Debug, Clone)]
 pub struct Counter {
     pub key: &'static str,
     pub value: u64,
 }
 
-/// A lightweight, `Copy` discriminator for spans that share the same [`SpanId`](crate::SpanId) but
-/// represent distinct logical instances (e.g., different transaction indices within a block).
-///
-/// Spans with the same `SpanId` but different tags are stored as separate nodes in the profile
-/// tree.  Avoid very-high-cardinality tags at hot callsites, as each distinct `(SpanId, Tag)` pair
-/// allocates its own node.
+/// A `Copy` discriminator for spans sharing the same [`SpanId`](crate::SpanId) (e.g., different
+/// transaction indices). Each distinct `(SpanId, Tag)` pair gets its own tree node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tag {
     U64(u64),
@@ -153,7 +141,7 @@ impl From<&'static str> for Tag {
 }
 
 impl From<String> for Tag {
-    #[inline(always)]
+    #[inline]
     fn from(v: String) -> Self {
         Tag::Str(crate::intern_tag_str(v))
     }
@@ -167,5 +155,49 @@ impl std::fmt::Display for Tag {
             Tag::Usize(v) => write!(f, "{v}"),
             Tag::Str(v) => write!(f, "{v}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RecordValue, Tag};
+
+    #[test]
+    fn record_value_conversions_and_display() {
+        assert_eq!(RecordValue::from(7u64).to_string(), "7");
+        assert_eq!(RecordValue::from(-7i64).to_string(), "-7");
+        assert_eq!(RecordValue::from("hello").to_string(), "hello");
+        assert_eq!(
+            RecordValue::from(String::from("owned")).to_string(),
+            "owned"
+        );
+        assert_eq!(RecordValue::from(&[0xabu8, 0xcd][..]).to_string(), "0xabcd");
+    }
+
+    #[test]
+    fn tag_conversions_and_display() {
+        let tags = [
+            Tag::from(7u64),
+            Tag::from(7u32),
+            Tag::from(-7i64),
+            Tag::from(-7i32),
+            Tag::from(7usize),
+            Tag::from("static-tag"),
+        ];
+
+        assert_eq!(tags[0], Tag::U64(7));
+        assert_eq!(tags[1], Tag::U64(7));
+        assert_eq!(tags[2], Tag::I64(-7));
+        assert_eq!(tags[3], Tag::I64(-7));
+        assert_eq!(tags[4], Tag::Usize(7));
+        assert_eq!(tags[5], Tag::Str("static-tag"));
+        assert_eq!(
+            tags.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            vec!["7", "7", "-7", "-7", "7", "static-tag"]
+        );
+
+        let owned = Tag::from(String::from("owned-tag"));
+        assert_eq!(owned.to_string(), "owned-tag");
+        assert!(matches!(owned, Tag::Str("owned-tag")));
     }
 }

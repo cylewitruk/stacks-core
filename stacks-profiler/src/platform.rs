@@ -13,49 +13,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Platform-specific per-thread CPU time.
-//!
-//! Each platform module implements [`ThreadCpuTimer`] on a zero-sized struct, and a single
-//! `cfg`-gated `use` selects the active implementation.  The public [`thread_cpu_nanos`] free
-//! function delegates to whichever platform was selected at compile time.
-//!
-//! Returns the cumulative CPU time (user + kernel) consumed by the calling thread, in nanoseconds.
+//! Platform-specific per-thread CPU time (user + kernel), in nanoseconds.
 //!
 //! | Platform | Source | Typical resolution |
 //! |----------|--------|--------------------|
 //! | macOS | `clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)` | sub-microsecond |
 //! | Linux | `clock_gettime(CLOCK_THREAD_CPUTIME_ID)` | sub-microsecond |
-//! | Windows | `GetThreadTimes` (kernel32) | ~15.6 ms (system clock tick) |
+//! | Windows | `GetThreadTimes` (kernel32) | ~15.6 ms |
 //! | Other | — | returns 0 (unsupported) |
 //!
-//! # Windows caveats
-//!
-//! `GetThreadTimes` reports CPU time in `FILETIME` units (100 ns intervals), but the underlying
-//! counter only advances once per system clock interrupt, which defaults to ~15.625 ms (64 Hz).
-//! This means:
-//!
-//! - Individual short spans may report **0 ns** of CPU time.
-//! - Aggregated totals across many calls converge to accurate values.
-//! - Wall-time minus CPU-time ("wait time") is unreliable for sub-16 ms spans.
-//!
-//! The alternative `QueryThreadCycleTime` offers cycle-level precision but returns CPU cycles
-//! rather than wall-clock nanoseconds; converting back requires knowledge of the effective clock
-//! frequency, which varies under dynamic frequency scaling. `GetThreadTimes` was chosen for its
-//! direct time-unit semantics and simplicity.
+//! **Windows caveat:** `GetThreadTimes` only advances once per system clock interrupt (~15.6 ms),
+//! so short spans may report 0 ns of CPU time. Aggregated totals converge to accurate values.
 
-// ── trait ────────────────────────────────────────────────────────────────────
-
-/// Contract that every platform backend must satisfy.
-///
-/// Implementations live on zero-sized structs so the compiler can monomorphise and inline the call
-/// — no vtable overhead.
 trait ThreadCpuTimer {
-    /// Cumulative CPU time (user + kernel) of the calling thread, in nanoseconds.  Must be
-    /// monotonically non-decreasing within a thread.
+    /// Cumulative CPU time (user + kernel) of the calling thread, in nanoseconds.
+    /// Must be monotonically non-decreasing within a thread.
     fn thread_cpu_nanos() -> u64;
 }
-
-// ── MacOS ────────────────────────────────────────────────────────────────────
 
 #[cfg(target_os = "macos")]
 mod darwin {
@@ -74,8 +48,6 @@ mod darwin {
         }
     }
 
-    /// Sanity-check that both available macOS methods of reading the thread CPU timer yield
-    /// consistent results.
     #[test]
     fn timer_equivalence_smoke() {
         fn via_timespec() -> u64 {
@@ -109,8 +81,6 @@ mod darwin {
     }
 }
 
-// ── Linux ────────────────────────────────────────────────────────────────────
-
 #[cfg(target_os = "linux")]
 mod linux {
     pub(super) struct Timer;
@@ -131,12 +101,9 @@ mod linux {
     }
 }
 
-// ── Windows ──────────────────────────────────────────────────────────────────
-
 #[cfg(target_os = "windows")]
 mod windows {
-    /// Win32 FILETIME — two 32-bit parts forming a 64-bit count of 100-nanosecond intervals since
-    /// 1601-01-01 UTC.
+    /// Win32 FILETIME (100-nanosecond intervals).
     #[repr(C)]
     struct FILETIME {
         low: u32,
@@ -151,14 +118,9 @@ mod windows {
         }
     }
 
-    #[allow(non_snake_case)] // Windows FFI uses PascalCase
+    #[allow(non_snake_case)]
     unsafe extern "system" {
-        /// Returns a pseudo-handle for the calling thread (no need to close).
         fn GetCurrentThread() -> *mut core::ffi::c_void;
-
-        /// Retrieves timing information for the specified thread.
-        ///
-        /// <https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreadtimes>
         fn GetThreadTimes(
             hThread: *mut core::ffi::c_void,
             lpCreationTime: *mut FILETIME,
@@ -193,8 +155,6 @@ mod windows {
     }
 }
 
-// ── Unsupported ──────────────────────────────────────────────────────────────
-
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod unsupported {
     pub(super) struct Timer;
@@ -208,8 +168,6 @@ mod unsupported {
     }
 }
 
-// ── Platform selection ───────────────────────────────────────────────────────
-
 #[cfg(target_os = "macos")]
 use darwin::Timer as PlatformTimer;
 #[cfg(target_os = "linux")]
@@ -219,8 +177,8 @@ use unsupported::Timer as PlatformTimer;
 #[cfg(target_os = "windows")]
 use windows::Timer as PlatformTimer;
 
-/// Returns the cumulative CPU time (user + kernel) of the calling thread in nanoseconds. See
-/// [module-level docs](self) for per-platform resolution and caveats.
+/// Cumulative CPU time (user + kernel) of the calling thread in nanoseconds.
+/// See [module-level docs](self) for per-platform resolution.
 #[inline(always)]
 pub fn thread_cpu_nanos() -> u64 {
     PlatformTimer::thread_cpu_nanos()

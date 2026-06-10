@@ -26,6 +26,7 @@ exclude = ["contrib/tools/config-docs-generator"]
 [workspace.dependencies]
 # Local dependencies
 stacks-profiler = { path = "stacks-profiler" }
+stacks-profiler-macros = { path = "stacks-profiler-macros" }
 
 # External dependencies
 ed25519-dalek = { version = "2.1.1", default-features = false }
@@ -66,6 +67,7 @@ bollard = { version = "0.20.1", default-features = false, features = ["http", "p
 tokio = { version = "1.49.0", default-features = false, features = ["signal", "macros", "rt-multi-thread", "rt"] }
 futures = { version = "0.3.31", default-features = false }
 criterion = { version = "0.8.2", default-features = false, features = ["html_reports"] }
+trybuild = { version = "1.0.116", default-features = false }
 cliclack = { version = "0.3.8", default-features = false }
 console = { version = "0.16.2", default-features = false, features = ["std", "unicode-width", "ansi-parsing"] }
 rapidhash = { version = "4.3.0", default-features = false, features = ["std"] }
