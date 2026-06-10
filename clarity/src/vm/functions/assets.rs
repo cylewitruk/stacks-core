@@ -125,6 +125,7 @@ pub fn stx_transfer_consolidated(
     amount: u128,
     memo: &BuffData,
 ) -> Result<Value, VmExecutionError> {
+    let _span = crate::profiler::profile!("stx_transfer_consolidated");
     if amount == 0 {
         return clarity_ecode!(StxErrorCodes::NON_POSITIVE_AMOUNT);
     }
@@ -331,6 +332,7 @@ pub fn special_mint_token(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Bad token name".to_string(),
         ))?;
+    crate::profiler::record_name!(token_name);
 
     let amount = eval(&args[1], env, context)?;
     let to = eval(&args[2], env, context)?;
@@ -758,6 +760,7 @@ pub fn special_transfer_token(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Bad token name".to_string(),
         ))?;
+    crate::profiler::record_name!(token_name);
 
     let amount = eval(&args[1], env, context)?;
     let from = eval(&args[2], env, context)?;
@@ -863,6 +866,7 @@ pub fn special_get_balance(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Bad token name".to_string(),
         ))?;
+    crate::profiler::record_name!(token_name);
 
     let owner = eval(&args[1], env, context)?;
 
@@ -1006,6 +1010,7 @@ pub fn special_get_token_supply(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Bad token name".to_string(),
         ))?;
+    crate::profiler::record_name!(token_name);
 
     let supply = env
         .global_context
@@ -1028,6 +1033,7 @@ pub fn special_burn_token(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Bad token name".to_string(),
         ))?;
+    crate::profiler::record_name!(token_name);
 
     let amount = eval(&args[1], env, context)?;
     let from = eval(&args[2], env, context)?;
@@ -1099,6 +1105,7 @@ pub fn special_burn_asset_v200(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Bad token name".to_string(),
         ))?;
+    crate::profiler::record_name!(asset_name);
 
     let asset = eval(&args[1], env, context)?;
     let sender = eval(&args[2], env, context)?;
@@ -1195,6 +1202,7 @@ pub fn special_burn_asset_v205(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Bad token name".to_string(),
         ))?;
+    crate::profiler::record_name!(asset_name);
 
     let asset = eval(&args[1], env, context)?;
     let sender = eval(&args[2], env, context)?;

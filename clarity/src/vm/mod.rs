@@ -166,6 +166,8 @@ fn lookup_variable(
     context: &LocalContext,
     env: &mut Environment,
 ) -> Result<Value, VmExecutionError> {
+    let _span = crate::profiler::profile!("lookup_variable", name.to_string());
+
     if name.starts_with(char::is_numeric) || name.starts_with('\'') {
         Err(
             VmInternalError::BadSymbolicRepresentation(format!("Unexpected variable name: {name}"))
@@ -204,6 +206,8 @@ pub fn lookup_function(
     name: &str,
     env: &mut Environment,
 ) -> Result<CallableType, VmExecutionError> {
+    let _span = crate::profiler::profile!("lookup_function", name.to_string());
+
     runtime_cost(ClarityCostFunction::LookupFunction, env, 0)?;
 
     if let Some(result) =
@@ -247,8 +251,9 @@ pub fn apply(
         return Err(RuntimeError::MaxStackDepthReached.into());
     }
 
-    if let CallableType::SpecialFunction(_, function) = function {
+    if let CallableType::SpecialFunction(rust_name, function, clarity_name) = function {
         env.call_stack.insert(&identifier, track_recursion);
+        let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
         let mut resp = function(args, env, context);
         add_stack_trace(&mut resp, env);
         env.call_stack.remove(&identifier, track_recursion)?;
@@ -282,12 +287,20 @@ pub fn apply(
 
         env.call_stack.insert(&identifier, track_recursion);
         let mut resp = match function {
-            CallableType::NativeFunction(_, function, cost_function) => {
+            CallableType::NativeFunction(rust_name, function, cost_function, clarity_name) => {
+                let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
                 runtime_cost(cost_function.clone(), env, evaluated_args.len())
                     .map_err(VmExecutionError::from)
                     .and_then(|_| function.apply(evaluated_args, env))
             }
-            CallableType::NativeFunction205(_, function, cost_function, cost_input_handle) => {
+            CallableType::NativeFunction205(
+                rust_name,
+                function,
+                cost_function,
+                cost_input_handle,
+                clarity_name,
+            ) => {
+                let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
                 let cost_input = if env.epoch() >= &StacksEpochId::Epoch2_05 {
                     cost_input_handle(evaluated_args.as_slice())?
                 } else {
@@ -297,7 +310,14 @@ pub fn apply(
                     .map_err(VmExecutionError::from)
                     .and_then(|_| function.apply(evaluated_args, env))
             }
-            CallableType::UserFunction(function) => function.apply(&evaluated_args, env),
+            CallableType::UserFunction(function) => {
+                let _span = crate::profiler::begin_user_fn_span(
+                    function.name(),
+                    &function.define_type,
+                    function.get_identifier().to_string(),
+                );
+                function.apply(&evaluated_args, env)
+            }
             _ => return Err(VmInternalError::Expect("Should be unreachable.".into()).into()),
         };
         add_stack_trace(&mut resp, env);

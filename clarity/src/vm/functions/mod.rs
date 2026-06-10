@@ -215,385 +215,478 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
     use crate::vm::callables::CallableType::{NativeFunction, NativeFunction205, SpecialFunction};
     use crate::vm::functions::NativeFunctions::*;
     if let Some(native_function) = NativeFunctions::lookup_by_name_at_version(name, version) {
+        // Derive the Clarity-facing name from the enum once; it is the same &'static str
+        // used in the Clarity source code (e.g. "+", "tuple", "fold").
+        let cn = native_function.get_name_str();
         let callable = match native_function {
             Add => NativeFunction(
                 "native_add",
                 NativeHandle::MoreArg(&arithmetic::native_add),
                 ClarityCostFunction::Add,
+                cn,
             ),
             Subtract => NativeFunction(
                 "native_sub",
                 NativeHandle::MoreArg(&arithmetic::native_sub),
                 ClarityCostFunction::Sub,
+                cn,
             ),
             Multiply => NativeFunction(
                 "native_mul",
                 NativeHandle::MoreArg(&arithmetic::native_mul),
                 ClarityCostFunction::Mul,
+                cn,
             ),
             Divide => NativeFunction(
                 "native_div",
                 NativeHandle::MoreArg(&arithmetic::native_div),
                 ClarityCostFunction::Div,
+                cn,
             ),
-            CmpGeq => SpecialFunction("special_geq", &arithmetic::special_geq),
-            CmpLeq => SpecialFunction("special_leq", &arithmetic::special_leq),
-            CmpLess => SpecialFunction("special_le", &arithmetic::special_less),
-            CmpGreater => SpecialFunction("special_ge", &arithmetic::special_greater),
+            CmpGeq => SpecialFunction("special_geq", &arithmetic::special_geq, cn),
+            CmpLeq => SpecialFunction("special_leq", &arithmetic::special_leq, cn),
+            CmpLess => SpecialFunction("special_le", &arithmetic::special_less, cn),
+            CmpGreater => SpecialFunction("special_ge", &arithmetic::special_greater, cn),
             ToUInt => NativeFunction(
                 "native_to_uint",
                 NativeHandle::SingleArg(&arithmetic::native_to_uint),
                 ClarityCostFunction::IntCast,
+                cn,
             ),
             ToInt => NativeFunction(
                 "native_to_int",
                 NativeHandle::SingleArg(&arithmetic::native_to_int),
                 ClarityCostFunction::IntCast,
+                cn,
             ),
             Modulo => NativeFunction(
                 "native_mod",
                 NativeHandle::DoubleArg(&arithmetic::native_mod),
                 ClarityCostFunction::Mod,
+                cn,
             ),
             Power => NativeFunction(
                 "native_pow",
                 NativeHandle::DoubleArg(&arithmetic::native_pow),
                 ClarityCostFunction::Pow,
+                cn,
             ),
             Sqrti => NativeFunction(
                 "native_sqrti",
                 NativeHandle::SingleArg(&arithmetic::native_sqrti),
                 ClarityCostFunction::Sqrti,
+                cn,
             ),
             Log2 => NativeFunction(
                 "native_log2",
                 NativeHandle::SingleArg(&arithmetic::native_log2),
                 ClarityCostFunction::Log2,
+                cn,
             ),
             BitwiseXor => NativeFunction(
                 "native_xor",
                 NativeHandle::DoubleArg(&arithmetic::native_xor),
                 ClarityCostFunction::Xor,
+                cn,
             ),
-            And => SpecialFunction("special_and", &boolean::special_and),
-            Or => SpecialFunction("special_or", &boolean::special_or),
+            And => SpecialFunction("special_and", &boolean::special_and, cn),
+            Or => SpecialFunction("special_or", &boolean::special_or, cn),
             Not => NativeFunction(
                 "native_not",
                 NativeHandle::SingleArg(&boolean::native_not),
                 ClarityCostFunction::Not,
+                cn,
             ),
             Equals => NativeFunction205(
                 "native_eq",
                 NativeHandle::MoreArgEnv(&native_eq),
                 ClarityCostFunction::Eq,
                 &cost_input_sized_vararg,
+                cn,
             ),
-            If => SpecialFunction("special_if", &special_if),
-            Let => SpecialFunction("special_let", &special_let),
-            FetchVar => SpecialFunction("special_var-get", &database::special_fetch_variable),
-            SetVar => SpecialFunction("special_set-var", &database::special_set_variable),
-            Map => SpecialFunction("special_map", &sequences::special_map),
-            Filter => SpecialFunction("special_filter", &sequences::special_filter),
+            If => SpecialFunction("special_if", &special_if, cn),
+            Let => SpecialFunction("special_let", &special_let, cn),
+            FetchVar => SpecialFunction("special_var-get", &database::special_fetch_variable, cn),
+            SetVar => SpecialFunction("special_set-var", &database::special_set_variable, cn),
+            Map => SpecialFunction("special_map", &sequences::special_map, cn),
+            Filter => SpecialFunction("special_filter", &sequences::special_filter, cn),
             BuffToIntLe => NativeFunction(
                 "native_buff_to_int_le",
                 NativeHandle::SingleArg(&conversions::native_buff_to_int_le),
                 ClarityCostFunction::BuffToIntLe,
+                cn,
             ),
             BuffToUIntLe => NativeFunction(
                 "native_buff_to_uint_le",
                 NativeHandle::SingleArg(&conversions::native_buff_to_uint_le),
                 ClarityCostFunction::BuffToUIntLe,
+                cn,
             ),
             BuffToIntBe => NativeFunction(
                 "native_buff_to_int_be",
                 NativeHandle::SingleArg(&conversions::native_buff_to_int_be),
                 ClarityCostFunction::BuffToIntBe,
+                cn,
             ),
             BuffToUIntBe => NativeFunction(
                 "native_buff_to_uint_be",
                 NativeHandle::SingleArg(&conversions::native_buff_to_uint_be),
                 ClarityCostFunction::BuffToUIntBe,
+                cn,
             ),
             StringToInt => NativeFunction(
                 "native_string_to_int",
                 NativeHandle::SingleArg(&conversions::native_string_to_int),
                 ClarityCostFunction::StringToInt,
+                cn,
             ),
             StringToUInt => NativeFunction(
                 "native_string_to_uint",
                 NativeHandle::SingleArg(&conversions::native_string_to_uint),
                 ClarityCostFunction::StringToUInt,
+                cn,
             ),
             IntToAscii => NativeFunction(
                 "native_int_to_ascii",
                 NativeHandle::SingleArg(&conversions::native_int_to_ascii),
                 ClarityCostFunction::IntToAscii,
+                cn,
             ),
             IntToUtf8 => NativeFunction(
                 "native_int_to_utf8",
                 NativeHandle::SingleArg(&conversions::native_int_to_utf8),
                 ClarityCostFunction::IntToUtf8,
+                cn,
             ),
-            IsStandard => SpecialFunction("special_is_standard", &principals::special_is_standard),
+            IsStandard => {
+                SpecialFunction("special_is_standard", &principals::special_is_standard, cn)
+            }
             PrincipalDestruct => SpecialFunction(
                 "special_principal_destruct",
                 &principals::special_principal_destruct,
+                cn,
             ),
             PrincipalConstruct => SpecialFunction(
                 "special_principal_construct",
                 &principals::special_principal_construct,
+                cn,
             ),
-            Fold => SpecialFunction("special_fold", &sequences::special_fold),
-            Concat => SpecialFunction("special_concat", &sequences::special_concat),
-            AsMaxLen => SpecialFunction("special_as_max_len", &sequences::special_as_max_len),
-            Append => SpecialFunction("special_append", &sequences::special_append),
+            Fold => SpecialFunction("special_fold", &sequences::special_fold, cn),
+            Concat => SpecialFunction("special_concat", &sequences::special_concat, cn),
+            AsMaxLen => SpecialFunction("special_as_max_len", &sequences::special_as_max_len, cn),
+            Append => SpecialFunction("special_append", &sequences::special_append, cn),
             Len => NativeFunction(
                 "native_len",
                 NativeHandle::SingleArg(&sequences::native_len),
                 ClarityCostFunction::Len,
+                cn,
             ),
             ElementAt | ElementAtAlias => NativeFunction(
                 "native_element_at",
                 NativeHandle::DoubleArg(&sequences::native_element_at),
                 ClarityCostFunction::ElementAt,
+                cn,
             ),
             IndexOf | IndexOfAlias => NativeFunction205(
                 "native_index_of",
                 NativeHandle::DoubleArg(&sequences::native_index_of),
                 ClarityCostFunction::IndexOf,
                 &cost_input_sized_vararg,
+                cn,
             ),
-            Slice => SpecialFunction("special_slice", &sequences::special_slice),
-            ListCons => SpecialFunction("special_list_cons", &sequences::list_cons),
-            FetchEntry => SpecialFunction("special_map-get?", &database::special_fetch_entry),
-            SetEntry => SpecialFunction("special_set-entry", &database::special_set_entry),
-            InsertEntry => SpecialFunction("special_insert-entry", &database::special_insert_entry),
-            DeleteEntry => SpecialFunction("special_delete-entry", &database::special_delete_entry),
-            TupleCons => SpecialFunction("special_tuple", &tuples::tuple_cons),
-            TupleGet => SpecialFunction("special_get-tuple", &tuples::tuple_get),
+            Slice => SpecialFunction("special_slice", &sequences::special_slice, cn),
+            ListCons => SpecialFunction("special_list_cons", &sequences::list_cons, cn),
+            FetchEntry => SpecialFunction("special_map-get?", &database::special_fetch_entry, cn),
+            SetEntry => SpecialFunction("special_set-entry", &database::special_set_entry, cn),
+            InsertEntry => {
+                SpecialFunction("special_insert-entry", &database::special_insert_entry, cn)
+            }
+            DeleteEntry => {
+                SpecialFunction("special_delete-entry", &database::special_delete_entry, cn)
+            }
+            TupleCons => SpecialFunction("special_tuple", &tuples::tuple_cons, cn),
+            TupleGet => SpecialFunction("special_get-tuple", &tuples::tuple_get, cn),
             TupleMerge => NativeFunction205(
                 "native_merge-tuple",
                 NativeHandle::DoubleArg(&tuples::tuple_merge),
                 ClarityCostFunction::TupleMerge,
                 &cost_input_sized_vararg,
+                cn,
             ),
             Begin => NativeFunction(
                 "native_begin",
                 NativeHandle::MoreArg(&native_begin),
                 ClarityCostFunction::Begin,
+                cn,
             ),
             Hash160 => NativeFunction205(
                 "native_hash160",
                 NativeHandle::SingleArg(&crypto::native_hash160),
                 ClarityCostFunction::Hash160,
                 &cost_input_sized_vararg,
+                cn,
             ),
             Sha256 => NativeFunction205(
                 "native_sha256",
                 NativeHandle::SingleArg(&crypto::native_sha256),
                 ClarityCostFunction::Sha256,
                 &cost_input_sized_vararg,
+                cn,
             ),
             Sha512 => NativeFunction205(
                 "native_sha512",
                 NativeHandle::SingleArg(&crypto::native_sha512),
                 ClarityCostFunction::Sha512,
                 &cost_input_sized_vararg,
+                cn,
             ),
             Sha512Trunc256 => NativeFunction205(
                 "native_sha512trunc256",
                 NativeHandle::SingleArg(&crypto::native_sha512trunc256),
                 ClarityCostFunction::Sha512t256,
                 &cost_input_sized_vararg,
+                cn,
             ),
             Keccak256 => NativeFunction205(
                 "native_keccak256",
                 NativeHandle::SingleArg(&crypto::native_keccak256),
                 ClarityCostFunction::Keccak256,
                 &cost_input_sized_vararg,
+                cn,
             ),
             Secp256k1Recover => SpecialFunction(
                 "native_secp256k1-recover",
                 &crypto::special_secp256k1_recover,
+                cn,
             ),
-            Secp256k1Verify => {
-                SpecialFunction("native_secp256k1-verify", &crypto::special_secp256k1_verify)
+            Secp256k1Verify => SpecialFunction(
+                "native_secp256k1-verify",
+                &crypto::special_secp256k1_verify,
+                cn,
+            ),
+            Print => SpecialFunction("special_print", &special_print, cn),
+            ContractCall => SpecialFunction(
+                "special_contract-call",
+                &database::special_contract_call,
+                cn,
+            ),
+            AsContract => SpecialFunction("special_as-contract", &special_as_contract, cn),
+            ContractOf => SpecialFunction("special_contract-of", &special_contract_of, cn),
+            PrincipalOf => {
+                SpecialFunction("special_principal-of", &crypto::special_principal_of, cn)
             }
-            Print => SpecialFunction("special_print", &special_print),
-            ContractCall => {
-                SpecialFunction("special_contract-call", &database::special_contract_call)
-            }
-            AsContract => SpecialFunction("special_as-contract", &special_as_contract),
-            ContractOf => SpecialFunction("special_contract-of", &special_contract_of),
-            PrincipalOf => SpecialFunction("special_principal-of", &crypto::special_principal_of),
-            GetBlockInfo => {
-                SpecialFunction("special_get_block_info", &database::special_get_block_info)
-            }
+            GetBlockInfo => SpecialFunction(
+                "special_get_block_info",
+                &database::special_get_block_info,
+                cn,
+            ),
             GetBurnBlockInfo => SpecialFunction(
                 "special_get_burn_block_info",
                 &database::special_get_burn_block_info,
+                cn,
             ),
             GetStacksBlockInfo => SpecialFunction(
                 "special_get_stacks_block_info",
                 &database::special_get_stacks_block_info,
+                cn,
             ),
             GetTenureInfo => SpecialFunction(
                 "special_get_tenure_info",
                 &database::special_get_tenure_info,
+                cn,
             ),
             ConsSome => NativeFunction(
                 "native_some",
                 NativeHandle::SingleArg(&options::native_some),
                 ClarityCostFunction::SomeCons,
+                cn,
             ),
             ConsOkay => NativeFunction(
                 "native_okay",
                 NativeHandle::SingleArg(&options::native_okay),
                 ClarityCostFunction::OkCons,
+                cn,
             ),
             ConsError => NativeFunction(
                 "native_error",
                 NativeHandle::SingleArg(&options::native_error),
                 ClarityCostFunction::ErrCons,
+                cn,
             ),
             DefaultTo => NativeFunction(
                 "native_default_to",
                 NativeHandle::DoubleArg(&options::native_default_to),
                 ClarityCostFunction::DefaultTo,
+                cn,
             ),
-            Asserts => SpecialFunction("special_asserts", &special_asserts),
+            Asserts => SpecialFunction("special_asserts", &special_asserts, cn),
             UnwrapRet => NativeFunction(
                 "native_unwrap_ret",
                 NativeHandle::DoubleArg(&options::native_unwrap_or_ret),
                 ClarityCostFunction::UnwrapRet,
+                cn,
             ),
             UnwrapErrRet => NativeFunction(
                 "native_unwrap_err_ret",
                 NativeHandle::DoubleArg(&options::native_unwrap_err_or_ret),
                 ClarityCostFunction::UnwrapErrOrRet,
+                cn,
             ),
             IsOkay => NativeFunction(
                 "native_is_okay",
                 NativeHandle::SingleArg(&options::native_is_okay),
                 ClarityCostFunction::IsOkay,
+                cn,
             ),
             IsNone => NativeFunction(
                 "native_is_none",
                 NativeHandle::SingleArg(&options::native_is_none),
                 ClarityCostFunction::IsNone,
+                cn,
             ),
             IsErr => NativeFunction(
                 "native_is_err",
                 NativeHandle::SingleArg(&options::native_is_err),
                 ClarityCostFunction::IsErr,
+                cn,
             ),
             IsSome => NativeFunction(
                 "native_is_some",
                 NativeHandle::SingleArg(&options::native_is_some),
                 ClarityCostFunction::IsSome,
+                cn,
             ),
             Unwrap => NativeFunction(
                 "native_unwrap",
                 NativeHandle::SingleArg(&options::native_unwrap),
                 ClarityCostFunction::Unwrap,
+                cn,
             ),
             UnwrapErr => NativeFunction(
                 "native_unwrap_err",
                 NativeHandle::SingleArg(&options::native_unwrap_err),
                 ClarityCostFunction::UnwrapErr,
+                cn,
             ),
-            Match => SpecialFunction("special_match", &options::special_match),
+            Match => SpecialFunction("special_match", &options::special_match, cn),
             TryRet => NativeFunction(
                 "native_try_ret",
                 NativeHandle::SingleArg(&options::native_try_ret),
                 ClarityCostFunction::TryRet,
+                cn,
             ),
-            MintAsset => SpecialFunction("special_mint_asset", &assets::special_mint_asset),
-            MintToken => SpecialFunction("special_mint_token", &assets::special_mint_token),
-            TransferAsset => {
-                SpecialFunction("special_transfer_asset", &assets::special_transfer_asset)
+            MintAsset => SpecialFunction("special_mint_asset", &assets::special_mint_asset, cn),
+            MintToken => SpecialFunction("special_mint_token", &assets::special_mint_token, cn),
+            TransferAsset => SpecialFunction(
+                "special_transfer_asset",
+                &assets::special_transfer_asset,
+                cn,
+            ),
+            TransferToken => SpecialFunction(
+                "special_transfer_token",
+                &assets::special_transfer_token,
+                cn,
+            ),
+            GetTokenBalance => {
+                SpecialFunction("special_get_balance", &assets::special_get_balance, cn)
             }
-            TransferToken => {
-                SpecialFunction("special_transfer_token", &assets::special_transfer_token)
-            }
-            GetTokenBalance => SpecialFunction("special_get_balance", &assets::special_get_balance),
-            GetAssetOwner => SpecialFunction("special_get_owner", &assets::special_get_owner),
-            BurnAsset => SpecialFunction("special_burn_asset", &assets::special_burn_asset),
-            BurnToken => SpecialFunction("special_burn_token", &assets::special_burn_token),
+            GetAssetOwner => SpecialFunction("special_get_owner", &assets::special_get_owner, cn),
+            BurnAsset => SpecialFunction("special_burn_asset", &assets::special_burn_asset, cn),
+            BurnToken => SpecialFunction("special_burn_token", &assets::special_burn_token, cn),
             GetTokenSupply => SpecialFunction(
                 "special_get_token_supply",
                 &assets::special_get_token_supply,
+                cn,
             ),
-            AtBlock => SpecialFunction("special_at_block", &database::special_at_block),
-            GetStxBalance => SpecialFunction("special_stx_balance", &assets::special_stx_balance),
-            StxTransfer => SpecialFunction("special_stx_transfer", &assets::special_stx_transfer),
+            AtBlock => SpecialFunction("special_at_block", &database::special_at_block, cn),
+            GetStxBalance => {
+                SpecialFunction("special_stx_balance", &assets::special_stx_balance, cn)
+            }
+            StxTransfer => {
+                SpecialFunction("special_stx_transfer", &assets::special_stx_transfer, cn)
+            }
             StxTransferMemo => SpecialFunction(
                 "special_stx_transfer_memo",
                 &assets::special_stx_transfer_memo,
+                cn,
             ),
-            StxBurn => SpecialFunction("special_stx_burn", &assets::special_stx_burn),
-            StxGetAccount => SpecialFunction("stx_get_account", &assets::special_stx_account),
+            StxBurn => SpecialFunction("special_stx_burn", &assets::special_stx_burn, cn),
+            StxGetAccount => SpecialFunction("stx_get_account", &assets::special_stx_account, cn),
             ToConsensusBuff => NativeFunction205(
                 "to_consensus_buff",
                 NativeHandle::SingleArg(&conversions::to_consensus_buff),
                 ClarityCostFunction::ToConsensusBuff,
                 &cost_input_sized_vararg,
+                cn,
             ),
             FromConsensusBuff => {
-                SpecialFunction("from_consensus_buff", &conversions::from_consensus_buff)
+                SpecialFunction("from_consensus_buff", &conversions::from_consensus_buff, cn)
             }
-            ReplaceAt => SpecialFunction("replace_at", &sequences::special_replace_at),
+            ReplaceAt => SpecialFunction("replace_at", &sequences::special_replace_at, cn),
             BitwiseAnd => NativeFunction(
                 "native_bitwise_and",
                 NativeHandle::MoreArg(&arithmetic::native_bitwise_and),
                 ClarityCostFunction::BitwiseAnd,
+                cn,
             ),
             BitwiseOr => NativeFunction(
                 "native_bitwise_or",
                 NativeHandle::MoreArg(&arithmetic::native_bitwise_or),
                 ClarityCostFunction::BitwiseOr,
+                cn,
             ),
             BitwiseNot => NativeFunction(
                 "native_bitwise_not",
                 NativeHandle::SingleArg(&arithmetic::native_bitwise_not),
                 ClarityCostFunction::BitwiseNot,
+                cn,
             ),
             BitwiseLShift => NativeFunction(
                 "native_bitwise_left_shift",
                 NativeHandle::DoubleArg(&arithmetic::native_bitwise_left_shift),
                 ClarityCostFunction::BitwiseLShift,
+                cn,
             ),
             BitwiseRShift => NativeFunction(
                 "native_bitwise_right_shift",
                 NativeHandle::DoubleArg(&arithmetic::native_bitwise_right_shift),
                 ClarityCostFunction::BitwiseRShift,
+                cn,
             ),
             BitwiseXor2 => NativeFunction(
                 "native_bitwise_xor",
                 NativeHandle::MoreArg(&arithmetic::native_bitwise_xor),
                 ClarityCostFunction::Xor,
+                cn,
             ),
-            ContractHash => {
-                SpecialFunction("special_contract_hash", &database::special_contract_hash)
-            }
-            ToAscii => SpecialFunction("special_to_ascii", &conversions::special_to_ascii),
+            ContractHash => SpecialFunction(
+                "special_contract_hash",
+                &database::special_contract_hash,
+                cn,
+            ),
+            ToAscii => SpecialFunction("special_to_ascii", &conversions::special_to_ascii, cn),
             RestrictAssets => SpecialFunction(
                 "special_restrict_assets",
                 &post_conditions::special_restrict_assets,
+                cn,
             ),
-            AsContractSafe => {
-                SpecialFunction("special_as_contract", &post_conditions::special_as_contract)
-            }
+            AsContractSafe => SpecialFunction(
+                "special_as_contract",
+                &post_conditions::special_as_contract,
+                cn,
+            ),
             AllowanceWithStx
             | AllowanceWithFt
             | AllowanceWithNft
             | AllowanceWithStacking
             | AllowanceAll => {
-                SpecialFunction("special_allowance", &post_conditions::special_allowance)
+                SpecialFunction("special_allowance", &post_conditions::special_allowance, cn)
             }
-            Secp256r1Verify => {
-                SpecialFunction("native_secp256r1-verify", &crypto::special_secp256r1_verify)
-            }
+            Secp256r1Verify => SpecialFunction(
+                "native_secp256r1-verify",
+                &crypto::special_secp256r1_verify,
+                cn,
+            ),
         };
         Some(callable)
     } else {

@@ -75,6 +75,8 @@ pub fn special_contract_call(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(function_name);
+
     let rest_args_slice = &args[2..];
     let rest_args_len = rest_args_slice.len();
     let mut rest_args = Vec::with_capacity(rest_args_len);
@@ -534,6 +536,7 @@ pub fn special_set_entry_v200(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -581,6 +584,7 @@ pub fn special_set_entry_v205(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -628,6 +632,7 @@ pub fn special_insert_entry_v200(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -676,6 +681,7 @@ pub fn special_insert_entry_v205(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -721,6 +727,7 @@ pub fn special_delete_entry_v200(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -765,6 +772,7 @@ pub fn special_delete_entry_v205(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(map_name.to_string());
 
     let contract = &env.contract_context.contract_identifier;
 
@@ -826,6 +834,7 @@ pub fn special_get_block_info(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Get block info expect property name".to_string(),
         ))?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let version = env.contract_context.get_clarity_version();
 
@@ -984,6 +993,7 @@ pub fn special_get_burn_block_info(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Get block info expect property name".to_string(),
         ))?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let block_info_prop = BurnBlockInfoProperty::lookup_by_name(property_name).ok_or(
         RuntimeCheckErrorKind::Unreachable(format!(
@@ -1092,6 +1102,7 @@ pub fn special_get_stacks_block_info(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Get stacks block info expect property name".to_string(),
         ))?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let block_info_prop = StacksBlockInfoProperty::lookup_by_name(property_name).ok_or(
         RuntimeCheckErrorKind::Unreachable(format!(
@@ -1180,6 +1191,7 @@ pub fn special_get_tenure_info(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Get tenure info expect property name".to_string(),
         ))?;
+    crate::profiler::record_name!(property_name.to_string());
 
     let block_info_prop = TenureInfoProperty::lookup_by_name(property_name).ok_or(
         RuntimeCheckErrorKind::Unreachable("Get tenure info expect property name".to_string()),

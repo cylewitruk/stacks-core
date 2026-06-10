@@ -65,6 +65,7 @@ pub fn special_filter(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(function_name);
 
     let mut sequence = eval(&args[1], env, context)?;
     let function = lookup_function(function_name, env)?;
@@ -120,6 +121,7 @@ pub fn special_fold(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(function_name);
 
     let function = lookup_function(function_name, env)?;
     let mut sequence = eval(&args[1], env, context)?;
@@ -164,6 +166,7 @@ pub fn special_map(
         .ok_or(RuntimeCheckErrorKind::Unreachable(
             "Expected name".to_string(),
         ))?;
+    crate::profiler::record_name!(function_name);
     let function = lookup_function(function_name, env)?;
 
     // Let's consider a function f (f a b c ...)

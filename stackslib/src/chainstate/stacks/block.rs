@@ -428,6 +428,7 @@ impl StacksBlock {
     }
 
     /// verify no duplicate txids
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn validate_transactions_unique(txs: &[StacksTransaction]) -> bool {
         // no duplicates
         let mut txids = HashMap::new();
