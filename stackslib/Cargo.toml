@@ -38,6 +38,7 @@ siphasher = "0.3.7"
 rusqlite = { workspace = true }
 time = "0.3.41"
 toml = { workspace = true }
+stacks-profiler = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.23"
@@ -79,7 +80,7 @@ developer-mode = ["clarity/developer-mode"]
 monitoring_prom = ["prometheus"]
 slog_json = ["stacks-common/slog_json", "clarity/slog_json", "pox-locking/slog_json"]
 testing = ["chrono", "stacks-common/testing", "clarity/testing"]
-profiler = ["perf-event2"]
+profiler = ["stacks-profiler", "stacks-common/profiler", "clarity/profiler", "perf-event2"]
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 perf-event2 = { version = "0.7.4", optional = true }

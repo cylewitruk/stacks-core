@@ -1204,6 +1204,9 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         read_only: bool,
         allow_private: bool,
     ) -> Result<Value, VmExecutionError> {
+        let _profiler_span =
+            crate::profiler::begin_contract_call_span(contract_identifier, tx_name);
+
         let contract_size = self
             .global_context
             .database
@@ -1283,6 +1286,8 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         allow_private: bool,
     ) -> Result<Value, VmExecutionError> {
         let make_read_only = function.is_read_only();
+        let _profiler_span =
+            crate::profiler::begin_exec_tx_span(make_read_only, &function.get_identifier());
 
         if make_read_only {
             self.global_context.begin_read_only();
@@ -1310,6 +1315,7 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn evaluate_at_block<'e>(
         &mut self,
         bhh: StacksBlockId,

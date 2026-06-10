@@ -16,6 +16,7 @@ name = "clarity"
 path = "./src/libclarity.rs"
 
 [dependencies]
+stacks-profiler = { workspace = true, optional = true }
 clarity-types = { package = "clarity-types", path = "../clarity-types", default-features = false }
 serde = { workspace = true }
 serde_derive = { workspace = true }
@@ -65,6 +66,7 @@ devtools = []
 rollback_value_check = []
 disable-costs = []
 wasm-web = ["stacks_common/wasm-web", "clarity-types/wasm-web"]
+profiler = ["stacks-profiler", "clarity-types/profiler"]
 
 [package.metadata.pinny]
 allowed = ["t_prop"]
