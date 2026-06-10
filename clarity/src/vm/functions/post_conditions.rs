@@ -394,7 +394,9 @@ pub fn special_as_contract(
         exec_state.add_memory(cost_constants::AS_CONTRACT_MEMORY)?;
         memory_use += cost_constants::AS_CONTRACT_MEMORY;
 
-        let contract_principal: PrincipalData = invoke_ctx.contract_context.contract_identifier.clone().into();
+        let contract_principal: PrincipalData =
+            invoke_ctx.contract_context.contract_identifier.clone().into();
+        crate::profiler::record_name!(contract_principal.to_string());
         let epoch = *exec_state.epoch();
         let nested_view = invoke_ctx.with_principal(contract_principal.clone());
 

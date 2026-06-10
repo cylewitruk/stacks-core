@@ -408,6 +408,7 @@ impl ClarityMarfStoreTransaction for PersistentWritableMarfStore<'_> {
     ///
     /// Returns Ok(()) on success
     /// Returns Err(VmInternalError(..)) on sqlite failure
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn commit_metadata_for_trie(&mut self, target: &StacksBlockId) -> Result<(), VmExecutionError> {
         SqliteConnection::commit_metadata_to(self.marf.sqlite_tx(), &self.chain_tip, target)
     }
@@ -417,12 +418,14 @@ impl ClarityMarfStoreTransaction for PersistentWritableMarfStore<'_> {
     ///
     /// Returns Ok(()) on success
     /// Returns Err(VmInternalError(..)) on sqlite failure
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn drop_metadata_for_trie(&mut self, target: &StacksBlockId) -> Result<(), VmExecutionError> {
         SqliteConnection::drop_metadata(self.marf.sqlite_tx(), target)
     }
 
     /// Seal the trie -- compute the root hash.
     /// NOTE: This is a one-time operation for this implementation -- a subsequent call will panic.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn seal_trie(&mut self) -> TrieHash {
         self.marf
             .seal()
@@ -454,6 +457,7 @@ impl ClarityMarfStoreTransaction for PersistentWritableMarfStore<'_> {
     ///
     /// Returns Ok(()) on success
     /// Returns Err(VmInternalError(..)) on sqlite failure
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn commit_to_processed_block(mut self, target: &StacksBlockId) -> Result<(), VmExecutionError> {
         debug!("commit_to({})", target);
         self.commit_metadata_for_trie(target)?;
@@ -470,6 +474,7 @@ impl ClarityMarfStoreTransaction for PersistentWritableMarfStore<'_> {
     ///
     /// Returns Ok(()) on success
     /// Returns Err(VmInternalError(..)) on sqlite failure
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn commit_to_mined_block(mut self, target: &StacksBlockId) -> Result<(), VmExecutionError> {
         debug!("commit_mined_block: ({}->{})", &self.chain_tip, target);
         // rollback the side_store
@@ -489,6 +494,7 @@ impl ClarityMarfStoreTransaction for PersistentWritableMarfStore<'_> {
     /// Commit the outstanding trie to unconfirmed state, so subsequent read I/O can be performed
     /// on it (such as servicing RPC requests).  This commits this transaction and drops this MARF
     /// store
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn commit_unconfirmed(self) {
         debug!("commit_unconfirmed()");
         // NOTE: Can omit commit_metadata_to, since the block header hash won't change
@@ -509,6 +515,7 @@ impl ReadOnlyMarfStore<'_> {
     /// Return Ok(true) if so
     /// Return Ok(false) if not
     /// Return Err(..) if we encounter a sqlite error
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn trie_exists_for_block(&mut self, bhh: &StacksBlockId) -> Result<bool, DatabaseError> {
         self.marf
             .with_conn(|conn| conn.has_block(bhh).map_err(DatabaseError::IndexError))
@@ -526,6 +533,7 @@ impl ReadOnlyMarfStore<'_> {
     }
 
     /// Helper wrapper around MARF::check_ancestor_block_hash(),
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn check_ancestor_block_hash(&mut self, bhh: &StacksBlockId) -> Result<(), Error> {
         self.marf.check_ancestor_block_hash(bhh)
     }
@@ -541,6 +549,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
     }
 
     /// Sets the chain tip at which queries will happen.  Used for `(at-block ..)`
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn set_block_hash(&mut self, bhh: StacksBlockId) -> Result<StacksBlockId, VmExecutionError> {
         self.marf
             .check_ancestor_block_hash(&bhh)
@@ -567,6 +576,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
         result
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_current_block_height(&mut self) -> u32 {
         match self
             .marf
@@ -602,6 +612,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_block_at_height(&mut self, block_height: u32) -> Option<StacksBlockId> {
         self.marf
             .get_bhh_at_height(&self.chain_tip, block_height)
@@ -630,6 +641,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .expect("Attempted to get the open chain tip from an unopened context.")
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data_with_proof(
         &mut self,
         key: &str,
@@ -655,6 +667,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data_with_proof_from_path(
         &mut self,
         hash: &TrieHash,
@@ -680,6 +693,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data(&mut self, key: &str) -> Result<Option<String>, VmExecutionError> {
         self.marf
             .get(&self.chain_tip, key)
@@ -716,6 +730,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data_from_path(&mut self, hash: &TrieHash) -> Result<Option<String>, VmExecutionError> {
         trace!("MarfedKV get_from_hash: {:?} tip={}", hash, &self.chain_tip);
         self.marf
@@ -746,11 +761,13 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn put_all_data(&mut self, _items: Vec<(String, String)>) -> Result<(), VmExecutionError> {
         error!("Attempted to commit changes to read-only MARF");
         panic!("BUG: attempted commit to read-only MARF");
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_contract_hash(
         &mut self,
         contract: &QualifiedContractIdentifier,
@@ -768,6 +785,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
         panic!("BUG: attempted metadata commit to read-only MARF");
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_metadata(
         &mut self,
         contract: &QualifiedContractIdentifier,
@@ -776,6 +794,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
         sqlite_get_metadata(self, contract, key)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_metadata_manual(
         &mut self,
         at_height: u32,
@@ -795,6 +814,7 @@ impl PersistentWritableMarfStore<'_> {
 }
 
 impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn set_block_hash(&mut self, bhh: StacksBlockId) -> Result<StacksBlockId, VmExecutionError> {
         self.marf
             .check_ancestor_block_hash(&bhh)
@@ -830,6 +850,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         Some(&handle_contract_call_special_cases)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data(&mut self, key: &str) -> Result<Option<String>, VmExecutionError> {
         trace!("MarfedKV get: {:?} tip={}", key, &self.chain_tip);
         self.marf
@@ -860,6 +881,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data_from_path(&mut self, hash: &TrieHash) -> Result<Option<String>, VmExecutionError> {
         trace!("MarfedKV get_from_hash: {:?} tip={}", hash, &self.chain_tip);
         self.marf
@@ -890,6 +912,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data_with_proof(
         &mut self,
         key: &str,
@@ -915,6 +938,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             .transpose()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_data_with_proof_from_path(
         &mut self,
         hash: &TrieHash,
@@ -944,6 +968,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         self.marf.sqlite_tx()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_block_at_height(&mut self, height: u32) -> Option<StacksBlockId> {
         self.marf
             .get_block_at_height(height, &self.chain_tip)
@@ -955,6 +980,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_open_chain_tip(&mut self) -> StacksBlockId {
         self.marf
             .get_open_chain_tip()
@@ -962,12 +988,14 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             .clone()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_open_chain_tip_height(&mut self) -> u32 {
         self.marf
             .get_open_chain_tip_height()
             .expect("Attempted to get the open chain tip from an unopened context.")
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_current_block_height(&mut self) -> u32 {
         match self
             .marf
@@ -1003,6 +1031,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn put_all_data(&mut self, items: Vec<(String, String)>) -> Result<(), VmExecutionError> {
         let mut keys = Vec::with_capacity(items.len());
         let mut values = Vec::with_capacity(items.len());
@@ -1017,6 +1046,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             .map_err(|_| VmInternalError::Expect("ERROR: Unexpected MARF Failure".into()).into())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_contract_hash(
         &mut self,
         contract: &QualifiedContractIdentifier,
@@ -1024,6 +1054,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         sqlite_get_contract_hash(self, contract)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn insert_metadata(
         &mut self,
         contract: &QualifiedContractIdentifier,
@@ -1033,6 +1064,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         sqlite_insert_metadata(self, contract, key, value)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_metadata(
         &mut self,
         contract: &QualifiedContractIdentifier,
@@ -1041,6 +1073,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         sqlite_get_metadata(self, contract, key)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_metadata_manual(
         &mut self,
         at_height: u32,

@@ -186,6 +186,7 @@ impl Trie {
     ///
     /// Either way, return the node, its hash, and the ptr to the node in the block in which it was
     /// found (it will _not_ be a back-pointer).
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn walk_backptr<T: MarfTrieId>(
         storage: &mut TrieStorageConnection<T>,
         ptr: &TriePtr,
@@ -741,6 +742,7 @@ impl Trie {
 
     /// Perform the reads, lookups, etc. for computing the ancestor byte vector.
     /// This method _does not_ restore the previously open block on failure, the caller will do that.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn inner_get_trie_ancestor_hashes_bytes<T: MarfTrieId>(
         storage: &mut TrieStorageConnection<T>,
     ) -> Result<Vec<TrieHash>, Error> {

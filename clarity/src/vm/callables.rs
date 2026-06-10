@@ -38,7 +38,13 @@ use crate::vm::{LocalContext, Value, eval};
 #[allow(clippy::type_complexity, clippy::large_enum_variant)]
 pub enum CallableType {
     UserFunction(DefinedFunction),
-    NativeFunction(&'static str, NativeHandle, ClarityCostFunction),
+    NativeFunction(
+        &'static str,
+        NativeHandle,
+        ClarityCostFunction,
+        /// The Clarity-facing function name (e.g. `"+"`, `"len"`).
+        &'static str,
+    ),
     /// These native functions have a new method for calculating input size in 2.05
     /// If the global context's epoch is >= 2.05, the fn field is applied to obtain
     /// the input to the cost function.
@@ -47,6 +53,8 @@ pub enum CallableType {
         NativeHandle,
         ClarityCostFunction,
         &'static dyn Fn(&[Value]) -> Result<u64, VmExecutionError>,
+        /// The Clarity-facing function name.
+        &'static str,
     ),
     SpecialFunction(
         &'static str,
@@ -56,6 +64,8 @@ pub enum CallableType {
             &InvocationContext,
             &LocalContext,
         ) -> Result<Value, VmExecutionError>,
+        /// The Clarity-facing function name.
+        &'static str,
     ),
 }
 
@@ -153,6 +163,10 @@ impl DefinedFunction {
             body,
             arg_types: types,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn execute_apply(
@@ -333,6 +347,7 @@ impl DefinedFunction {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn check_trait_expectations(
         &self,
         epoch: &StacksEpochId,
@@ -406,6 +421,7 @@ impl DefinedFunction {
         &self.arg_types
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn canonicalize_types(&mut self, epoch: &StacksEpochId) {
         for i in 0..self.arguments.len() {
             self.arg_types[i] = self.arg_types[i].canonicalize(epoch);
@@ -422,9 +438,9 @@ impl CallableType {
     pub fn get_identifier(&self) -> FunctionIdentifier {
         match self {
             CallableType::UserFunction(f) => f.get_identifier(),
-            CallableType::NativeFunction(s, _, _) => FunctionIdentifier::new_native_function(s),
-            CallableType::SpecialFunction(s, _) => FunctionIdentifier::new_native_function(s),
-            CallableType::NativeFunction205(s, _, _, _) => {
+            CallableType::NativeFunction(s, _, _, _) => FunctionIdentifier::new_native_function(s),
+            CallableType::SpecialFunction(s, _, _) => FunctionIdentifier::new_native_function(s),
+            CallableType::NativeFunction205(s, _, _, _, _) => {
                 FunctionIdentifier::new_native_function(s)
             }
         }
