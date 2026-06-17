@@ -167,6 +167,22 @@ The override directory must satisfy two constraints:
 The generated shadow directory is still auto-named and removed when the run
 finishes.
 
+## Structured output
+
+Both `--json` on the CLI and successful MCP tool results wrap their payload in a
+single **versioned envelope** (`CommandResult`) with a frozen header
+(`schema_version`, `success`, `result_type`, `result_version`, `duration_secs`)
+and a version-specific `result` body. A consumer parses the header to learn
+status and how to interpret `result`, regardless of which `stacks-bench` build
+produced it. (CLI failures are enveloped too, with `success: false`; MCP
+failures use the protocol's native error channel rather than an envelope.)
+
+In `--json` mode, stdout is reserved for the final envelope. Long-running CLI
+commands may emit versioned progress events as JSONL on stderr.
+
+The machine-readable JSON Schema and the full evolution policy live in
+[`schema/`](schema/README.md).
+
 ## MCP Server
 
 `stacks-bench` includes an MCP (Model Context Protocol) server for querying
