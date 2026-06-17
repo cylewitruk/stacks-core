@@ -66,6 +66,21 @@ The machine-readable schema lives under `cli_events.progress` in
 [`v1.json`](v1.json). Consumers should treat stderr as JSONL, parsing one event
 per line and ignoring unknown fields.
 
+## Benchmark baseline fields
+
+The `run` payload includes a `baseline` object describing how the empty-block
+overhead baseline was handled for that benchmark:
+
+- `mode: "inline"` means the run measured a new baseline before replay and
+  saved it as a reusable calibration.
+- `mode: "external"` means the run reused an existing calibration by id.
+- `mode: "skipped"` means no empty-block baseline was measured or linked.
+
+The CLI-only `baseline_calibration` payload is returned by
+`bench baseline calibrate` and contains the saved calibration id plus the
+measured empty-block averages. The payload schema is listed under
+`cli_payloads.baseline_calibration` in [`v1.json`](v1.json).
+
 ## Evolution policy
 
 - **The header is frozen.** Header fields are never renamed, removed, or

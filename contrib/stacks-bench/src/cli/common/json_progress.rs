@@ -91,13 +91,14 @@ pub async fn run_bench_json_progress(
                 0.0,
                 None,
                 Some(format!(
-                    "Benchmark plan: mode={} targets={} warmup={} per target ({} total), measured={} per target ({} total), isolation={}",
+                    "Benchmark plan: mode={} targets={} warmup={} per target ({} total), measured={} per target ({} total), baseline={}, isolation={}",
                     summary.target_mode,
                     summary.logical_targets,
                     summary.warmup_per_target,
                     summary.warmup_entries,
                     summary.measured_per_target,
                     summary.measured_entries,
+                    summary.baseline_mode,
                     summary.isolation
                 )),
             )),
@@ -178,6 +179,23 @@ pub async fn run_bench_json_progress(
                     )),
                 ))
             }
+            BenchEvent::BaselineReused {
+                calibration_id,
+                start_parent_index_hash,
+            } => Some(progress_event(
+                "baseline",
+                1.0,
+                Some(1.0),
+                Some(format!(
+                    "Reusing baseline calibration #{calibration_id} at {start_parent_index_hash}"
+                )),
+            )),
+            BenchEvent::BaselineSkipped => Some(progress_event(
+                "baseline",
+                1.0,
+                Some(1.0),
+                Some("Skipped baseline calibration".to_string()),
+            )),
             BenchEvent::ReplayStarted {
                 total_entries,
                 warmup_entries,
