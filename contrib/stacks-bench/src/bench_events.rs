@@ -37,7 +37,34 @@ use std::time::Duration;
 use crate::metrics::{BlockProcessingBaseline, MetricsSummary};
 use crate::shadow::ShadowDirDeltaReport;
 
-/// Events emitted during a `bench run` execution (block-range mode).
+/// Resolved benchmark mode and sampling plan.
+#[derive(Debug, Clone, serde::Serialize, schemars::JsonSchema)]
+pub struct ModeSummary {
+    /// Human-readable replay mode label.
+    pub mode: String,
+    /// Broad target mode: `range`, `txid`, or `block`.
+    pub target_mode: String,
+    /// Number of logical targets in the run. Range mode reports `1`.
+    pub logical_targets: usize,
+    /// Total scheduled replay entries, including warmup entries.
+    pub total_entries: usize,
+    /// Scheduled warmup entries, discarded from metrics.
+    pub warmup_entries: usize,
+    /// Scheduled measured entries.
+    pub measured_entries: usize,
+    /// Warmup entries per logical target.
+    pub warmup_per_target: usize,
+    /// Measured entries per logical target.
+    pub measured_per_target: usize,
+    /// What one measured entry primarily samples.
+    pub sample_unit: String,
+    /// Physical isolation semantics for this run.
+    pub isolation: String,
+    /// Replay ordering semantics.
+    pub ordering: String,
+}
+
+/// Events emitted during a `bench run` execution.
 #[derive(Debug)]
 pub enum BenchEvent {
     // --- Txid scan phase (--txid mode only) ---
@@ -80,6 +107,9 @@ pub enum BenchEvent {
         /// Present in --txid mode only.
         repetitions: Option<u32>,
     },
+
+    /// Replay mode and sampling plan resolved.
+    ModeSummary(ModeSummary),
 
     // --- Baseline phase ---
     /// Overhead baseline measurement started. The baseline runs empty blocks
@@ -125,24 +155,24 @@ pub enum BenchEvent {
     // --- Replay phase ---
     /// Replay phase started.
     ReplayStarted {
-        total_blocks: usize,
-        warmup_blocks: usize,
+        total_entries: usize,
+        warmup_entries: usize,
         mode: String,
     },
-    /// Replay warmup progress (block-range mode).
+    /// Replay warmup progress.
     ReplayWarmupProgress { completed: usize, total: usize },
     /// Replay warmup complete.
     ReplayWarmupComplete {
-        warmup_blocks: usize,
+        warmup_entries: usize,
         duration: Duration,
     },
-    /// Replay measured block progress.
+    /// Replay measured-entry progress.
     ReplayProgress { completed: usize, total: usize },
     /// Replay interrupted by Ctrl-C.
     ReplayInterrupted { completed: usize, total: usize },
     /// Replay complete.
     ReplayComplete {
-        measured_blocks: usize,
+        measured_entries: usize,
         duration: Duration,
     },
 
@@ -153,9 +183,9 @@ pub enum BenchEvent {
     // --- Summary phase ---
     /// Replay summary computed.
     ReplaySummary {
-        total_blocks: usize,
-        warmup_blocks: usize,
-        measured_blocks: usize,
+        total_entries: usize,
+        warmup_entries: usize,
+        measured_entries: usize,
         total_duration: Duration,
         /// Wall time of the warmup phase, including periodic warmup
         /// checkpoints and the warmup→measured boundary checkpoint. Zero

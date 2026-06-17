@@ -24,7 +24,10 @@ use stacks_bench::{Network, StacksBlockRef};
 use tokio::sync::mpsc;
 
 use super::bench_ui::run_bench_progress_ui;
-use crate::cli::common::{CliContext, ExecCommand, run_indexer_progress_ui};
+use crate::cli::common::{
+    CliContext, ExecCommand, run_bench_json_progress, run_indexer_json_progress,
+    run_indexer_progress_ui,
+};
 // Re-export for use by rerun.rs and other CLI consumers
 pub use crate::commands::bench::run::RunResult;
 use crate::commands::bench::run::{BenchRunParams, FilterKind};
@@ -344,9 +347,12 @@ impl ExecCommand for RunArgs {
     async fn exec(&self, ctx: &CliContext) -> Result<Self::Output> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        // Spawn the UI consumer: interactive renderer or silent drain
+        // Spawn the progress consumer: interactive renderer, JSONL stderr
+        // renderer, or silent drain.
         let ui_handle = if ctx.interactive() {
             tokio::spawn(run_bench_progress_ui(event_rx))
+        } else if ctx.json() {
+            tokio::spawn(run_bench_json_progress(event_rx))
         } else {
             tokio::spawn(async move {
                 let mut rx = event_rx;
@@ -371,6 +377,10 @@ impl ExecCommand for RunArgs {
         let indexer_ui: IndexerUiSpawner = if ctx.interactive() {
             Box::new(|rx, start, end, tip| {
                 tokio::spawn(run_indexer_progress_ui(rx, start, end, tip))
+            })
+        } else if ctx.json() {
+            Box::new(|rx, start, end, tip| {
+                tokio::spawn(run_indexer_json_progress(rx, start, end, tip))
             })
         } else {
             crate::commands::common::silent_indexer_ui()
