@@ -3,7 +3,7 @@ use serde::Serialize;
 use stacks_bench::db::app::AppDb;
 
 /// JSON output for benchmark run details.
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ShowResult {
     pub run_id: i32,
     pub name: Option<String>,
@@ -14,8 +14,9 @@ pub struct ShowResult {
     pub summary: Option<SummaryJson>,
     pub profiler_hot: Vec<HotSpanJson>,
 }
+crate::wire::wire_payload!(ShowResult, "run_show", 1);
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct SummaryJson {
     pub blocks: u64,
     pub total_duration_us: u64,
@@ -31,7 +32,7 @@ pub struct SummaryJson {
     pub storage_delta_bytes: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct HotSpanJson {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]

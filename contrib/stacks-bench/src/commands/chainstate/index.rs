@@ -47,7 +47,7 @@ impl IndexerArgs for ChainstateIndexParams {
 }
 
 /// Structured result returned by chainstate indexing.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub struct IndexResult {
     pub blocks_indexed: usize,
     pub start_block: String,
@@ -55,6 +55,7 @@ pub struct IndexResult {
     pub end_block: String,
     pub end_height: u64,
 }
+crate::wire::wire_payload!(IndexResult, "chainstate_index", 1);
 
 /// Index a range of chainstate blocks into the application database.
 ///

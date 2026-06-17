@@ -81,6 +81,7 @@ impl StacksBenchServer {
         client: Peer<RoleServer>,
         context: rmcp::service::RequestContext<RoleServer>,
     ) -> anyhow::Result<String> {
+        let started = std::time::Instant::now();
         let index_params = params
             .into_index_params()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -121,7 +122,7 @@ impl StacksBenchServer {
         )
         .await?;
 
-        Ok(serde_json::to_string(&result)?)
+        super::tool_envelope(&result, started.elapsed().as_secs_f64())
     }
 }
 
