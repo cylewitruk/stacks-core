@@ -81,11 +81,10 @@ Dedicated benchmark harnesses can measure the baseline as a separate process:
 ```bash
 cargo stacks-bench bench baseline calibrate \
   --source /data/chainstates/mainnet \
-  --network mainnet \
-  --at 7920100
+  --network mainnet
 ```
 
-Then reuse it in a run whose resolved baseline anchor is the same block:
+Then reuse it in any run against the same indexed chainstate and resolved tip:
 
 ```bash
 cargo stacks-bench bench run \
@@ -99,9 +98,11 @@ cargo stacks-bench bench run \
 Use `--no-baseline` to skip empty-block baseline measurement and linking
 entirely. Reused calibrations must belong to the same indexed chainstate and
 anchor block as the run; this keeps the saved per-run baseline row semantically
-equivalent to the historical inline baseline. The anchor is the run's resolved
-end block, so when using `--count`, calibrate with `--at` set to the computed
-end height or hash.
+equivalent to the historical inline baseline. By default, the baseline anchor
+is the run's resolved chain tip (or the block supplied with `--tip`), so a
+single tip-anchored calibration can be reused across multiple ranges from the
+same chainstate snapshot. Use `bench baseline calibrate --at <BLOCK>` only when
+you intentionally need a non-tip calibration anchor.
 
 ### Profiler persistence controls
 

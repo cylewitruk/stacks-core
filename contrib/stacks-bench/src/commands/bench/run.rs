@@ -920,6 +920,7 @@ async fn execute_replay_plan(
     bench_events::emit(ev, BenchEvent::ModeSummary(mode_summary.clone()));
 
     let (mut chainstate, burnchain) = bench_context.open_stacks_chainstate()?;
+    let baseline_anchor = bench_context.chain_tip().id.clone();
 
     // --- Overhead baseline ---
     let baseline_summary = match &params.baseline {
@@ -931,7 +932,7 @@ async fn execute_replay_plan(
             let baseline_outcome = run_convergent_baseline(
                 &mut chainstate,
                 &burnchain,
-                &bench_context.end_block().id,
+                &baseline_anchor,
                 &interrupted,
                 ev,
             )?;
@@ -978,7 +979,7 @@ async fn execute_replay_plan(
                     Utc::now().naive_utc(),
                     run_model.git_commit_hash.clone(),
                     params.to_json()?,
-                    &bench_context.end_block().id,
+                    &baseline_anchor,
                     &baseline_outcome,
                 )
                 .await?;
@@ -1010,10 +1011,10 @@ async fn execute_replay_plan(
                     chainstate_model_id
                 );
             }
-            let expected_anchor = bench_context.end_block().id.as_bytes();
+            let expected_anchor = baseline_anchor.as_bytes();
             if calibration.start_parent_index_hash.as_slice() != expected_anchor {
                 bail!(
-                    "baseline calibration #{} anchor {} does not match this run's baseline anchor {}",
+                    "baseline calibration #{} anchor {} does not match this run's chain-tip baseline anchor {}",
                     calibration.id,
                     baseline_anchor_hex(&calibration.start_parent_index_hash),
                     baseline_anchor_hex(expected_anchor)

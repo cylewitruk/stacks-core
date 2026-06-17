@@ -128,7 +128,7 @@ pub struct RunArgs {
 
     /// Reuse an existing empty-block baseline calibration instead of measuring
     /// one inline. The calibration must belong to the same indexed chainstate
-    /// and baseline anchor as this run.
+    /// and resolved chain-tip baseline anchor as this run.
     #[arg(long = "baseline-id", conflicts_with = "no_baseline")]
     #[serde(skip_serializing_if = "Option::is_none")]
     baseline_id: Option<i32>,
