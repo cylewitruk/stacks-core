@@ -1,5 +1,6 @@
 use crate::cli::common::{BoxedOutput, CliContext, ExecCommand, boxed};
 
+pub mod baseline;
 pub mod bench_ui;
 pub mod list;
 pub mod remove;
@@ -10,6 +11,8 @@ pub mod show;
 #[derive(clap::Subcommand, Debug)]
 pub enum BenchCommand {
     Run(run::RunArgs),
+    /// Manage reusable empty-block baseline calibrations.
+    Baseline(baseline::BaselineArgs),
     /// Re-run an existing benchmark using its original parameters.
     Rerun(rerun::RerunArgs),
     #[command(alias = "rm")]
@@ -32,6 +35,7 @@ impl ExecCommand for BenchArgs {
     async fn exec(&self, ctx: &CliContext) -> anyhow::Result<BoxedOutput> {
         match &self.command {
             BenchCommand::Run(args) => Ok(boxed(args.exec(ctx).await?)),
+            BenchCommand::Baseline(args) => Ok(boxed(args.exec(ctx).await?)),
             BenchCommand::Rerun(args) => Ok(boxed(args.exec(ctx).await?)),
             BenchCommand::Remove(args) => Ok(boxed(args.exec(ctx).await?)),
             BenchCommand::List(args) => Ok(boxed(args.exec(ctx).await?)),
