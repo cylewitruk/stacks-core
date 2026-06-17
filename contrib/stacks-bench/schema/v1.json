@@ -77,6 +77,127 @@
     }
   },
   "cli_payloads": {
+    "baseline_calibration": {
+      "result_version": 1,
+      "schema": {
+        "$defs": {
+          "BaselineCalibrationJson": {
+            "properties": {
+              "avg_advance_tip_us": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "avg_clarity_commit_us": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "avg_finalize_us": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "avg_index_commit_us": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "avg_setup_us": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "converged": {
+                "type": "boolean"
+              },
+              "duration_secs": {
+                "format": "double",
+                "type": "number"
+              },
+              "measured_blocks": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "measurement_window": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "segments_used": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "total_blocks": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "warmup_blocks": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "warmup_blocks",
+              "measured_blocks",
+              "avg_setup_us",
+              "avg_finalize_us",
+              "avg_clarity_commit_us",
+              "avg_advance_tip_us",
+              "avg_index_commit_us",
+              "converged",
+              "segments_used",
+              "measurement_window",
+              "total_blocks",
+              "duration_secs"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Structured result returned by `bench baseline calibrate`.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BaselineCalibrationJson"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "calibration_id": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "chainstate_id": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "interrupted": {
+            "type": "boolean"
+          },
+          "start_parent_index_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chainstate_id",
+          "start_parent_index_hash",
+          "interrupted"
+        ],
+        "title": "BaselineCalibrationResult",
+        "type": "object"
+      }
+    },
     "chainstate_index": {
       "result_version": 1,
       "schema": {
@@ -197,9 +318,46 @@
       "result_version": 1,
       "schema": {
         "$defs": {
+          "BaselineResultMode": {
+            "enum": [
+              "inline",
+              "external",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "BaselineSummaryJson": {
+            "description": "Empty-block baseline attached to a benchmark run, if any.",
+            "properties": {
+              "calibration_id": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "mode": {
+                "$ref": "#/$defs/BaselineResultMode"
+              },
+              "start_parent_index_hash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "type": "object"
+          },
           "ModeSummary": {
             "description": "Resolved benchmark mode and sampling plan.",
             "properties": {
+              "baseline_mode": {
+                "description": "Empty-block overhead baseline mode: `inline`, `external`, or `skipped`.",
+                "type": "string"
+              },
               "isolation": {
                 "description": "Physical isolation semantics for this run.",
                 "type": "string"
@@ -267,6 +425,7 @@
               "warmup_per_target",
               "measured_per_target",
               "sample_unit",
+              "baseline_mode",
               "isolation",
               "ordering"
             ],
@@ -387,6 +546,9 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Structured result returned by benchmark runs.",
         "properties": {
+          "baseline": {
+            "$ref": "#/$defs/BaselineSummaryJson"
+          },
           "duration_secs": {
             "format": "double",
             "type": "number"
@@ -450,7 +612,8 @@
           "sampled_metric_rows",
           "duration_secs",
           "interrupted",
-          "mode_summary"
+          "mode_summary",
+          "baseline"
         ],
         "title": "RunResult",
         "type": "object"
@@ -1333,9 +1496,46 @@
       "result_version": 1,
       "schema": {
         "$defs": {
+          "BaselineResultMode": {
+            "enum": [
+              "inline",
+              "external",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "BaselineSummaryJson": {
+            "description": "Empty-block baseline attached to a benchmark run, if any.",
+            "properties": {
+              "calibration_id": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "mode": {
+                "$ref": "#/$defs/BaselineResultMode"
+              },
+              "start_parent_index_hash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "type": "object"
+          },
           "ModeSummary": {
             "description": "Resolved benchmark mode and sampling plan.",
             "properties": {
+              "baseline_mode": {
+                "description": "Empty-block overhead baseline mode: `inline`, `external`, or `skipped`.",
+                "type": "string"
+              },
               "isolation": {
                 "description": "Physical isolation semantics for this run.",
                 "type": "string"
@@ -1403,6 +1603,7 @@
               "warmup_per_target",
               "measured_per_target",
               "sample_unit",
+              "baseline_mode",
               "isolation",
               "ordering"
             ],
@@ -1523,6 +1724,9 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Structured result returned by benchmark runs.",
         "properties": {
+          "baseline": {
+            "$ref": "#/$defs/BaselineSummaryJson"
+          },
           "duration_secs": {
             "format": "double",
             "type": "number"
@@ -1586,7 +1790,8 @@
           "sampled_metric_rows",
           "duration_secs",
           "interrupted",
-          "mode_summary"
+          "mode_summary",
+          "baseline"
         ],
         "title": "RunResult",
         "type": "object"

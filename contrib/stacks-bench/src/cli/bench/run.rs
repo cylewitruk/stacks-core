@@ -29,6 +29,7 @@ use crate::cli::common::{
     run_indexer_progress_ui,
 };
 // Re-export for use by rerun.rs and other CLI consumers
+use crate::commands::bench::run::BaselineMode;
 pub use crate::commands::bench::run::RunResult;
 use crate::commands::bench::run::{BenchRunParams, FilterKind};
 use crate::commands::common::{
@@ -139,6 +140,28 @@ pub struct RunArgs {
     /// (discarded before measurement begins). These runs are additive to `--repetitions`.
     #[arg(long, default_value_t = 0)]
     warmup: usize,
+
+    /// Reuse an existing empty-block baseline calibration instead of measuring
+    /// one inline. The calibration must belong to the same indexed chainstate
+    /// and baseline anchor as this run.
+    #[arg(long = "baseline-id", conflicts_with = "no_baseline")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_id: Option<i32>,
+
+    /// Skip empty-block overhead baseline calibration for this run.
+    #[arg(
+        long = "no-baseline",
+        default_value_t = false,
+        conflicts_with = "baseline_id"
+    )]
+    #[serde(default)]
+    no_baseline: bool,
+
+    /// Serde-only field used by `bench rerun`, whose stored args are
+    /// serialized from `BenchRunParams` rather than this clap struct.
+    #[arg(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    baseline: Option<BaselineMode>,
 
     /// Filter to apply when selecting transactions to process.
     #[arg(long, short = 'f', conflicts_with_all = ["txid", "block", "contract"])]
@@ -328,6 +351,13 @@ impl From<&RunArgs> for BenchRunParams {
             storage_deltas: args.storage_deltas,
             dangerous_no_chainstate_copy: args.dangerous_no_chainstate_copy,
             shadow_dir_root: args.shadow_dir_root.clone(),
+            baseline: args.baseline.clone().unwrap_or_else(|| {
+                match (args.no_baseline, args.baseline_id) {
+                    (true, _) => BaselineMode::Skipped,
+                    (false, Some(calibration_id)) => BaselineMode::External { calibration_id },
+                    (false, None) => BaselineMode::Inline,
+                }
+            }),
             name: args.name.clone(),
         }
     }
