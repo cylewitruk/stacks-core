@@ -58,6 +58,8 @@ pub struct ModeSummary {
     pub measured_per_target: usize,
     /// What one measured entry primarily samples.
     pub sample_unit: String,
+    /// Empty-block overhead baseline mode: `inline`, `external`, or `skipped`.
+    pub baseline_mode: String,
     /// Physical isolation semantics for this run.
     pub isolation: String,
     /// Replay ordering semantics.
@@ -151,6 +153,14 @@ pub enum BenchEvent {
         total_blocks: u32,
         duration: Duration,
     },
+    /// An existing baseline calibration was linked to this run instead of
+    /// measuring a new inline baseline.
+    BaselineReused {
+        calibration_id: i32,
+        start_parent_index_hash: String,
+    },
+    /// Baseline measurement was explicitly skipped.
+    BaselineSkipped,
 
     // --- Replay phase ---
     /// Replay phase started.
