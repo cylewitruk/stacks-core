@@ -197,6 +197,7 @@ impl BenchRenderer {
                     ),
                 ]);
                 table.row(vec!["Sample Unit".into(), summary.sample_unit]);
+                table.row(vec!["Baseline".into(), summary.baseline_mode]);
                 table.row(vec!["Ordering".into(), summary.ordering]);
                 table.row(vec!["Isolation".into(), summary.isolation]);
                 cliclack::note("Benchmark Plan", table.to_string())?;
@@ -288,6 +289,23 @@ impl BenchRenderer {
                         total_blocks,
                         duration,
                     ),
+                )?;
+            }
+            BenchEvent::BaselineReused {
+                calibration_id,
+                start_parent_index_hash,
+            } => {
+                cliclack::note(
+                    "Baseline",
+                    format!(
+                        "Reusing calibration #{calibration_id}\nAnchor: {start_parent_index_hash}"
+                    ),
+                )?;
+            }
+            BenchEvent::BaselineSkipped => {
+                cliclack::note(
+                    "Baseline",
+                    "Skipped empty-block overhead baseline calibration for this run.",
                 )?;
             }
 
