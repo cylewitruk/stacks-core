@@ -81,6 +81,11 @@ The CLI-only `baseline_calibration` payload is returned by
 measured empty-block averages. The payload schema is listed under
 `cli_payloads.baseline_calibration` in [`v1.json`](v1.json).
 
+By default, both inline `bench run` baseline measurement and standalone
+`bench baseline calibrate` use the resolved chain tip as the calibration
+anchor. `bench run --baseline-id` requires the saved calibration to belong to
+the same indexed chainstate and tip anchor as the run.
+
 ## Evolution policy
 
 - **The header is frozen.** Header fields are never renamed, removed, or
