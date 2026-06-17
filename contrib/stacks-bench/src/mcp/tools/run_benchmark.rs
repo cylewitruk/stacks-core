@@ -28,7 +28,7 @@ use stacks_bench::bench_events::BenchEvent;
 use stacks_bench::db::app::ProfilerThreshold;
 use tokio::sync::mpsc;
 
-use crate::commands::bench::run::{BenchRunParams, FilterKind};
+use crate::commands::bench::run::{BaselineMode, BenchRunParams, FilterKind};
 use crate::commands::common::{
     ContractArg, IndexerUiSpawner, TxIdArg, normalize_contract_args, silent_indexer_ui,
 };
@@ -319,6 +319,7 @@ impl RunBenchmarkParams {
             storage_deltas: self.storage_deltas,
             dangerous_no_chainstate_copy: self.dangerous_no_chainstate_copy,
             shadow_dir_root: self.shadow_dir_root.map(PathBuf::from),
+            baseline: BaselineMode::Inline,
             name: self.name,
         })
     }
@@ -433,13 +434,14 @@ pub(super) async fn forward_bench_events(
                 None,
                 Some(&format!(
                     "Benchmark plan: mode={} targets={} warmup={} per target ({} total), \
-                     measured={} per target ({} total), isolation={}",
+                     measured={} per target ({} total), baseline={}, isolation={}",
                     summary.target_mode,
                     summary.logical_targets,
                     summary.warmup_per_target,
                     summary.warmup_entries,
                     summary.measured_per_target,
                     summary.measured_entries,
+                    summary.baseline_mode,
                     summary.isolation
                 )),
             )),
@@ -520,6 +522,23 @@ pub(super) async fn forward_bench_events(
                     )),
                 ))
             }
+            BenchEvent::BaselineReused {
+                calibration_id,
+                start_parent_index_hash,
+            } => Some(progress(
+                &token,
+                1.0,
+                Some(1.0),
+                Some(&format!(
+                    "Reusing baseline calibration #{calibration_id} at {start_parent_index_hash}"
+                )),
+            )),
+            BenchEvent::BaselineSkipped => Some(progress(
+                &token,
+                1.0,
+                Some(1.0),
+                Some("Skipped baseline calibration"),
+            )),
             BenchEvent::ReplayStarted {
                 total_entries,
                 warmup_entries,
