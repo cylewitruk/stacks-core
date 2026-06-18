@@ -1,22 +1,12 @@
-//! **aggregation** – Loop aggregation and sampling.
+//! Loop aggregation and sampling (`rate: N`, `count_only`, `suppress`).
 //!
-//! Run with:
 //! ```sh
 //! cargo run -p stacks-profiler --example aggregation
 //! ```
-//!
-//! This example covers:
-//! - **Loop aggregation**: repeated spans at the same call site are merged
-//!   into a single node with an accurate `count`.
-//! - **`rate: N`**: sample ~1 in N invocations (cheap fast-path for hot loops).
-//! - **`count_only`**: unsampled calls still maintain parent context & count.
-//! - **`suppress`**: unsampled calls suppress the entire subtree.
 
 use stacks_profiler::Profiler;
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/// A tiny unit of work — called multiple times but always from the same `span!` callsite.
+/// A tiny unit of work — called multiple times from the same `span!` callsite.
 fn sub_task() {
     let _span = stacks_profiler::span!("Sub Task");
     let mut _x = 0u64;
@@ -25,11 +15,8 @@ fn sub_task() {
     }
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
-
 fn main() {
-    // ── Part 1: Basic loop aggregation ────────────────────────────────────
-    //
+    // Part 1: Basic loop aggregation
     // "Iteration" is called 100 times at a single call site → 1 node, count=100.
     // "Sub Task" has its span! inside the function body (one callsite), so both
     // the unconditional and conditional calls aggregate into a single node.
@@ -47,10 +34,8 @@ fn main() {
         }
     }
 
-    // ── Part 2: rate: N (sampling) ───────────────────────────────────────
-    //
-    // Only ~1 in 10 iterations are timed. Unsampled iterations return `None`
-    // (cheapest path — no tree node created).
+    // Part 2: rate: N (sampling)
+    // Only ~1 in 10 iterations are timed; unsampled → None.
     {
         let _root = stacks_profiler::span!("Loop (rate: 10)");
 
@@ -60,11 +45,9 @@ fn main() {
         }
     }
 
-    // ── Part 3: rate + count_only ────────────────────────────────────────
-    //
-    // Unsampled iterations still push a lightweight frame that maintains the
-    // parent/child relationship and increments the call count.
-    // Result: count=100, but timing only reflects the ~10 sampled calls.
+    // Part 3: rate + count_only
+    // Unsampled iterations still maintain hierarchy and increment count.
+    // Result: count=100, timing only from ~10 sampled calls.
     {
         let _root = stacks_profiler::span!("Loop (rate: 10, count_only)");
 
@@ -74,11 +57,8 @@ fn main() {
         }
     }
 
-    // ── Part 4: rate + suppress ──────────────────────────────────────────
-    //
-    // Unsampled iterations activate suppression: any nested spans inside an
-    // unsampled call are also skipped. This prevents child spans from
-    // attaching to the wrong parent.
+    // Part 4: rate + suppress
+    // Unsampled iterations suppress all nested spans.
     {
         let _root = stacks_profiler::span!("Loop (rate: 10, suppress)");
 
@@ -90,8 +70,7 @@ fn main() {
         }
     }
 
-    // ── Print results ────────────────────────────────────────────────────
-    let results = Profiler::take_results();
+    let results = Profiler::take_results().expect("take profiler results");
 
     println!("\n=== aggregation ===\n");
     for root in &results {
