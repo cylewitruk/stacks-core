@@ -120,7 +120,10 @@ pub fn begin_builtin_span(
     });
 
     let tag = stacks_profiler::Tag::from(rust_name);
-    Some(stacks_profiler::Profiler::begin_span(span_id, Some(tag)))
+    Some(stacks_profiler::Profiler::begin_timed_span(
+        span_id,
+        Some(tag),
+    ))
 }
 
 /// Begin a profiler span for a user-defined Clarity function.
@@ -181,7 +184,10 @@ pub fn begin_user_fn_span(
     });
 
     let tag = stacks_profiler::Tag::from(full_identifier);
-    Some(stacks_profiler::Profiler::begin_span(span_id, Some(tag)))
+    Some(stacks_profiler::Profiler::begin_timed_span(
+        span_id,
+        Some(tag),
+    ))
 }
 
 /// No-op when the `profiler` feature is not enabled.
@@ -230,7 +236,10 @@ pub fn begin_contract_call_span(
     });
 
     let tag = stacks_profiler::Tag::from(format!("{}.{}", contract_identifier, tx_name));
-    Some(stacks_profiler::Profiler::begin_span(span_id, Some(tag)))
+    Some(stacks_profiler::Profiler::begin_timed_span(
+        span_id,
+        Some(tag),
+    ))
 }
 
 /// No-op when the `profiler` feature is not enabled.
@@ -281,7 +290,10 @@ pub fn begin_exec_tx_span(
     };
 
     let tag = stacks_profiler::Tag::from(fn_identifier.to_string());
-    Some(stacks_profiler::Profiler::begin_span(span_id, Some(tag)))
+    Some(stacks_profiler::Profiler::begin_timed_span(
+        span_id,
+        Some(tag),
+    ))
 }
 
 /// No-op when the `profiler` feature is not enabled.
