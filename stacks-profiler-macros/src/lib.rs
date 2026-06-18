@@ -1,21 +1,6 @@
-//! # Stacks Profiler Macros
+//! Procedural macros for `stacks-profiler`. Exports the `#[profile]` attribute.
 //!
-//! This crate provides the procedural macros for the `stacks-profiler` crate.
-//!
-//! It exports the `#[profile]` attribute, which automatically instruments functions
-//! to measure Wall Time, CPU Time, and Wait Time.
-//!
-//! ## Sampling behavior
-//!
-//! `#[profile(sample_rate = N)]` samples approximately 1 out of every N calls per callsite.
-//!
-//! When a call is **not sampled**, the behavior is controlled by `unsampled`:
-//! - `unsampled = "none"` (default): no guard is created (fastest, but may distort hierarchy)
-//! - `unsampled = "suppress"`: enters hierarchical suppression for this function call
-//! - `unsampled = "count_only"`: preserves hierarchy and increments count without timing
-//!
-//! **Note:** This crate is not intended to be used directly. You should use the re-exported
-//! macro from the main `stacks-profiler` crate.
+//! Use via the re-export in the main `stacks-profiler` crate.
 
 use darling::FromMeta;
 use darling::ast::NestedMeta;
@@ -26,9 +11,7 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 use syn::{ItemFn, Meta, parse_macro_input};
 
-// ── Attribute Definitions ────────────────────────────────────────────────────
-
-/// Defines behavior for unsampled calls when `sample_rate` is set.
+/// Behavior for unsampled calls when `sample_rate` is set.
 #[derive(Debug, Default, Clone, Copy, FromMeta)]
 enum UnsampledBehavior {
     /// Unsampled calls return `None` (default).
@@ -43,7 +26,7 @@ enum UnsampledBehavior {
     CountOnly,
 }
 
-/// Arguments for the `#[profile]` attribute macro.
+/// Parsed arguments for `#[profile(...)]`.
 #[derive(Debug, FromMeta)]
 struct ProfileArgs<Name, SampleRate>
 where
@@ -56,25 +39,21 @@ where
     #[darling(default)]
     sample_rate: SampleRate,
 
-    /// Controls what happens on *unsampled* calls when `sample_rate` is set.
-    ///
     /// One of: "none" | "suppress" | "count_only".
     #[darling(default)]
     unsampled: UnsampledBehavior,
 }
 
-// ── Codegen Helpers ──────────────────────────────────────────────────────────
-
-/// Emit the runtime code that derives `context` and `auto_name` from
-/// `std::any::type_name::<__StacksProfilerScope>()`.
-///
-/// The generated code expects a struct named `__StacksProfilerScope` to be in
-/// scope (defined by [`build_setup_block`]).
+/// Emit runtime code that derives `context` and `auto_name` from
+/// `type_name::<__StacksProfilerScope>()`.
 fn build_context_extraction() -> TokenStream2 {
     quote! {
         let type_name = std::any::type_name::<__StacksProfilerScope>();
-        // Strip the "::__StacksProfilerScope" suffix (23 chars) to get the enclosing path.
-        let full_path = &type_name[..type_name.len() - 23];
+        // Strip the scope marker suffix to recover the enclosing function/module path.
+        // `strip_suffix` avoids brittle fixed-length slicing.
+        let full_path = type_name
+            .strip_suffix("::__StacksProfilerScope")
+            .unwrap_or(type_name);
 
         let (mut context, auto_name) = match full_path.rfind("::") {
             Some(idx) => (&full_path[..idx], &full_path[idx+2..]),
@@ -94,11 +73,7 @@ fn build_context_extraction() -> TokenStream2 {
     }
 }
 
-/// Emit the block that initialises a `static OnceLock<SpanId>` and returns
-/// a reference to the span id.
-///
-/// If `name` is `Some`, the span uses that literal; otherwise it derives
-/// the name from the enclosing function via `auto_name`.
+/// Emit the `OnceLock<SpanId>` init block. Uses `name` if provided, otherwise `auto_name`.
 fn build_setup_block(name: Option<String>) -> TokenStream2 {
     let context_extraction = build_context_extraction();
 
@@ -125,10 +100,7 @@ fn build_setup_block(name: Option<String>) -> TokenStream2 {
     }
 }
 
-/// Emit the expression used when a sampled call is **not** selected.
-///
-/// This is the `else` branch of the sampling `if`; it varies by
-/// [`UnsampledBehavior`].
+/// Emit the `else` branch expression for unsampled calls.
 fn unsampled_guard_expr(mode: UnsampledBehavior) -> TokenStream2 {
     match mode {
         UnsampledBehavior::None => quote! { None },
@@ -136,26 +108,19 @@ fn unsampled_guard_expr(mode: UnsampledBehavior) -> TokenStream2 {
             quote! { Some(stacks_profiler::Profiler::begin_suppression()) }
         }
         UnsampledBehavior::CountOnly => {
-            quote! { Some(stacks_profiler::Profiler::begin_span_count_only(__profiler_span_id, None)) }
+            quote! { Some(stacks_profiler::Profiler::begin_count_only_span(__profiler_span_id, None)) }
         }
     }
 }
 
-/// Emit the code that creates `__profiler_guard` (an `Option<ProfileGuard>`).
-///
-/// The generated code assumes `__profiler_span_id` is already in scope
-/// (produced by [`build_setup_block`]).
-///
-/// * `rate = None` → always timed (unless suppressed).
-/// * `rate = Some(0 | 1)` → same as always timed.
-/// * `rate = Some(n)` → sampled 1/n; uses a bitmask when `n` is a power of two.
+/// Emit the guard-creation code. `None`/`Some(0|1)` → always timed; `Some(n)` → sampled 1/n.
 fn build_guard_creation(sample_rate: Option<usize>, mode: UnsampledBehavior) -> TokenStream2 {
     let always_timed = quote! {
         let __profiler_guard =
             if stacks_profiler::Profiler::is_suppressed() {
                 None
             } else {
-                Some(stacks_profiler::Profiler::begin_span(__profiler_span_id, None))
+                Some(stacks_profiler::Profiler::begin_timed_span(__profiler_span_id, None))
             };
     };
 
@@ -178,110 +143,53 @@ fn build_guard_creation(sample_rate: Option<usize>, mode: UnsampledBehavior) -> 
     };
 
     quote! {
-        static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
-            std::sync::atomic::AtomicUsize::new(0);
-
-        let __n = __PROFILER_SAMPLE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let __should_sample = #should_sample;
-
         let __profiler_guard =
             if stacks_profiler::Profiler::is_suppressed() {
                 None
-            } else if __should_sample {
-                Some(stacks_profiler::Profiler::begin_span(__profiler_span_id, None))
             } else {
-                #unsampled
+                static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+
+                let __n =
+                    __PROFILER_SAMPLE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let __should_sample = #should_sample;
+
+                if __should_sample {
+                    Some(stacks_profiler::Profiler::begin_timed_span(__profiler_span_id, None))
+                } else {
+                    #unsampled
+                }
             };
     }
 }
 
-// ── Main Entrypoint ──────────────────────────────────────────────────────────
-
-/// Instruments a function by automatically creating a `stacks_profiler` span for its body.
-///
-/// This is the attribute-macro equivalent of placing a `stacks_profiler::span!` guard at the
-/// top of a function and letting it drop on return (or panic).
-///
-/// The span name defaults to the function name and is scoped with a derived "context"
-/// (roughly: the enclosing module/type path).
-///
-/// ## Usage
+/// Instrument a function with a profiling span. The span name defaults to the function name.
 ///
 /// ```rust,ignore
-/// use stacks_profiler::profile;
+/// #[profile]                          // span name: "parse_block"
+/// fn parse_block() { /* ... */ }
 ///
-/// #[profile]
-/// fn parse_block() {
-///     // ...timed...
-/// }
-/// ```
+/// #[profile(name = "net.rx")]         // custom span name
+/// fn recv_packet() { /* ... */ }
 ///
-/// You can override the span name:
-///
-/// ```rust,ignore
-/// use stacks_profiler::profile;
-///
-/// #[profile(name = "net.rx")]
-/// fn recv_packet() {
-///     // ...timed...
-/// }
-/// ```
-///
-/// ## Sampling (`sample_rate`)
-///
-/// You can sample a hot function so only ~1 out of every `N` calls is timed:
-///
-/// ```rust,ignore
-/// use stacks_profiler::profile;
-///
-/// // Roughly 1% of calls are timed at this callsite.
-/// #[profile(sample_rate = 100)]
-/// fn hot_path() {
-///     // ...timed sometimes...
-/// }
-/// ```
-///
-/// Sampling is **per-callsite** and uses a `static AtomicUsize` counter (Relaxed ordering).
-///
-/// ### Unsampled behavior (`unsampled`)
-///
-/// When `sample_rate` is set and a given call is **not sampled**, the behavior is controlled
-/// by `unsampled`:
-///
-/// - `unsampled = "none"` (default): returns `None` (no guard). This is the cheapest path,
-///   but nested `span!` calls may attach to the nearest sampled ancestor if the parent function
-///   call is unsampled.
-/// - `unsampled = "suppress"`: enters *hierarchical suppression* for the duration of the
-///   unsampled call. Nested spans become no-ops, preventing wrong-parent attachment, but also
-///   dropping nested detail under unsampled parents.
-/// - `unsampled = "count_only"`: preserves hierarchy by pushing a lightweight frame and
-///   increments `count` without reading clocks. This keeps nested spans correctly parented and
-///   yields accurate per-context call counts, at higher overhead than `"suppress"`/`"none"`.
-///
-/// Examples:
-///
-/// ```rust,ignore
-/// use stacks_profiler::profile;
+/// #[profile(sample_rate = 100)]       // time ~1% of calls
+/// fn hot_path() { /* ... */ }
 ///
 /// #[profile(sample_rate = 100, unsampled = "suppress")]
-/// fn request() {
-///     // nested spans won't attach to the wrong parent on unsampled calls
-/// }
+/// fn request() { /* ... */ }          // suppress nested spans when unsampled
 ///
 /// #[profile(sample_rate = 100, unsampled = "count_only")]
-/// fn execute_tx() {
-///     // preserves hierarchy + counts even when this call is not timed
-/// }
+/// fn execute_tx() { /* ... */ }       // preserve hierarchy + counts when unsampled
 /// ```
 ///
-/// ## Notes / limitations
+/// `sample_rate` and `unsampled` have the same semantics as `rate:` / `suppress` / `count_only` on
+/// `span!`. Does not support tags — use `span!` directly if you need them.
 ///
-/// - This macro currently does **not** attach a tag (it instruments with `tag = None`).
-///   Use `span!` directly if you need tags at the callsite.
-/// - If suppression is active (entered by an ancestor span using suppression), this macro
-///   emits no guard for the current function call.
-/// - The span guard is a local variable; it is dropped when the function returns (including
-///   early returns) or when unwinding due to panic.
+/// `#[profile]` rejects `async fn` because a function-wide guard would be held across `.await`
+/// points, causing the thread-local span stack to be corrupted when the executor runs other tasks
+/// on the same thread, or when the future resumes on a different thread. Instead, use the
+/// `span!`/`measure!` macros directly, and keep their guards within synchronous regions that don't
+/// cross `.await`.
 #[proc_macro_attribute]
 pub fn profile(args: TokenStream, input: TokenStream) -> TokenStream {
     let attr_args = parse_macro_input!(args with Punctuated::<Meta, Comma>::parse_terminated);
@@ -293,6 +201,14 @@ pub fn profile(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let input_fn = parse_macro_input!(input as ItemFn);
+    if let Some(async_token) = &input_fn.sig.asyncness {
+        return syn::Error::new_spanned(
+            async_token,
+            "#[profile] does not support async fn; use span!/measure! around synchronous work that does not cross .await",
+        )
+        .to_compile_error()
+        .into();
+    }
 
     let attrs = &input_fn.attrs;
     let vis = &input_fn.vis;
@@ -312,4 +228,76 @@ pub fn profile(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     output.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UnsampledBehavior, build_guard_creation, build_setup_block, unsampled_guard_expr};
+
+    #[test]
+    fn unsampled_guard_expr_matches_behavior() {
+        assert_eq!(
+            unsampled_guard_expr(UnsampledBehavior::None).to_string(),
+            "None"
+        );
+        assert!(
+            unsampled_guard_expr(UnsampledBehavior::Suppress)
+                .to_string()
+                .contains("begin_suppression")
+        );
+        assert!(
+            unsampled_guard_expr(UnsampledBehavior::CountOnly)
+                .to_string()
+                .contains("begin_count_only_span")
+        );
+    }
+
+    #[test]
+    fn guard_creation_without_sampling_is_always_timed() {
+        let tokens = build_guard_creation(None, UnsampledBehavior::None).to_string();
+
+        assert!(tokens.contains("__profiler_guard"));
+        assert!(tokens.contains("begin_timed_span"));
+        assert!(!tokens.contains("__PROFILER_SAMPLE_COUNTER"));
+    }
+
+    #[test]
+    fn guard_creation_with_rate_one_is_always_timed() {
+        let tokens = build_guard_creation(Some(1), UnsampledBehavior::Suppress).to_string();
+
+        assert!(tokens.contains("__profiler_guard"));
+        assert!(tokens.contains("begin_timed_span"));
+        assert!(!tokens.contains("__PROFILER_SAMPLE_COUNTER"));
+        assert!(!tokens.contains("begin_suppression"));
+    }
+
+    #[test]
+    fn guard_creation_uses_bitmask_for_power_of_two_sample_rate() {
+        let tokens = build_guard_creation(Some(8), UnsampledBehavior::Suppress).to_string();
+
+        assert!(tokens.contains("__PROFILER_SAMPLE_COUNTER"));
+        assert!(tokens.contains("fetch_add"));
+        assert!(tokens.contains("__n & 7"));
+        assert!(tokens.contains("begin_suppression"));
+    }
+
+    #[test]
+    fn guard_creation_uses_modulo_for_non_power_of_two_sample_rate() {
+        let tokens = build_guard_creation(Some(10), UnsampledBehavior::CountOnly).to_string();
+
+        assert!(tokens.contains("__PROFILER_SAMPLE_COUNTER"));
+        assert!(tokens.contains("__n % 10"));
+        assert!(tokens.contains("begin_count_only_span"));
+    }
+
+    #[test]
+    fn setup_block_uses_custom_or_auto_name() {
+        let custom = build_setup_block(Some("custom_span".to_string())).to_string();
+        assert!(custom.contains("custom_span"));
+        assert!(custom.contains("with_context"));
+
+        let auto = build_setup_block(None).to_string();
+        assert!(auto.contains("auto_name"));
+        assert!(auto.contains("__PROFILER_SPAN_ID"));
+    }
 }

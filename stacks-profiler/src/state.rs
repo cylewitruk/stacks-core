@@ -13,24 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Per-thread profiler state: arena, active-span stack, and result materialisation.
-//!
-//! All types in this module are `pub(crate)` — they are implementation details consumed by
-//! [`Profiler`](crate::Profiler) in `lib.rs` but not exposed to downstream crates.
+//! Per-thread profiler state: node arena, active-span stack, and result materialisation.
+//! All types are `pub(crate)`.
 
 use std::time::Instant;
 
-use crate::{Counter, ProfileStats, Record, SpanId, Tag};
+use crate::{Counter, ProfileStats, Record, SpanId, Tag, TakeResultsError};
 
 /// Index into the per-thread node arena (`ThreadState::nodes`).
-pub(crate) type NodeId = u32;
+pub type NodeId = u32;
 
 /// A single node in the per-thread profile arena.
 ///
 /// Nodes are keyed by `(SpanId pointer, Tag)`.  Multiple entries of the same span under the same
 /// parent **share** a node; timing is accumulated.
 #[derive(Debug)]
-pub(crate) struct Node {
+pub struct Node {
     pub id: &'static SpanId,
     pub tag: Option<Tag>,
 
@@ -57,7 +55,7 @@ impl Node {
 
 /// Discriminates timed vs count-only entries on the active stack.
 #[derive(Debug)]
-pub(crate) enum ActiveKind {
+pub enum ActiveKind {
     Timed {
         start_wall: Instant,
         start_cpu_ns: u64,
@@ -67,14 +65,14 @@ pub(crate) enum ActiveKind {
 
 /// One frame on the per-thread active-span stack.
 #[derive(Debug)]
-pub(crate) struct ActiveFrame {
+pub struct ActiveFrame {
     pub node: NodeId,
     pub kind: ActiveKind,
 }
 
 /// Per-thread profiler state: a flat node arena plus an active-span stack.
 #[derive(Debug)]
-pub(crate) struct ThreadState {
+pub struct ThreadState {
     /// Active-span stack (LIFO).  The top frame is the current parent.
     pub stack: Vec<ActiveFrame>,
     /// Flat arena — nodes are addressed by [`NodeId`] (index).
@@ -97,9 +95,11 @@ impl ThreadState {
     }
 
     /// Append a fresh zero-initialised node to the arena and return its id.
-    #[inline(always)]
+    #[inline]
     pub fn alloc_node(&mut self, id: &'static SpanId, tag: Option<Tag>) -> NodeId {
         let idx = self.nodes.len();
+        let node_id =
+            NodeId::try_from(idx).expect("profile node arena exceeded NodeId address space");
         self.nodes.push(Node {
             id,
             tag,
@@ -112,7 +112,7 @@ impl ThreadState {
             records: Vec::with_capacity(4),
             counters: Vec::with_capacity(4),
         });
-        idx as NodeId
+        node_id
     }
 
     /// Shared reference to a node by arena index.
@@ -186,7 +186,7 @@ impl ThreadState {
 
     /// Resolve (find-or-create) the node for a span, either as a root or as a child of the current
     /// parent.
-    #[inline(always)]
+    #[inline]
     pub fn resolve_node(&mut self, id: &'static SpanId, tag: Option<Tag>) -> NodeId {
         match self.current_parent() {
             None => self.find_or_create_root(id, tag),
@@ -195,17 +195,24 @@ impl ThreadState {
     }
 
     /// Convert the arena into a tree of [`ProfileStats`], consuming nodes in place.
-    fn materialize_node(nodes: &mut Vec<Option<Node>>, node_id: NodeId) -> ProfileStats {
-        let node = nodes[node_id as usize]
-            .take()
-            .expect("node already materialized or missing");
+    fn materialize_node(
+        nodes: &mut [Option<Node>],
+        node_id: NodeId,
+    ) -> Result<ProfileStats, TakeResultsError> {
+        let Some(slot) = nodes.get_mut(node_id as usize) else {
+            return Err(TakeResultsError::MissingNode { node_id });
+        };
+
+        let Some(node) = slot.take() else {
+            return Err(TakeResultsError::DuplicateNodeReference { node_id });
+        };
 
         let mut children = Vec::with_capacity(node.children.len());
         for &child_id in &node.children {
-            children.push(Self::materialize_node(nodes, child_id));
+            children.push(Self::materialize_node(nodes, child_id)?);
         }
 
-        ProfileStats {
+        Ok(ProfileStats {
             id: node.id,
             tag: node.tag,
             wall_time_ns: node.wall_time_ns,
@@ -215,15 +222,16 @@ impl ThreadState {
             sampled_count: node.sampled_count,
             records: node.records,
             counters: node.counters,
-        }
+        })
     }
 
     /// Drain the arena into a `Vec<ProfileStats>` tree and reset state.
-    pub fn take_results_and_reset(&mut self) -> Vec<ProfileStats> {
-        debug_assert!(
-            self.stack.is_empty(),
-            "take_results called while spans are still active"
-        );
+    pub fn take_results_and_reset(&mut self) -> Result<Vec<ProfileStats>, TakeResultsError> {
+        if !self.stack.is_empty() {
+            return Err(TakeResultsError::ActiveSpans {
+                active: self.stack.len(),
+            });
+        }
 
         let nodes = std::mem::take(&mut self.nodes);
         let roots = std::mem::take(&mut self.roots);
@@ -232,13 +240,13 @@ impl ThreadState {
 
         let mut out = Vec::with_capacity(roots.len());
         for root in roots {
-            out.push(Self::materialize_node(&mut nodes_opt, root));
+            out.push(Self::materialize_node(&mut nodes_opt, root)?);
         }
 
         self.stack.clear();
         self.roots_last_child = None;
 
-        out
+        Ok(out)
     }
 
     /// Discard all accumulated nodes and reset the arena.
@@ -247,5 +255,60 @@ impl ThreadState {
         self.nodes.clear();
         self.roots.clear();
         self.roots_last_child = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Node, NodeId, ThreadState};
+    use crate::{SpanId, TakeResultsError};
+
+    static ROOT_ID: SpanId = SpanId {
+        name: "root",
+        context: Some("state_tests"),
+        file: "state.rs",
+        line: 1,
+    };
+
+    fn empty_node(id: &'static SpanId) -> Node {
+        Node {
+            id,
+            tag: None,
+            wall_time_ns: 0,
+            cpu_time_ns: 0,
+            entered_count: 0,
+            sampled_count: 0,
+            children: Vec::new(),
+            last_child: None,
+            records: Vec::new(),
+            counters: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn materialize_reports_missing_node() {
+        let mut nodes: Vec<Option<Node>> = Vec::new();
+        let err = ThreadState::materialize_node(&mut nodes, 7 as NodeId).unwrap_err();
+
+        assert_eq!(err, TakeResultsError::MissingNode { node_id: 7 });
+    }
+
+    #[test]
+    fn materialize_reports_duplicate_node() {
+        let mut nodes = vec![Some(empty_node(&ROOT_ID))];
+
+        let _ = ThreadState::materialize_node(&mut nodes, 0 as NodeId).unwrap();
+        let err = ThreadState::materialize_node(&mut nodes, 0 as NodeId).unwrap_err();
+
+        assert_eq!(err, TakeResultsError::DuplicateNodeReference { node_id: 0 });
+    }
+
+    #[test]
+    fn materialize_consumes_valid_node() {
+        let mut nodes = vec![Some(empty_node(&ROOT_ID))];
+        let stats = ThreadState::materialize_node(&mut nodes, 0 as NodeId).unwrap();
+
+        assert_eq!(stats.name(), "root");
+        assert!(nodes[0].is_none());
     }
 }

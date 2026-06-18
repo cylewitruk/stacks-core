@@ -10,12 +10,13 @@ edition = "2024"
 publish = false
 
 [dependencies]
-stacks-profiler-macros = { path = "../stacks-profiler-macros" }
+stacks-profiler-macros.workspace = true
 libc.workspace = true
 rapidhash.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+trybuild.workspace = true
 
 [[bench]]
 name = "overhead"
