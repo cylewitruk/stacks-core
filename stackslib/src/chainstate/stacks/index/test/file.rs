@@ -158,3 +158,25 @@ fn test_migrate_existing_trie_blobs() {
         }
     }
 }
+
+#[test]
+fn test_migrate_schema_3_creates_squash_tables_on_v2_db() {
+    let mut db = setup_db("test_migrate_schema_3_creates_squash_tables_on_v2_db");
+    let previous_version = trie_sql::migrate_tables_if_needed::<BlockHeaderHash>(&mut db).unwrap();
+
+    assert_eq!(previous_version, 1);
+    assert!(table_exists(&db, "marf_squash_info").unwrap());
+    assert!(table_exists(&db, "marf_squashed_blocks").unwrap());
+}
+
+#[test]
+fn test_accept_existing_schema_3_db() {
+    let mut db = setup_db("test_accept_existing_schema_3_db");
+    trie_sql::migrate_tables_if_needed::<BlockHeaderHash>(&mut db).unwrap();
+
+    let previous_version = trie_sql::migrate_tables_if_needed::<BlockHeaderHash>(&mut db).unwrap();
+
+    assert_eq!(previous_version, 3);
+    assert!(table_exists(&db, "marf_squash_info").unwrap());
+    assert!(table_exists(&db, "marf_squashed_blocks").unwrap());
+}

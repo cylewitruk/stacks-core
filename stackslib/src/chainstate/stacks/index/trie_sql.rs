@@ -76,7 +76,29 @@ INSERT OR REPLACE INTO schema_version (version) VALUES (2);
 INSERT OR REPLACE INTO migrated_version (version) VALUES (1);
 ";
 
-pub static SQL_MARF_SCHEMA_VERSION: u64 = 2;
+/// Schema 3 adds SQL tables for squash metadata.
+///
+/// These tables are populated only by the squash pipeline. On a normal
+/// archival MARF they remain empty. The 3.4.0.0.2 bench branch does not use
+/// the squash data, but accepting the schema lets it read 3.4.0.0.3 snapshots
+/// without changing trie read or execution behavior.
+static SQL_MARF_DATA_TABLE_SCHEMA_3: &str = "
+CREATE TABLE IF NOT EXISTS marf_squash_info (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    archival_marf_root_hash BLOB NOT NULL,
+    squash_root_node_hash BLOB,
+    squash_height INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS marf_squashed_blocks (
+    height INTEGER PRIMARY KEY,
+    block_hash BLOB NOT NULL UNIQUE,
+    marf_root_hash BLOB NOT NULL
+);
+UPDATE schema_version SET version = 3;
+";
+
+pub static SQL_MARF_EXTERNAL_BLOBS_SCHEMA_VERSION: u64 = 2;
+pub static SQL_MARF_SCHEMA_VERSION: u64 = 3;
 
 pub fn create_tables_if_needed(conn: &mut Connection) -> Result<(), Error> {
     let tx = tx_begin_immediate(conn)?;
@@ -128,6 +150,14 @@ pub fn migrate_tables_if_needed<T: MarfTrieId>(conn: &mut Connection) -> Result<
                 tx.execute_batch(SQL_MARF_DATA_TABLE_SCHEMA_2)?;
                 tx.commit()?;
             }
+            2 => {
+                debug!("Migrate MARF data from schema 2 to schema 3");
+
+                // add squash side-tables
+                let tx = tx_begin_immediate(conn)?;
+                tx.execute_batch(SQL_MARF_DATA_TABLE_SCHEMA_3)?;
+                tx.commit()?;
+            }
             x if x == SQL_MARF_SCHEMA_VERSION => {
                 // done
                 debug!("Migrated MARF data to schema {}", &SQL_MARF_SCHEMA_VERSION);
@@ -143,12 +173,14 @@ pub fn migrate_tables_if_needed<T: MarfTrieId>(conn: &mut Connection) -> Result<
             }
         }
     }
-    if first_version == SQL_MARF_SCHEMA_VERSION
+    if first_version >= SQL_MARF_EXTERNAL_BLOBS_SCHEMA_VERSION
         && get_migrated_version(conn) != SQL_MARF_SCHEMA_VERSION
         && !trie_sql::detect_partial_migration(conn)?
     {
-        // no migration will need to happen, so stop checking
-        debug!("Marking MARF data as fully-migrated");
+        // The schema changed after the external-blob migration. If this DB was
+        // already at least schema 2 and has no partial blob migration, no trie
+        // blob export is required.
+        debug!("Marking MARF external blob migration as fully-migrated");
         set_migrated(conn)?;
     }
     Ok(first_version)

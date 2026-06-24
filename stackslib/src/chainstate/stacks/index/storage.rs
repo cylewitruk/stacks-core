@@ -1887,7 +1887,11 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
         };
 
         let prev_schema_version = trie_sql::migrate_tables_if_needed::<T>(&mut db)?;
-        if prev_schema_version != trie_sql::SQL_MARF_SCHEMA_VERSION || marf_opts.force_db_migrate {
+        // Only the schema-2 migration moved trie blobs to external storage.
+        // Later schema migrations should not rewrite the blob file.
+        if prev_schema_version < trie_sql::SQL_MARF_EXTERNAL_BLOBS_SCHEMA_VERSION
+            || marf_opts.force_db_migrate
+        {
             if let Some(blobs) = blobs.as_mut() {
                 if TrieFile::exists(&db_path)? {
                     // migrate blobs out of the old DB
