@@ -1279,7 +1279,13 @@ impl StacksChainState {
         let mut open_opts = marf_opts.unwrap_or(MARFOpenOpts::default());
         open_opts.external_blobs = true;
         test_override_marf_compression(&mut open_opts);
-        let marf = MARF::from_path(marf_path, open_opts).map_err(db_error::IndexError)?;
+        let marf = MARF::from_path(marf_path, open_opts.clone()).map_err(|e| {
+            error!(
+                "Failed to open Stacks chainstate MARF index at '{}' with opts {:?}: {:?}",
+                marf_path, &open_opts, &e
+            );
+            db_error::IndexError(e)
+        })?;
         Ok(marf)
     }
 

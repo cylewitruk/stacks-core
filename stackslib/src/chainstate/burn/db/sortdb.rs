@@ -2732,7 +2732,13 @@ impl SortitionDB {
         let mut open_opts = marf_opts.unwrap_or(MARFOpenOpts::default());
         open_opts.external_blobs = TrieFile::exists(marf_path)?;
         test_override_marf_compression(&mut open_opts);
-        let marf = MARF::from_path(marf_path, open_opts).map_err(|_e| db_error::Corruption)?;
+        let marf = MARF::from_path(marf_path, open_opts.clone()).map_err(|e| {
+            error!(
+                "Failed to open sortition MARF index at '{}' with opts {:?}: {:?}",
+                marf_path, &open_opts, &e
+            );
+            db_error::IndexError(e)
+        })?;
         sql_pragma(marf.sqlite_conn(), "foreign_keys", &true)?;
         Ok(marf)
     }
