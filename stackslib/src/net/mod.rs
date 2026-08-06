@@ -267,6 +267,19 @@ impl From<libstackerdb_error> for Error {
     }
 }
 
+impl From<stacks_codec::transaction::AuthError> for Error {
+    fn from(e: stacks_codec::transaction::AuthError) -> Self {
+        use stacks_codec::transaction::AuthError;
+        match e {
+            AuthError::SigningError(s) => Error::SigningError(s),
+            AuthError::VerifyingError(s) => Error::VerifyingError(s),
+            AuthError::IncompatibleSpendingConditionError => Error::SerializeError(
+                "Spending condition is incompatible with this operation".to_string(),
+            ),
+        }
+    }
+}
+
 impl From<codec_error> for Error {
     fn from(e: codec_error) -> Self {
         match e {
@@ -2653,7 +2666,7 @@ pub mod test {
 
     impl Default for TestPeerConfig {
         fn default() -> Self {
-            let conn_opts = ConnectionOptions::default();
+            let conn_opts = ConnectionOptions::default().with_private_neighbors();
             Self {
                 chain_config: TestChainstateConfig::default(),
                 peer_version: 0x01020304,
@@ -2972,7 +2985,10 @@ pub mod test {
                 .unwrap();
 
             let epochs = config.chain_config.epochs.clone().unwrap_or_else(|| {
-                StacksEpoch::unit_test_pre_2_05(config.chain_config.burnchain.first_block_height)
+                StacksEpoch::unit_test_up_to(
+                    config.chain_config.burnchain.first_block_height,
+                    StacksEpochId::Epoch20,
+                )
             });
 
             let mut peer_network = PeerNetwork::new(
@@ -4234,6 +4250,7 @@ pub mod test {
                     block_commit_op.commit_outs = match recipients {
                         Some(info) => {
                             let mut recipients = info
+                                .unwrap_v0()
                                 .recipients
                                 .into_iter()
                                 .map(|x| x.0)
@@ -4423,7 +4440,7 @@ pub mod test {
                     .chain_config
                     .epochs
                     .clone()
-                    .unwrap_or(StacksEpoch::unit_test_3_0(0)),
+                    .unwrap_or(StacksEpoch::unit_test_up_to(0, StacksEpochId::Epoch30)),
             )
         }
 

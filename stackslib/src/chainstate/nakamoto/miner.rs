@@ -1,5 +1,5 @@
 // Copyright (C) 2013-2020 Blockstack PBC, a public benefit corporation
-// Copyright (C) 2020 Stacks Open Internet Foundation
+// Copyright (C) 2020-2026 Stacks Open Internet Foundation
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,9 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use clarity::vm::clarity::ClarityError;
-use clarity::vm::contexts::AbortCallback;
 use clarity::vm::costs::ExecutionCost;
-use stacks_common::alloc_tracker::{thread_allocated, tracking_allocator_installed};
 use stacks_common::types::chainstate::{
     BlockHeaderHash, BurnchainHeaderHash, ConsensusHash, StacksBlockId,
 };
@@ -35,8 +33,10 @@ use crate::chainstate::stacks::db::blocks::{DummyEventDispatcher, MAX_RECEIPT_SI
 use crate::chainstate::stacks::db::{
     ChainstateTx, ClarityTx, StacksBlockHeaderTypes, StacksChainState, StacksHeaderInfo,
 };
+use crate::chainstate::stacks::events::StacksTransactionReceipt;
 use crate::chainstate::stacks::miner::{
-    BlockBuilder, BlockBuilderSettings, BlockLimitFunction, TransactionEvent, TransactionResult,
+    BlockBuilder, BlockBuilderSettings, BlockLimitFunction, TransactionEvent,
+    TransactionResourceBudgets, TransactionResult,
 };
 use crate::chainstate::stacks::{Error, StacksBlockHeader, *};
 use crate::clarity_vm::clarity::ClarityInstance;
@@ -47,34 +47,6 @@ use crate::monitoring::{
     set_last_mined_block_transaction_count, set_last_mined_execution_cost_observed,
 };
 use crate::net::relay::Relayer;
-
-/// Build an [`AbortCallback`] that aborts when per-thread net heap
-/// allocation exceeds `limit_bytes`. Should be called once per
-/// transaction so each transaction gets a fresh baseline.
-///
-/// Returns `AbortCallback::None` when `limit_bytes` is 0 (disabled).
-///
-/// This is only called from block assembly and proposal validation contexts,
-/// and *not* during normal block append or block replay.
-///
-/// Requires a [`TrackingAllocator`](stacks_common::alloc_tracker::TrackingAllocator)
-/// to be set as the `#[global_allocator]` in the binary crate. If no
-/// tracking allocator is active the counters remain at 0 and the callback
-/// will never trigger (safe degradation).
-pub fn make_mem_abort_callback(limit_bytes: u64) -> AbortCallback {
-    if limit_bytes == 0 {
-        return AbortCallback::None;
-    }
-    if !tracking_allocator_installed() {
-        error!(
-            "TrackingAllocator is not installed as the global allocator; any miner or signer configured memory limits will never trigger"
-        );
-    }
-    AbortCallback::MemAbort {
-        baseline: thread_allocated(),
-        limit_bytes,
-    }
-}
 
 /// Nakamoto tenure information
 #[derive(Debug, Default)]
@@ -252,6 +224,73 @@ pub struct BlockMetadata {
 }
 
 impl NakamotoBlockBuilder {
+    /// Append a transaction that the source block marked as problematic while
+    /// replaying that block. The fee and nonces are applied, but the payload is
+    /// deliberately not executed.
+    pub fn try_mine_skipped_tx_with_len(
+        &mut self,
+        clarity_tx: &mut ClarityTx,
+        tx: &StacksTransaction,
+        tx_len: u64,
+        category: u8,
+        total_receipts_size: &mut u64,
+    ) -> TransactionResult {
+        if self.bytes_so_far + tx_len >= u64::from(MAX_EPOCH_SIZE) {
+            return TransactionResult::skipped_due_to_error(tx, Error::TxWouldNotFitError);
+        }
+
+        if let Some(parent_header) = &self.parent_header {
+            let mut total_tenure_size = self.bytes_so_far + tx_len;
+            if parent_header.consensus_hash == self.header.consensus_hash {
+                total_tenure_size += parent_header.total_tenure_size;
+            }
+            if total_tenure_size >= self.max_tenure_bytes {
+                return TransactionResult::skipped_due_to_error(tx, Error::TenureTooBigError);
+            }
+        }
+
+        let Some(receipt_size) =
+            StacksTransactionReceipt::from_problematic_skipped(tx.clone(), category).size()
+        else {
+            return TransactionResult::error(
+                tx,
+                Error::InvalidStacksBlock("Could not calculate receipt size".into()),
+            );
+        };
+        let next_receipts_size = total_receipts_size.saturating_add(receipt_size);
+        if next_receipts_size >= MAX_RECEIPT_SIZES {
+            return TransactionResult::error(tx, Error::BlockCostExceeded);
+        }
+
+        let (_fee, receipt) = match StacksChainState::process_skipped_transaction(
+            clarity_tx,
+            tx,
+            category,
+            !cfg!(test),
+        ) {
+            Ok(result) => result,
+            Err(error) => return TransactionResult::error(tx, error),
+        };
+        *total_receipts_size = next_receipts_size;
+
+        let tx_index = match u32::try_from(self.txs.len()) {
+            Ok(index) => index,
+            Err(_) => {
+                return TransactionResult::error(
+                    tx,
+                    Error::InvalidStacksBlock("Too many transactions in replayed block".into()),
+                );
+            }
+        };
+        self.header
+            .problematic_txs
+            .push(crate::chainstate::nakamoto::ProblematicTxMarker { tx_index, category });
+        self.txs.push(tx.clone());
+        self.bytes_so_far += tx_len;
+
+        TransactionResult::success(tx, receipt)
+    }
+
     /// Make a block builder from genesis (testing only)
     pub fn new_first_block(
         tenure_change: &StacksTransaction,
@@ -488,11 +527,13 @@ impl NakamotoBlockBuilder {
         };
 
         let parent_block_id = StacksBlockId::new(&parent_consensus_hash, &parent_header_hash);
-        let parent_coinbase_height =
-            NakamotoChainState::get_coinbase_height(&mut chainstate.index_conn(), &parent_block_id)
-                .ok()
-                .flatten()
-                .unwrap_or(0);
+        let parent_coinbase_height = NakamotoChainState::get_coinbase_height_at(
+            &mut chainstate.index_conn(),
+            &parent_block_id,
+        )
+        .ok()
+        .flatten()
+        .unwrap_or(0);
 
         let is_new_tenure = cause.is_new_tenure();
         let coinbase_height = if is_new_tenure {
@@ -621,6 +662,11 @@ impl NakamotoBlockBuilder {
 
         self.header.tx_merkle_root = tx_merkle_root;
         self.header.state_index_root = state_root_hash;
+        // Keep the shadow bit, but set the version to the expected version for
+        // this epoch.
+        let shadow_flag = self.header.version & 0x80;
+        self.header.version =
+            NakamotoBlockHeader::expected_version_for_epoch(clarity_tx.get_epoch()) | shadow_flag;
 
         let block = NakamotoBlock {
             header: self.header.clone(),
@@ -839,7 +885,7 @@ impl BlockBuilder for NakamotoBlockBuilder {
         tx: &StacksTransaction,
         tx_len: u64,
         limit_behavior: &BlockLimitFunction,
-        max_execution_time: Option<std::time::Duration>,
+        resource_budgets: &TransactionResourceBudgets,
         total_receipts_size: &mut u64,
     ) -> TransactionResult {
         if self.bytes_so_far + tx_len >= u64::from(MAX_EPOCH_SIZE) {
@@ -904,7 +950,7 @@ impl BlockBuilder for NakamotoBlockBuilder {
                 clarity_tx,
                 tx,
                 quiet,
-                max_execution_time,
+                resource_budgets,
                 |receipt| {
                     if !receipt.post_condition_aborted {
                         let all_events_valid = receipt.events.iter().all(|event| {

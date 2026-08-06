@@ -26,16 +26,12 @@ pub mod flags {
     pub const CAPTURE_MARF_KEYS: u64 = 1 << 0;
     /// Capture MARF block-hash lookups in `get_by_hash`.
     pub const CAPTURE_MARF_HASH_LOOKUPS: u64 = 1 << 1;
-    /// Count MARF cache hits/misses.
-    pub const CAPTURE_MARF_CACHE_COUNTS: u64 = 1 << 2;
     /// Capture MARF disk-read identifiers (block id).
     pub const CAPTURE_MARF_DISK_READS: u64 = 1 << 3;
 }
 
-const DEFAULT_FLAGS: u64 = flags::CAPTURE_MARF_KEYS
-    | flags::CAPTURE_MARF_HASH_LOOKUPS
-    | flags::CAPTURE_MARF_CACHE_COUNTS
-    | flags::CAPTURE_MARF_DISK_READS;
+const DEFAULT_FLAGS: u64 =
+    flags::CAPTURE_MARF_KEYS | flags::CAPTURE_MARF_HASH_LOOKUPS | flags::CAPTURE_MARF_DISK_READS;
 
 static PROFILER_FLAGS: AtomicU64 = AtomicU64::new(DEFAULT_FLAGS);
 
@@ -71,11 +67,6 @@ pub fn capture_marf_keys() -> bool {
 #[inline(always)]
 pub fn capture_marf_hash_lookups() -> bool {
     is_enabled(flags::CAPTURE_MARF_HASH_LOOKUPS)
-}
-
-#[inline(always)]
-pub fn capture_marf_cache_counts() -> bool {
-    is_enabled(flags::CAPTURE_MARF_CACHE_COUNTS)
 }
 
 #[inline(always)]

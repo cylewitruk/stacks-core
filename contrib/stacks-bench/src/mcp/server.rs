@@ -27,7 +27,7 @@ impl StacksBenchServer {
     }
 }
 
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for StacksBenchServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(

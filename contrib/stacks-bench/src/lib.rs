@@ -300,7 +300,11 @@ impl<'a> StacksBlockLoader<'a> {
                 .load_nakamoto_block(block_id)
                 .await
                 .with_context(|| format!("Failed to load Nakamoto block {block_id}"))?;
-            Ok(StacksBlock::Nakamoto(naka_block))
+            let txs = naka_block
+                .txs()
+                .map(|tx| tx.tx_ignoring_problematic_state().clone())
+                .collect();
+            Ok(StacksBlock::Nakamoto(txs))
         } else {
             let stacks_block = self
                 .load_pre_nakamoto_block(block_id)
@@ -314,14 +318,14 @@ impl<'a> StacksBlockLoader<'a> {
 #[derive(Debug, Clone)]
 pub enum StacksBlock {
     PreNakamoto(blockstack_lib::chainstate::stacks::StacksBlock),
-    Nakamoto(blockstack_lib::chainstate::nakamoto::NakamotoBlock),
+    Nakamoto(Vec<StacksTransaction>),
 }
 
 impl AsRef<[StacksTransaction]> for StacksBlock {
     fn as_ref(&self) -> &[StacksTransaction] {
         match self {
             StacksBlock::PreNakamoto(block) => &block.txs,
-            StacksBlock::Nakamoto(block) => &block.txs,
+            StacksBlock::Nakamoto(txs) => txs,
         }
     }
 }
@@ -330,14 +334,14 @@ impl StacksBlock {
     pub fn transactions(&self) -> &[StacksTransaction] {
         match self {
             StacksBlock::PreNakamoto(block) => &block.txs,
-            StacksBlock::Nakamoto(block) => &block.txs,
+            StacksBlock::Nakamoto(txs) => txs,
         }
     }
 
     pub fn into_transactions_vec(self) -> Vec<StacksTransaction> {
         match self {
             StacksBlock::PreNakamoto(block) => block.txs,
-            StacksBlock::Nakamoto(block) => block.txs,
+            StacksBlock::Nakamoto(txs) => txs,
         }
     }
 }

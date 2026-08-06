@@ -19,6 +19,7 @@ serde_derive = { workspace = true }
 slog = { workspace = true }
 stacks_common = { package = "stacks-common", path = "../stacks-common", default-features = false }
 stacks-profiler = { workspace = true, optional = true }
+variant_count = { workspace = true }
 
 [dev-dependencies]
 mutants = "0.0.3"

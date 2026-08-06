@@ -4,11 +4,11 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail};
 use blockstack_lib::burnchains::Txid;
 use blockstack_lib::chainstate::burn::db::sortdb::{SortitionDB, get_ancestor_sort_id};
-use blockstack_lib::chainstate::nakamoto::NakamotoChainState;
 use blockstack_lib::chainstate::nakamoto::miner::{MinerTenureInfoCause, NakamotoBlockBuilder};
+use blockstack_lib::chainstate::nakamoto::{NakamotoChainState, TxToProcess};
 use blockstack_lib::chainstate::stacks::db::StacksChainState;
 use blockstack_lib::chainstate::stacks::miner::{
-    BlockBuilder, BlockLimitFunction, TransactionResult,
+    BlockBuilder, BlockLimitFunction, TransactionResourceBudgets, TransactionResult,
 };
 use blockstack_lib::config::DEFAULT_MAX_TENURE_BYTES;
 use clarity::vm::costs::ExecutionCost;
@@ -67,7 +67,7 @@ fn build_segments_full(
     block: &blockstack_lib::chainstate::nakamoto::NakamotoBlock,
 ) -> Vec<TxSegment> {
     vec![TxSegment {
-        range: 0..block.txs.len(),
+        range: 0..block.tx_count(),
         sampled: true,
     }]
 }
@@ -76,7 +76,8 @@ fn build_segments_filtered(
     block: &blockstack_lib::chainstate::nakamoto::NakamotoBlock,
     filter: &crate::filter::TxFilter,
 ) -> Vec<TxSegment> {
-    let n = block.txs.len();
+    let txs: Vec<_> = block.txs().collect();
+    let n = txs.len();
     if n == 0 {
         return vec![];
     }
@@ -84,8 +85,8 @@ fn build_segments_filtered(
     let mut out = Vec::new();
     let mut run_start = 0usize; // start of current "unmeasured run"
 
-    for i in 0..n {
-        let is_match = filter.matches(&block.txs[i]);
+    for (i, tx) in txs.iter().enumerate() {
+        let is_match = filter.matches(tx.tx_ignoring_problematic_state());
         if !is_match {
             continue;
         }
@@ -125,13 +126,16 @@ fn build_segments_for_txid(
     block: &blockstack_lib::chainstate::nakamoto::NakamotoBlock,
     filter: &crate::filter::TxFilter,
 ) -> Vec<TxSegment> {
-    let n = block.txs.len();
+    let txs: Vec<_> = block.txs().collect();
+    let n = txs.len();
     if n == 0 {
         return vec![];
     }
 
     // Find the first matching transaction
-    let match_idx = block.txs.iter().position(|tx| filter.matches(tx));
+    let match_idx = txs
+        .iter()
+        .position(|tx| filter.matches(tx.tx_ignoring_problematic_state()));
     let Some(idx) = match_idx else {
         return vec![];
     };
@@ -311,6 +315,7 @@ where
     F: FnMut(&SegmentReplayInfo, Option<&mut BlockMetrics>) -> Result<()>,
 {
     let origin_id = block.block_id();
+    let block_txs: Vec<_> = block.txs().collect();
 
     if segments.is_empty() {
         return Ok(vec![]);
@@ -338,7 +343,7 @@ where
         let measure = sample_metrics && seg.sampled;
 
         // Get segment size and transactions
-        let segment_txs = &block.txs[seg.range.clone()];
+        let segment_txs = &block_txs[seg.range.clone()];
 
         // Suppress profiler recording for unmeasured segments inside a sampled
         // run. When `sample_metrics=false`, the surrounding code skips all
@@ -376,10 +381,14 @@ where
             &blockstack_lib::chainstate::stacks::StacksTransaction,
         > = segment_txs
             .iter()
+            .map(TxToProcess::tx_ignoring_problematic_state)
             .find(|tx| tx.try_as_tenure_change().is_some());
 
         let segment_coinbase_tx: Option<&blockstack_lib::chainstate::stacks::StacksTransaction> =
-            segment_txs.iter().find(|tx| tx.try_as_coinbase().is_some());
+            segment_txs
+                .iter()
+                .map(TxToProcess::tx_ignoring_problematic_state)
+                .find(|tx| tx.try_as_coinbase().is_some());
 
         let segment_cause = if let Some(tc_tx) = segment_tenure_change_tx {
             let tc_payload = tc_tx.try_as_tenure_change().expect("checked above");
@@ -395,6 +404,7 @@ where
             sortdb,
             &cur_parent_info,
             block,
+            &block_txs,
             seg,
             seg_ix,
             segment_tenure_change_tx,
@@ -491,7 +501,7 @@ where
     //   * `repetition > 0` synthesizes a shifted timestamp (see
     //     `execute_segment`) to avoid header-table collisions, which changes
     //     the block hash and therefore the MARF entries committed under it.
-    if repetition == 0 && segments.len() == 1 && segments[0].range == (0..block.txs.len()) {
+    if repetition == 0 && segments.len() == 1 && segments[0].range == (0..block.tx_count()) {
         if let Some(replayed_root) = last_state_index_root {
             if replayed_root != block.header.state_index_root {
                 let tenure_tx = block.get_tenure_tx_payload();
@@ -505,7 +515,7 @@ where
                     block.header.consensus_hash,
                     block.header.parent_block_id,
                     tenure_cause.as_deref().unwrap_or("none"),
-                    block.txs.len(),
+                    block.tx_count(),
                     block.header.state_index_root,
                 );
             }
@@ -530,6 +540,7 @@ fn execute_segment(
     sortdb: &SortitionDB,
     cur_parent_info: &blockstack_lib::chainstate::stacks::db::StacksHeaderInfo,
     block: &blockstack_lib::chainstate::nakamoto::NakamotoBlock,
+    block_txs: &[TxToProcess<'_>],
     seg: &TxSegment,
     seg_ix: usize,
     segment_tenure_change_tx: Option<&blockstack_lib::chainstate::stacks::StacksTransaction>,
@@ -568,6 +579,7 @@ fn execute_segment(
         Some(synth_timestamp),
         DEFAULT_MAX_TENURE_BYTES,
     )?;
+    builder.header.version = block.header.version;
 
     let cur_parent_block_id = StacksBlockId::new(
         &cur_parent_info.consensus_hash,
@@ -644,9 +656,11 @@ fn execute_segment(
     let mut total_receipts_size = 0u64;
 
     let starting_cost = clarity_tx.cost_so_far();
+    let resource_budgets = TransactionResourceBudgets::unlimited();
 
     for i in seg.range.clone() {
-        let tx = &block.txs[i];
+        let tx_to_process = block_txs[i];
+        let tx = tx_to_process.tx_ignoring_problematic_state();
         let tx_len = tx.tx_len();
 
         let tx_start = if measure { Some(Instant::now()) } else { None };
@@ -659,14 +673,23 @@ fn execute_segment(
             None
         };
 
-        let res = builder.try_mine_tx_with_len(
-            &mut clarity_tx,
-            tx,
-            tx_len,
-            &BlockLimitFunction::NO_LIMIT_HIT,
-            None,
-            &mut total_receipts_size,
-        );
+        let res = match tx_to_process {
+            TxToProcess::Execute(_) => builder.try_mine_tx_with_len(
+                &mut clarity_tx,
+                tx,
+                tx_len,
+                &BlockLimitFunction::NO_LIMIT_HIT,
+                &resource_budgets,
+                &mut total_receipts_size,
+            ),
+            TxToProcess::Skip { category, .. } => builder.try_mine_skipped_tx_with_len(
+                &mut clarity_tx,
+                tx,
+                tx_len,
+                category,
+                &mut total_receipts_size,
+            ),
+        };
 
         drop(_tx_guard);
 
@@ -737,7 +760,7 @@ fn execute_segment(
     let block_fees: u128 = seg
         .range
         .clone()
-        .map(|i| block.txs[i].get_tx_fee() as u128)
+        .map(|i| block_txs[i].tx_ignoring_problematic_state().get_tx_fee() as u128)
         .sum();
 
     // Compute the scheduled miner reward for tenure-start blocks so that future
