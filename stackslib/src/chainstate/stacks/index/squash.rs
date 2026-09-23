@@ -22,19 +22,28 @@
 use std::collections::HashMap;
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rusqlite::params;
 use stacks_common::types::chainstate::TrieHash;
 
 use crate::chainstate::stacks::index::blob_layout::BlobHeader;
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection as _, MARF};
-use crate::chainstate::stacks::index::node::{clear_backptr, is_backptr, TrieNodeID, TriePtr};
+use crate::chainstate::stacks::index::marf::{
+    MARFOpenOpts, MarfConnection as _, MarfCore as _, MARF,
+};
+use crate::chainstate::stacks::index::node::{
+    clear_backptr, is_backptr, TrieNodeID, TrieNodeType, TriePtr,
+};
+use crate::chainstate::stacks::index::record::NodeRecordFormat;
+use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::storage::{
     SquashInfo, TrieFileStorage, TrieHashCalculationMode, TrieStorageConnection,
 };
 use crate::chainstate::stacks::index::trie::Trie;
-use crate::chainstate::stacks::index::{trie_sql, Error, MarfDataEntry, MarfTrieId};
+use crate::chainstate::stacks::index::{
+    trie_sql, Error, MarfDataEntry, MarfTrieId, TrieReadStorage, ValueExtentResolver,
+};
 
 mod node_store;
 mod stream;
@@ -120,7 +129,7 @@ fn remap_child_ptrs(
     let node_count = store.len();
 
     for idx in 0..node_count {
-        if idx > 0 && idx as u64 % LOG_PROGRESS_NODE_INTERVAL == 0 {
+        if idx > 0 && (idx as u64).is_multiple_of(LOG_PROGRESS_NODE_INTERVAL) {
             info!(
                 "[{label}] Remap trie pointers: {idx}/{node_count} nodes in {}",
                 fmt_duration(remap_start.elapsed())
@@ -241,7 +250,7 @@ pub struct SquashStats {
 fn collect_block_entries<T: MarfTrieId>(src: &mut MARF<T>) -> Result<Vec<MarfDataEntry<T>>, Error> {
     src.with_conn(|conn| {
         let block_entries = trie_sql::bulk_read_block_entries::<T>(conn.sqlite_conn())?;
-        conn.warm_trie_offsets_from_entries(&block_entries);
+        conn.warm_trie_offsets_from_entries(&block_entries)?;
         Ok(block_entries)
     })
 }
@@ -666,6 +675,31 @@ impl<T: MarfTrieId> MARF<T> {
     where
         T: Send + Sync,
     {
+        Self::squash_to_path_with_resolver(
+            src_path,
+            dst_path,
+            src_open_opts,
+            tip,
+            squash_height,
+            label,
+            None,
+        )
+    }
+
+    /// Squash with an immutable value source for hashless physical leaves.
+    /// The caller must preserve the referenced generation in the completed snapshot.
+    pub fn squash_to_path_with_resolver(
+        src_path: &str,
+        dst_path: &str,
+        src_open_opts: MARFOpenOpts,
+        tip: &T,
+        squash_height: u32,
+        label: &str,
+        value_resolver: Option<Arc<dyn ValueExtentResolver>>,
+    ) -> Result<SquashStats, Error>
+    where
+        T: Send + Sync,
+    {
         let dst_db_path = PathBuf::from(dst_path);
         let dst_blobs_path = PathBuf::from(format!("{dst_path}.blobs"));
         let dst_dir = match dst_db_path.parent() {
@@ -692,6 +726,7 @@ impl<T: MarfTrieId> MARF<T> {
             tip,
             squash_height,
             label,
+            value_resolver,
         );
 
         if let Err(e) = &result {
@@ -712,6 +747,7 @@ impl<T: MarfTrieId> MARF<T> {
         tip: &T,
         squash_height: u32,
         label: &str,
+        value_resolver: Option<Arc<dyn ValueExtentResolver>>,
     ) -> Result<SquashStats, Error>
     where
         T: Send + Sync,
@@ -734,6 +770,10 @@ impl<T: MarfTrieId> MARF<T> {
 
         let src_storage = TrieFileStorage::open_readonly(src_path, src_open_opts)?;
         let mut src = MARF::from_storage(src_storage);
+        let format = NodeRecordFormat::from_database(src.sqlite_conn())?;
+        if let Some(resolver) = &value_resolver {
+            src.set_value_extent_resolver(resolver.clone());
+        }
 
         // Re-squashing at or below the source boundary would rely on history already pruned.
         let src_squash_height =
@@ -755,6 +795,15 @@ impl<T: MarfTrieId> MARF<T> {
         // the rest is unused because we bypass the normal MARF write path.
         let dst_open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
         let mut dst = MARF::from_path(dst_path, dst_open_opts)?;
+        if format != NodeRecordFormat::Legacy {
+            let tx = dst.storage_tx()?;
+            format.publish(&tx)?;
+            tx.commit()?;
+            dst.set_record_format(format);
+        }
+        if let Some(resolver) = value_resolver {
+            dst.set_value_extent_resolver(resolver);
+        }
         apply_offline_squash_pragmas(dst.sqlite_conn())?;
 
         // [1/8] Load block entries
@@ -869,7 +918,7 @@ impl<T: MarfTrieId> MARF<T> {
             // buffer size is 1 MiB, completely arbitrary.
             let mut buf_writer = BufWriter::with_capacity(1 << 20, trie_file);
             let total_blob_size =
-                stream_squash_blob(&mut node_store, &parent_hash, &mut buf_writer)?;
+                stream_squash_blob(&mut node_store, &parent_hash, &mut buf_writer, format)?;
             buf_writer.flush().map_err(Error::IOError)?;
             let trie_file = buf_writer.into_inner().map_err(|e| {
                 Error::IOError(std::io::Error::other(format!(
@@ -975,7 +1024,12 @@ impl<T: MarfTrieId> MARF<T> {
         tmp_dir: &str,
     ) -> Result<(NodeStore, HashMap<(u32, u64), usize>), Error> {
         source.open_block(block_hash)?;
-        let (root_node, root_hash) = Trie::read_root(source)?;
+        let mut decode_scratch = MarfReadState::new();
+        let root_read = Trie::read_root(source, &mut decode_scratch)?;
+        let (root_node, root_hash) = root_read.into_owned_node()?;
+        let root_hash = root_hash.ok_or_else(|| {
+            Error::CorruptionError("Squash DFS: root node is missing hash".to_string())
+        })?;
         let root_block_id = source.get_cur_block_identifier()?;
 
         let mut store = NodeStore::new(tmp_dir)?;
@@ -1036,10 +1090,21 @@ impl<T: MarfTrieId> MARF<T> {
 
                 let child_bh = source.get_block_from_local_id(child_block_id)?.clone();
                 source.open_block_maybe_id(&child_bh, Some(child_block_id))?;
-                // The block to read was chosen by `open_block_maybe_id` above;
-                // `from_backptr` strips the pointer's location metadata (backptr
-                // bit, annotation), leaving the offset to read there.
-                let (child_node, child_hash) = source.read_nodetype(&ptr.from_backptr())?;
+                // The block to read was chosen by `open_block_maybe_id` above. Clearing the
+                // location metadata preserves upstream's squash-annotation handling. Use the
+                // shared patch-aware read path, then materialize exactly once for the NodeStore.
+                let read_ptr = ptr.from_backptr();
+                let child_read = source.read_node_with_state(&read_ptr, &mut decode_scratch)?;
+                let (mut child_node, child_hash) = child_read.into_owned_node()?;
+                let child_hash = if let TrieNodeType::Leaf(ref mut leaf) = child_node {
+                    source.resolve_leaf_value(leaf)?;
+                    Some(super::bits::get_leaf_hash(leaf))
+                } else {
+                    child_hash
+                };
+                let child_hash = child_hash.ok_or_else(|| {
+                    Error::CorruptionError("Squash DFS: child node is missing hash".to_string())
+                })?;
 
                 let child_is_leaf = child_node.is_leaf();
                 let child_ptrs_vec: Vec<TriePtr> = if child_is_leaf {
@@ -1053,7 +1118,7 @@ impl<T: MarfTrieId> MARF<T> {
 
                 nodes_collected += 1;
                 if last_log.elapsed().as_secs() >= LOG_PROGRESS_TIME_INTERVAL_SECS
-                    || nodes_collected % LOG_PROGRESS_NODE_INTERVAL == 0
+                    || nodes_collected.is_multiple_of(LOG_PROGRESS_NODE_INTERVAL)
                 {
                     info!(
                         "Trie DFS: {nodes_collected} nodes, stack depth {stack_depth}, {} elapsed",

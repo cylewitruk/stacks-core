@@ -31,6 +31,9 @@ use crate::types::{QualifiedContractIdentifier, StandardPrincipalData};
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum PackedValueError {
+    /// A borrowed projection cannot validate or address its requested value.
+    #[error("invalid borrowed packed view: {0}")]
+    BorrowedView(&'static str),
     /// The record declares an unsupported packed-value wire version.
     #[error("unsupported packed value version: {version}")]
     UnsupportedPackedValueVersion {

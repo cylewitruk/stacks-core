@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
+
 use clarity::vm::clarity::ClarityError;
 use clarity::vm::costs::ExecutionCost;
 use stacks_common::types::chainstate::{
@@ -202,7 +204,7 @@ pub struct MinerTenureInfo<'a> {
     pub parent_burn_block_height: u32,
     pub coinbase_height: u64,
     pub cause: MinerTenureInfoCause,
-    pub active_reward_set: boot::RewardSet,
+    pub active_reward_set: Arc<boot::RewardSet>,
     pub tenure_block_commit_opt: Option<LeaderBlockCommitOp>,
     pub ephemeral: bool,
 }
@@ -415,7 +417,7 @@ impl NakamotoBlockBuilder {
             );
             Error::NoSuchBlockError
         })?;
-        let active_reward_set = rs_provider.read_reward_set_at_calculated_block(
+        let active_reward_set = rs_provider.read_reward_set_at_calculated_block_shared(
             coinbase_height_of_calc,
             chainstate,
             &self.header.parent_block_id,

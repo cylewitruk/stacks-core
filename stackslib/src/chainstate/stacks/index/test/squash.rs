@@ -25,20 +25,22 @@ use crate::chainstate::stacks::index::bits::{
     get_node_byte_len, get_node_hash, read_nodetype, resolve_inline_child_offsets,
 };
 use crate::chainstate::stacks::index::marf::{
-    MARFOpenOpts, MarfConnection, SquashStats, BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF,
+    MARFOpenOpts, MarfConnection, MarfCore, SquashStats, BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF,
     OWN_BLOCK_HEIGHT_KEY,
 };
 use crate::chainstate::stacks::index::node::{
     is_backptr, is_u64_ptr, set_backptr, TrieNode as _, TrieNode16, TrieNode256, TrieNode4,
-    TrieNode48, TrieNodeID, TrieNodeType, TriePtr,
+    TrieNode48, TrieNodeID, TrieNodeTransientMeta, TrieNodeType, TriePtr,
 };
+use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::squash::{
     compute_node_hash, deserialize_node, serialize_node, stream_squash_blob, NodeStore,
 };
 use crate::chainstate::stacks::index::storage::TrieHashCalculationMode;
 use crate::chainstate::stacks::index::trie::Trie;
 use crate::chainstate::stacks::index::{
-    blob_layout, trie_sql, ClarityMarfTrieId, Error, MARFValue, TrieLeaf, TrieMerkleProof,
+    blob_layout, trie_sql, ClarityMarfTrieId, Error, MARFValue, NodePath, TrieLeaf,
+    TrieMerkleProof, TrieReadStorage,
 };
 
 // ---------------------------------------------------------------------------
@@ -105,7 +107,8 @@ fn annotated_source_blocks(
 ) -> HashSet<StacksBlockId> {
     marf.with_conn(|conn| {
         conn.open_block(tip)?;
-        let (root, _) = Trie::read_root(conn)?;
+        let mut decode_scratch = MarfReadState::new();
+        let (root, _) = Trie::read_root(conn, &mut decode_scratch)?.into_owned_node()?;
 
         let mut blocks = HashSet::new();
         let mut seen_offsets = HashSet::new();
@@ -128,7 +131,9 @@ fn annotated_source_blocks(
                 if !seen_offsets.insert(ptr.ptr()) {
                     continue;
                 }
-                let (child, _) = conn.read_nodetype(ptr)?;
+                let (child, _) = conn
+                    .read_node_with_state(ptr, &mut decode_scratch)?
+                    .into_owned_node()?;
                 if !child.is_leaf() {
                     stack.push(child);
                 }
@@ -998,8 +1003,10 @@ fn test_compute_node_hash_matches_bits_get_node_hash() {
 
     // Leaf: no children
     let leaf = TrieLeaf {
-        path: vec![0xab, 0xcd],
-        data: MARFValue([7u8; 40]),
+        extent: None,
+        inline: None,
+        path: NodePath::from_slice(&[0xab, 0xcd]).unwrap(),
+        data: Some(MARFValue([7u8; 40])),
     };
     let leaf_via_bits = get_node_hash(&leaf, &[], &mut ());
     let leaf_via_squash = compute_node_hash(&TrieNodeType::Leaf(leaf), &[]);
@@ -1007,15 +1014,14 @@ fn test_compute_node_hash_matches_bits_get_node_hash() {
 
     // Node4 with three inline children and one empty slot.
     let node4 = TrieNode4 {
-        path: vec![1, 2, 3],
+        path: NodePath::from_slice(&[1, 2, 3]).unwrap(),
         ptrs: [
             TriePtr::new(TrieNodeID::Leaf as u8, b'a', 100),
             TriePtr::new(TrieNodeID::Leaf as u8, b'b', 200),
             TriePtr::new(TrieNodeID::Leaf as u8, b'c', 300),
             TriePtr::default(),
         ],
-        cowptr: None,
-        patches: vec![],
+        meta: TrieNodeTransientMeta::default(),
     };
     let node4_via_bits = get_node_hash(&node4, &child_hashes, &mut ());
     let node4_via_squash = compute_node_hash(&TrieNodeType::Node4(node4), &child_hashes);
@@ -1027,18 +1033,19 @@ fn make_test_leaf(path: &[u8], value_byte: u8) -> TrieNodeType {
     let mut data = [0u8; 40];
     data[0] = value_byte;
     TrieNodeType::Leaf(TrieLeaf {
-        path: path.to_vec(),
-        data: MARFValue(data),
+        extent: None,
+        inline: None,
+        path: NodePath::from_slice(path).unwrap(),
+        data: Some(MARFValue(data)),
     })
 }
 
 /// Helper: build a Node4 with the given child pointers.
 fn make_test_node4(path: &[u8], ptrs: [TriePtr; 4]) -> TrieNodeType {
     TrieNodeType::Node4(TrieNode4 {
-        path: path.to_vec(),
+        path: NodePath::from_slice(path).unwrap(),
         ptrs,
-        cowptr: None,
-        patches: vec![],
+        meta: TrieNodeTransientMeta::default(),
     })
 }
 
@@ -1071,10 +1078,9 @@ fn test_node_store_roundtrip_all_variants() {
     let mut ptrs16 = [TriePtr::default(); 16];
     ptrs16[0] = TriePtr::new(2, b'b', 200);
     let n16 = TrieNodeType::Node16(TrieNode16 {
-        path: vec![6, 7, 8],
+        path: NodePath::from_slice(&[6, 7, 8]).unwrap(),
         ptrs: ptrs16,
-        cowptr: None,
-        patches: vec![],
+        meta: TrieNodeTransientMeta::default(),
     });
     let n16_hash = TrieHash::from_data(&[3]);
     store.push(&n16, n16_hash, 30).unwrap();
@@ -1085,11 +1091,10 @@ fn test_node_store_roundtrip_all_variants() {
     let mut ptrs48 = [TriePtr::default(); 48];
     ptrs48[0] = TriePtr::new(3, b'c', 300);
     let n48 = TrieNodeType::Node48(Box::new(TrieNode48 {
-        path: vec![9, 10],
+        path: NodePath::from_slice(&[9, 10]).unwrap(),
         indexes: indexes48,
         ptrs: ptrs48,
-        cowptr: None,
-        patches: vec![],
+        meta: TrieNodeTransientMeta::default(),
     }));
     let n48_hash = TrieHash::from_data(&[4]);
     store.push(&n48, n48_hash, 40).unwrap();
@@ -1098,10 +1103,9 @@ fn test_node_store_roundtrip_all_variants() {
     let mut ptrs256 = [TriePtr::default(); 256];
     ptrs256[b'd' as usize] = TriePtr::new(4, b'd', 400);
     let n256 = TrieNodeType::Node256(Box::new(TrieNode256 {
-        path: vec![11],
+        path: NodePath::from_slice(&[11]).unwrap(),
         ptrs: ptrs256,
-        cowptr: None,
-        patches: vec![],
+        meta: TrieNodeTransientMeta::default(),
     }));
     let n256_hash = TrieHash::from_data(&[5]);
     store.push(&n256, n256_hash, 50).unwrap();
@@ -1234,10 +1238,9 @@ fn test_stream_squash_blob_mixed_node_types() {
     root_ptrs[0] = TriePtr::new(TrieNodeID::Node4 as u8, b'a', 1);
     root_ptrs[1] = TriePtr::new(TrieNodeID::Node4 as u8, b'b', 2);
     let root = TrieNodeType::Node16(TrieNode16 {
-        path: vec![0],
+        path: NodePath::from_slice(&[0]).unwrap(),
         ptrs: root_ptrs,
-        cowptr: None,
-        patches: vec![],
+        meta: TrieNodeTransientMeta::default(),
     });
     store.push(&root, h, 0).unwrap();
 
@@ -1304,7 +1307,13 @@ fn test_stream_squash_blob_mixed_node_types() {
 
     let parent_hash = StacksBlockId::sentinel();
     let mut output = Cursor::new(Vec::new());
-    let bytes_written = stream_squash_blob(&mut store, &parent_hash, &mut output).unwrap();
+    let bytes_written = stream_squash_blob(
+        &mut store,
+        &parent_hash,
+        &mut output,
+        super::super::record::NodeRecordFormat::Legacy,
+    )
+    .unwrap();
 
     // Verify blob header.
     let blob = output.into_inner();
@@ -1365,7 +1374,13 @@ fn test_stream_squash_blob_at_nonzero_offset() {
     let mut output = Cursor::new(&mut buf);
     output.seek(std::io::SeekFrom::End(0)).unwrap();
 
-    let bytes_written = stream_squash_blob(&mut store, &parent_hash, &mut output).unwrap();
+    let bytes_written = stream_squash_blob(
+        &mut store,
+        &parent_hash,
+        &mut output,
+        super::super::record::NodeRecordFormat::Legacy,
+    )
+    .unwrap();
 
     let total_buf = output.into_inner();
     assert_eq!(total_buf.len() as u64, prefix_len + bytes_written);
@@ -1529,7 +1544,7 @@ fn test_trie_merkle_proof_from_path_rejects_squashed_marf() {
     let value = MARFValue::from_value("v1_at_2");
     let path = TrieHash::from_key("k1");
 
-    let result = squashed.with_conn(|conn| TrieMerkleProof::from_path(conn, &path, &value, &tip));
+    let result = squashed.with_read_ctx(|ctx| TrieMerkleProof::from_path(ctx, &path, &value, &tip));
     match result {
         Err(Error::UnsupportedOnSquashedMarf(op)) => {
             assert_eq!(op, "TrieMerkleProof::from_path");
@@ -2149,7 +2164,13 @@ fn test_stream_squash_blob_rejects_non_preorder_nodes() {
 
     let parent_hash = StacksBlockId::sentinel();
     let mut output = Cursor::new(Vec::new());
-    let err = stream_squash_blob(&mut store, &parent_hash, &mut output).unwrap_err();
+    let err = stream_squash_blob(
+        &mut store,
+        &parent_hash,
+        &mut output,
+        super::super::record::NodeRecordFormat::Legacy,
+    )
+    .unwrap_err();
     assert!(
         format!("{err}").contains("has not been written"),
         "expected unwritten child offset error, got {err}"
@@ -2191,8 +2212,13 @@ fn stream_squash_blob_large_offset_sets_u64_ptr_bit() {
         .truncate(true)
         .open(&path)
         .expect("create temp squash blob");
-    let bytes_written =
-        stream_squash_blob(&mut store, &parent_hash, &mut file).expect("stream squash blob");
+    let bytes_written = stream_squash_blob(
+        &mut store,
+        &parent_hash,
+        &mut file,
+        super::super::record::NodeRecordFormat::Legacy,
+    )
+    .expect("stream squash blob");
     assert!(bytes_written > u64::from(u32::MAX));
 
     let header_size = blob_layout::ROOT_NODE_OFFSET as u64;
@@ -2242,8 +2268,10 @@ fn test_squash_extend_many_keys_patch_backptr_regression() {
         let mut data = [0u8; 40];
         data[0] = val;
         TrieLeaf {
-            path: vec![],
-            data: MARFValue(data),
+            extent: None,
+            inline: None,
+            path: NodePath::from_slice(&[]).unwrap(),
+            data: Some(MARFValue(data)),
         }
     };
     let num_keys: u8 = 64;

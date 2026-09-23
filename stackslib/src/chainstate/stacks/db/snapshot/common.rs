@@ -13,13 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Shared schema validation and bulk-copy machinery for SQLite snapshots.
+
 use std::time::Instant;
 
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use rusqlite::types::Value;
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use rusqlite::{Connection, params, params_from_iter};
 
 use crate::chainstate::stacks::index::Error;
+use crate::util_lib::db::{sqlite_readonly_uri, sqlite_schema_objects};
 
 /// Build a [`DbSnapshotSpec::classify_hint`] string -- `"<fn>() in <file>"`,
 /// optionally with extra prose before the file -- from the spec function itself,
@@ -139,17 +141,14 @@ impl<'a, B> TableCopySpecs<'a, B> {
 ///
 /// Expects the source DB to be ATTACHed as `src`.
 pub fn clone_schemas_from_source(conn: &Connection, tables: &[&str]) -> Result<(), Error> {
+    let objects = sqlite_schema_objects(conn, "src").map_err(Error::SQLError)?;
     let mut stmts: Vec<String> = Vec::new();
 
     for table in tables {
-        let create_sql: String = conn
-            .query_row(
-                "SELECT sql FROM src.sqlite_master WHERE type='table' AND name=?1",
-                params![table],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(Error::SQLError)?
+        let create_sql = objects
+            .iter()
+            .find(|object| object.kind == "table" && object.name == *table)
+            .map(|object| object.sql.as_str())
             .ok_or_else(|| {
                 Error::CorruptionError(format!(
                     "src is missing required table `{table}`; expected on any chainstate \
@@ -160,17 +159,16 @@ pub fn clone_schemas_from_source(conn: &Connection, tables: &[&str]) -> Result<(
         // sqlite_master stores the normalized statement (any `IF NOT
         // EXISTS` is stripped), so add the guard back.
         stmts.push(create_sql.replacen("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1));
-
-        let mut idx_stmt = conn
-            .prepare("SELECT sql FROM src.sqlite_master WHERE type='index' AND tbl_name=?1 AND sql IS NOT NULL")
-            .map_err(Error::SQLError)?;
-        let idx_rows = idx_stmt
-            .query_map(params![table], |row| row.get::<_, String>(0))
-            .map_err(Error::SQLError)?;
-        for idx_sql in idx_rows {
-            let idx_sql = idx_sql.map_err(Error::SQLError)?;
-            stmts.push(idx_sql.replacen("CREATE INDEX", "CREATE INDEX IF NOT EXISTS", 1));
-        }
+        stmts.extend(
+            objects
+                .iter()
+                .filter(|object| object.kind == "index" && object.table == *table)
+                .map(|object| {
+                    object
+                        .sql
+                        .replacen("CREATE INDEX", "CREATE INDEX IF NOT EXISTS", 1)
+                }),
+        );
     }
 
     for stmt in &stmts {
@@ -257,32 +255,6 @@ fn collect_user_indexes(conn: &Connection, table: &str) -> Result<Vec<(String, S
     Ok(rows)
 }
 
-/// Chars to percent-encode inside a SQLite `file:<path>?mode=ro` URI.
-/// Encodes URI-structural chars and parser-hostile bytes; leaves `/`
-/// and `:` intact so absolute Unix paths and Windows drive letters
-/// round-trip cleanly. Non-ASCII bytes are encoded by
-/// `utf8_percent_encode` regardless of the set.
-const SQLITE_URI_PATH_RESERVED: &AsciiSet = &CONTROLS
-    .add(b' ')
-    .add(b'"')
-    .add(b'#')
-    .add(b'%')
-    .add(b'<')
-    .add(b'>')
-    .add(b'?')
-    .add(b'[')
-    .add(b'\\')
-    .add(b']')
-    .add(b'^')
-    .add(b'`')
-    .add(b'{')
-    .add(b'|')
-    .add(b'}');
-
-fn percent_encode_path(path: &str) -> String {
-    utf8_percent_encode(path, SQLITE_URI_PATH_RESERVED).to_string()
-}
-
 /// Open `dst_path` (created if missing), ATTACH each source read-only
 /// via `file:<path>?mode=ro` URI, run `body` inside `BEGIN IMMEDIATE`,
 /// then `COMMIT`, `DETACH`, and restore `journal_mode = WAL` so
@@ -330,7 +302,8 @@ where
     }
 
     for (alias, path) in attachments {
-        let uri = format!("file:{}?mode=ro", percent_encode_path(path));
+        let uri =
+            sqlite_readonly_uri(std::path::Path::new(path), false).map_err(Error::SQLError)?;
         conn.execute(&format!("ATTACH DATABASE ?1 AS {alias}"), params![uri])
             .map_err(Error::SQLError)?;
     }
@@ -415,21 +388,6 @@ pub fn assert_source_schema(
     Ok(())
 }
 
-/// MARF / Clarity-store infrastructure tables. They live in every MARF-backed
-/// source DB and are created by the squash engine (`MARF::squash_to_path`) or
-/// store init — not by a side-table copy — so the drift guards treat them as
-/// already handled.
-pub const MARF_INFRA_TABLES: &[&str] = &[
-    "marf_data",
-    "__fork_storage",
-    "marf_squash_info",
-    "marf_squashed_blocks",
-    "mined_blocks",
-    "block_extension_locks",
-    "schema_version",
-    "migrated_version",
-];
-
 /// The snapshot specification for a single source database: its copy specs plus
 /// the metadata the copy and the source-schema guard need. One struct per source
 /// DB (`IndexDbSnapshotSpec`, `SortitionDbSnapshotSpec`, ...) implements it,
@@ -513,26 +471,9 @@ pub trait DbSnapshotSpec {
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
     use rusqlite::Connection;
 
-    use super::{
-        copied_rows, execute_copy_specs, percent_encode_path, NoBind, TableCopySpec, TableCopySpecs,
-    };
-
-    /// Representative paths survive the `file:` URI percent-encoding used
-    /// by [`super::with_offline_write_session`]'s read-only ATTACH.
-    #[rstest]
-    #[case::unix_absolute("/tmp/marf-squash/index.sqlite", "/tmp/marf-squash/index.sqlite")]
-    #[case::windows_drive_letter("C:/Users/test/index.sqlite", "C:/Users/test/index.sqlite")]
-    #[case::unreserved_chars_pass_through("/abc-DEF_123.~", "/abc-DEF_123.~")]
-    #[case::space_and_uri_structurals("/tmp/has space/file?x#y", "/tmp/has%20space/file%3Fx%23y")]
-    #[case::percent_literal_encoded("/tmp/100%/x", "/tmp/100%25/x")]
-    // `é` is U+00E9 = 0xC3 0xA9 in UTF-8; non-ASCII bytes always encode.
-    #[case::non_ascii_as_utf8_bytes("/tmp/café", "/tmp/caf%C3%A9")]
-    fn percent_encode_path_cases(#[case] input: &str, #[case] expected: &str) {
-        assert_eq!(percent_encode_path(input), expected);
-    }
+    use super::{NoBind, TableCopySpec, TableCopySpecs, copied_rows, execute_copy_specs};
 
     /// The per-DB well-formedness guards detect a table listed twice by
     /// comparing `table_names()` length against its deduplicated set, so

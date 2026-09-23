@@ -98,18 +98,7 @@ pub fn fixed_shape_width(shape: &ActiveShape) -> Option<usize> {
 pub fn fixed_type_width(expected: &TypeSignature) -> Result<Option<usize>, PackedValueError> {
     match expected {
         TypeSignature::BoolType => Ok(Some(1)),
-        TypeSignature::TupleType(tuple) => {
-            let mut total = 0usize;
-            for child in tuple.get_type_map().values() {
-                let Some(width) = fixed_type_width(child)? else {
-                    return Ok(None);
-                };
-                total = total
-                    .checked_add(width)
-                    .ok_or(PackedValueError::SizeOverflow)?;
-            }
-            Ok(Some(total))
-        }
+        TypeSignature::TupleType(tuple) => Ok(tuple.packed_fixed_width()),
         TypeSignature::ListUnionType(_) => Err(ExpectedTypeError::ListUnionType.into()),
         _ => Ok(None),
     }

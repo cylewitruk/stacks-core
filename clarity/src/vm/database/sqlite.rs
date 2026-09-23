@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Legacy SQLite primitives for Clarity data and metadata storage.
+
 use clarity_types::errors::IncomparableError;
 use rusqlite::{Connection, OptionalExtension, params};
 use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash};
@@ -163,6 +165,7 @@ impl SqliteConnection {
         sqlite_put(conn, key, value)
     }
 
+    #[stacks_profiler::profile(name = "Clarity side-store SQLite get")]
     pub fn get(conn: &Connection, key: &str) -> Result<Option<String>, VmExecutionError> {
         sqlite_get(conn, key)
     }

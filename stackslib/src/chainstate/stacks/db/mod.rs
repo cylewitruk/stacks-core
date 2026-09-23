@@ -15,10 +15,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::btree_map::Entry;
+use std::collections::VecDeque;
 use std::collections::{BTreeMap, HashSet};
 use std::io::prelude::*;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::{fs, io};
 
 use clarity::vm::analysis::analysis_db::AnalysisDatabase;
@@ -63,6 +65,7 @@ use crate::chainstate::stacks::events::*;
 use crate::chainstate::stacks::index::marf::{
     test_override_marf_compression, MARFOpenOpts, MarfConnection, MARF,
 };
+use crate::chainstate::stacks::index::trie_sql;
 use crate::chainstate::stacks::index::ClarityMarfTrieId;
 use crate::chainstate::stacks::miner::TransactionResourceBudgets;
 use crate::chainstate::stacks::{
@@ -120,6 +123,67 @@ pub struct StacksChainState {
     pub unconfirmed_state: Option<UnconfirmedState>,
     pub fault_injection: StacksChainStateFaults,
     marf_opts: Option<MARFOpenOpts>,
+    /// Recently used decoded Nakamoto reward sets for this open chainstate.
+    decoded_reward_sets: DecodedRewardSetCache,
+}
+
+/// A small cache of committed reward sets, keyed by the block that wrote each set.
+#[derive(Default)]
+struct DecodedRewardSetCache {
+    /// Most recently used writer block IDs and their decoded sets.
+    entries: VecDeque<(StacksBlockId, Arc<RewardSet>)>,
+}
+
+impl DecodedRewardSetCache {
+    const CAPACITY: usize = 4;
+
+    /// Return a shared decoded set and move it to the front of the cache.
+    fn get(&mut self, block_id: &StacksBlockId) -> Option<Arc<RewardSet>> {
+        let position = self.entries.iter().position(|(id, _)| id == block_id)?;
+        let entry = self
+            .entries
+            .remove(position)
+            .expect("cache position must exist");
+        let result = Arc::clone(&entry.1);
+        self.entries.push_front(entry);
+        Some(result)
+    }
+
+    /// Retain a committed set, evicting the least recently used entry.
+    fn insert(&mut self, block_id: StacksBlockId, reward_set: Arc<RewardSet>) {
+        if let Some(position) = self.entries.iter().position(|(id, _)| id == &block_id) {
+            self.entries.remove(position);
+        }
+        self.entries.push_front((block_id, reward_set));
+        self.entries.truncate(Self::CAPACITY);
+    }
+}
+
+#[cfg(test)]
+mod decoded_reward_set_cache_tests {
+    use super::{Arc, DecodedRewardSetCache, RewardSet, StacksBlockId};
+
+    #[test]
+    fn cache_keeps_forks_distinct_and_evicts_lru() {
+        let mut cache = DecodedRewardSetCache::default();
+        let first = Arc::new(RewardSet::empty());
+        cache.insert(StacksBlockId([1; 32]), Arc::clone(&first));
+        assert!(Arc::ptr_eq(
+            &cache.get(&StacksBlockId([1; 32])).unwrap(),
+            &first
+        ));
+        for id in 2..=4 {
+            cache.insert(StacksBlockId([id; 32]), Arc::new(RewardSet::empty()));
+        }
+        cache.get(&StacksBlockId([1; 32]));
+        cache.insert(StacksBlockId([5; 32]), Arc::new(RewardSet::empty()));
+        assert!(cache.get(&StacksBlockId([2; 32])).is_none());
+        assert!(Arc::ptr_eq(
+            &cache.get(&StacksBlockId([1; 32])).unwrap(),
+            &first
+        ));
+        assert_eq!(cache.entries.len(), DecodedRewardSetCache::CAPACITY);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1300,6 +1364,9 @@ impl StacksChainState {
         open_opts.external_blobs = true;
         test_override_marf_compression(&mut open_opts);
         let marf = MARF::from_path(marf_path, open_opts).map_err(db_error::IndexError)?;
+        if !marf.sqlite_conn().query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='marf_direct_hash_index' AND type='table')", [], |r| r.get::<_, bool>(0))? {
+            trie_sql::ensure_block_hash_lookup_index(marf.sqlite_conn()).map_err(db_error::IndexError)?;
+        }
         Ok(marf)
     }
 
@@ -1900,6 +1967,18 @@ impl StacksChainState {
         Ok(state_index.into_sqlite_conn())
     }
 
+    /// Checkpoint the Clarity state and header index SQLite databases.
+    pub fn checkpoint_sqlite_dbs(&mut self) -> Result<(), db_error> {
+        self.clarity_state.with_marf(|marf| {
+            marf.sqlite_conn()
+                .query_row("PRAGMA wal_checkpoint(RESTART)", [], |_| Ok(()))
+        })?;
+        self.state_index
+            .sqlite_conn()
+            .query_row("PRAGMA wal_checkpoint(RESTART)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     pub fn blocks_path(mut path: PathBuf) -> PathBuf {
         path.push("blocks");
         path
@@ -2010,6 +2089,7 @@ impl StacksChainState {
             unconfirmed_state: None,
             fault_injection: StacksChainStateFaults::new(),
             marf_opts,
+            decoded_reward_sets: DecodedRewardSetCache::default(),
         };
 
         let mut receipts = vec![];
@@ -2149,6 +2229,23 @@ impl StacksChainState {
 
     pub fn db(&self) -> &DBConn {
         self.state_index.sqlite_conn()
+    }
+
+    /// Reuse a decoded reward set by the immutable block ID that wrote it.
+    pub fn get_reward_set_cached(
+        &mut self,
+        block_id: &StacksBlockId,
+    ) -> Result<Option<Arc<RewardSet>>, Error> {
+        if let Some(reward_set) = self.decoded_reward_sets.get(block_id) {
+            return Ok(Some(reward_set));
+        }
+        let Some(reward_set) = NakamotoChainState::get_reward_set(self.db(), block_id)? else {
+            return Ok(None);
+        };
+        let reward_set = Arc::new(reward_set);
+        self.decoded_reward_sets
+            .insert(block_id.clone(), Arc::clone(&reward_set));
+        Ok(Some(reward_set))
     }
 
     /// Begin processing an epoch's transactions within the context of a chainstate transaction

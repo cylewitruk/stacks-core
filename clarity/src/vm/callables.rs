@@ -36,9 +36,12 @@ use crate::vm::types::{
     CallableData, ListData, ListTypeData, OptionalData, PrincipalData, ResponseData, SequenceData,
     SequenceSubtype, TraitIdentifier, TupleData, TypeSignature,
 };
-use crate::vm::{LocalContext, Value, eval};
+use crate::vm::{LocalContext, Value, ValueRef, eval};
 
 type Native205CostInputFn = &'static dyn Fn(&[Value]) -> Result<u64, VmExecutionError>;
+
+type BorrowingNative205CostInputFn =
+    &'static dyn for<'value> Fn(&[ValueRef<'value>]) -> Result<u64, VmExecutionError>;
 
 type SpecialFunctionFn = &'static dyn Fn(
     &[SymbolicExpression],
@@ -46,6 +49,14 @@ type SpecialFunctionFn = &'static dyn Fn(
     &InvocationContext,
     &LocalContext,
 ) -> Result<Value, VmExecutionError>;
+
+/// A storage-producing special form whose result can retain shared packed bytes.
+type StoredSpecialFunctionFn = &'static dyn Fn(
+    &[SymbolicExpression],
+    &mut ExecutionState,
+    &InvocationContext,
+    &LocalContext,
+) -> Result<ValueRef<'static>, VmExecutionError>;
 
 #[allow(clippy::large_enum_variant)]
 pub enum CallableType {
@@ -77,6 +88,17 @@ pub enum BuiltinKind {
         Native205CostInputFn,
     ),
     Special(&'static str, SpecialFunctionFn),
+    /// A special form returning an owned or shared-packed VM value.
+    StoredSpecial(&'static str, StoredSpecialFunctionFn),
+    /// A native function that can inspect or project borrowed VM values.
+    BorrowingNative(&'static str, BorrowingNativeHandle, ClarityCostFunction),
+    /// A borrowed native with epoch-2.05 size-based cost input.
+    BorrowingNative205(
+        &'static str,
+        BorrowingNativeHandle,
+        ClarityCostFunction,
+        BorrowingNative205CostInputFn,
+    ),
 }
 
 impl BuiltinKind {
@@ -85,8 +107,70 @@ impl BuiltinKind {
         match self {
             BuiltinKind::Native(rust_name, ..)
             | BuiltinKind::Native205(rust_name, ..)
-            | BuiltinKind::Special(rust_name, ..) => rust_name,
+            | BuiltinKind::Special(rust_name, ..)
+            | BuiltinKind::StoredSpecial(rust_name, ..)
+            | BuiltinKind::BorrowingNative(rust_name, ..)
+            | BuiltinKind::BorrowingNative205(rust_name, ..) => rust_name,
         }
+    }
+}
+
+/// One-argument native implementation over a borrowed VM value.
+type BorrowingSingleArgFn =
+    dyn for<'value> Fn(ValueRef<'value>) -> Result<ValueRef<'value>, VmExecutionError>;
+
+/// Two-argument native implementation over borrowed VM values.
+type BorrowingDoubleArgFn = dyn for<'value> Fn(
+    ValueRef<'value>,
+    ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError>;
+
+/// Variadic borrowed native implementation with execution context.
+type BorrowingMoreArgEnvFn = dyn for<'value> Fn(
+    Vec<ValueRef<'value>>,
+    &mut ExecutionState,
+    &InvocationContext,
+) -> Result<ValueRef<'value>, VmExecutionError>;
+
+/// Native dispatch over evaluated values that may retain packed backing storage.
+pub enum BorrowingNativeHandle {
+    /// One-argument borrowed native.
+    SingleArg(&'static BorrowingSingleArgFn),
+    /// Two-argument borrowed native.
+    DoubleArg(&'static BorrowingDoubleArgFn),
+    /// Variadic borrowed native with access to execution and invocation state.
+    MoreArgEnv(&'static BorrowingMoreArgEnvFn),
+}
+
+impl BorrowingNativeHandle {
+    /// Invoke a native and return an evaluated result whose argument clone costs are paid.
+    pub fn apply<'value>(
+        &self,
+        mut args: Vec<ValueRef<'value>>,
+        exec_state: &mut ExecutionState,
+        invoke_ctx: &InvocationContext,
+    ) -> Result<ValueRef<'static>, VmExecutionError> {
+        let result = match self {
+            Self::SingleArg(function) => {
+                check_argument_count(1, &args)?;
+                function(
+                    args.pop()
+                        .ok_or_else(|| VmInternalError::Expect("Unexpected list length".into()))?,
+                )
+            }
+            Self::DoubleArg(function) => {
+                check_argument_count(2, &args)?;
+                let second = args
+                    .pop()
+                    .ok_or_else(|| VmInternalError::Expect("Unexpected list length".into()))?;
+                let first = args
+                    .pop()
+                    .ok_or_else(|| VmInternalError::Expect("Unexpected list length".into()))?;
+                function(first, second)
+            }
+            Self::MoreArgEnv(function) => function(args, exec_state, invoke_ctx),
+        };
+        result.and_then(ValueRef::into_evaluated)
     }
 }
 
@@ -166,6 +250,15 @@ pub fn cost_input_sized_vararg(args: &[Value]) -> Result<u64, VmExecutionError> 
         .map_err(VmExecutionError::from)
 }
 
+/// Sum logical consensus lengths for reference-backed native cost calculation.
+pub fn cost_input_sized_refs(args: &[ValueRef<'_>]) -> Result<u64, VmExecutionError> {
+    args.iter().try_fold(0, |sum, value| {
+        u64::from(value.serialized_byte_len()?)
+            .cost_overflow_add(sum)
+            .map_err(VmExecutionError::from)
+    })
+}
+
 impl DefinedFunction {
     pub fn new(
         arguments: Vec<(ClarityName, TypeSignature)>,
@@ -207,6 +300,22 @@ impl DefinedFunction {
         exec_state: &mut ExecutionState,
         invoke_ctx: &InvocationContext,
     ) -> Result<Value, VmExecutionError> {
+        self.execute_apply_refs(
+            args.iter().map(ValueRef::Borrowed).collect(),
+            exec_state,
+            invoke_ctx,
+        )?
+        .into_owned()
+    }
+
+    /// Execute a function while retaining packed arguments in lexical bindings when their
+    /// declared type is already exact and requires no callable-trait cast.
+    pub fn execute_apply_refs(
+        &self,
+        args: Vec<ValueRef<'_>>,
+        exec_state: &mut ExecutionState,
+        invoke_ctx: &InvocationContext,
+    ) -> Result<ValueRef<'static>, VmExecutionError> {
         runtime_cost(
             ClarityCostFunction::UserFunctionApplication,
             exec_state,
@@ -214,7 +323,7 @@ impl DefinedFunction {
         )?;
 
         if exec_state.epoch().uses_arg_size_for_cost() {
-            for arg in args.iter() {
+            for arg in &args {
                 runtime_cost(
                     ClarityCostFunction::InnerTypeCheckCost,
                     exec_state,
@@ -243,15 +352,97 @@ impl DefinedFunction {
             .arguments
             .iter()
             .zip(self.arg_types.iter())
-            .zip(args.iter())
+            .zip(args)
             .collect();
 
         for arg in arg_iterator.into_iter() {
             let ((name, type_sig), value) = arg;
 
+            if value.has_packed_schema(type_sig) && !type_requires_callable_cast(type_sig) {
+                if context
+                    .variables
+                    .insert(name.clone(), value.into_cow())
+                    .is_some()
+                {
+                    return Err(RuntimeCheckErrorKind::NameAlreadyUsed(name.to_string()).into());
+                }
+                continue;
+            }
+            if matches!(value, ValueRef::Packed(_))
+                && (*invoke_ctx.contract_context.get_clarity_version() >= ClarityVersion::Clarity2
+                    || !type_requires_callable_cast(type_sig))
+            {
+                let source = value.into_shared(exec_state.epoch())?;
+                let value = if *invoke_ctx.contract_context.get_clarity_version()
+                    >= ClarityVersion::Clarity2
+                {
+                    let cast = source
+                        .clone()
+                        .implicit_cast(type_sig, exec_state.epoch())
+                        .map_err(crate::vm::composite_vm_error)?;
+                    let cast = cast.ok_or_else(|| {
+                        RuntimeCheckErrorKind::TypeValueError(
+                            Box::new(type_sig.clone()),
+                            source.materialized_infallible().to_error_string(),
+                        )
+                    })?;
+                    if exec_state.epoch().sanitize_in_function_invocation() {
+                        cast.sanitize(exec_state.epoch(), type_sig)
+                            .ok_or_else(|| {
+                                RuntimeCheckErrorKind::TypeValueError(
+                                    Box::new(type_sig.clone()),
+                                    source.materialized_infallible().to_error_string(),
+                                )
+                            })?
+                            .0
+                    } else {
+                        cast
+                    }
+                } else {
+                    source.clone()
+                };
+                if matches!(
+                    type_sig,
+                    TypeSignature::CallableType(CallableSubtype::Trait(_))
+                ) && value.kind().map_err(crate::vm::composite_vm_error)?
+                    == crate::vm::types::codec::packed::PackedValueKind::Callable
+                {
+                    let Value::CallableContract(callable) = value
+                        .as_view()
+                        .to_owned_value()
+                        .map_err(crate::vm::composite_vm_error)?
+                    else {
+                        unreachable!("callable kind")
+                    };
+                    context.callable_contracts.insert(name.clone(), callable);
+                    continue;
+                }
+                if !type_sig.admits_type(
+                    exec_state.epoch(),
+                    &value
+                        .logical_type()
+                        .map_err(crate::vm::composite_vm_error)?,
+                )? {
+                    return Err(RuntimeCheckErrorKind::TypeValueError(
+                        Box::new(type_sig.clone()),
+                        source.materialized_infallible().to_error_string(),
+                    )
+                    .into());
+                }
+                if context
+                    .variables
+                    .insert(name.clone(), ValueRef::from_shared(value).into_cow())
+                    .is_some()
+                {
+                    return Err(RuntimeCheckErrorKind::NameAlreadyUsed(name.to_string()).into());
+                }
+                continue;
+            }
+            let value = value.into_owned()?;
+
             // Clarity 1 behavior
             if *invoke_ctx.contract_context.get_clarity_version() < ClarityVersion::Clarity2 {
-                match (type_sig, value) {
+                match (type_sig, &value) {
                     // Epoch < 2.1 uses TraitReferenceType
                     (
                         TypeSignature::TraitReferenceType(trait_identifier),
@@ -303,7 +494,7 @@ impl DefinedFunction {
                         );
                     }
                     _ => {
-                        if !type_sig.admits(exec_state.epoch(), value)? {
+                        if !type_sig.admits(exec_state.epoch(), &value)? {
                             return Err(RuntimeCheckErrorKind::TypeValueError(
                                 Box::new(type_sig.clone()),
                                 value.to_error_string(),
@@ -312,7 +503,7 @@ impl DefinedFunction {
                         }
                         if context
                             .variables
-                            .insert(name.clone(), value.clone())
+                            .insert(name.clone(), value.into())
                             .is_some()
                         {
                             return Err(
@@ -328,7 +519,7 @@ impl DefinedFunction {
                 // e.g. `(some .foo)` to `(optional <trait>`)
                 // and traits can be implicitly cast to sub-traits
                 // e.g. `<foo-and-bar>` to `<foo>`
-                let cast_value = clarity2_implicit_cast(type_sig, value)?;
+                let cast_value = clarity2_implicit_cast(type_sig, &value)?;
                 let cast_value = if exec_state.epoch().sanitize_in_function_invocation() {
                     Value::sanitize_value(exec_state.epoch(), type_sig, cast_value)
                         .ok_or(RuntimeCheckErrorKind::TypeValueError(
@@ -370,7 +561,11 @@ impl DefinedFunction {
                     }
                 }
 
-                if context.variables.insert(name.clone(), cast_value).is_some() {
+                if context
+                    .variables
+                    .insert(name.clone(), cast_value.into())
+                    .is_some()
+                {
                     return Err(RuntimeCheckErrorKind::NameAlreadyUsed(name.to_string()).into());
                 }
             }
@@ -381,9 +576,10 @@ impl DefinedFunction {
         // if the error wasn't actually an error, but a function return,
         //    pull that out and return it.
         match result {
-            Ok(r) => Ok(r.clone_with_cost(exec_state)?),
+            Ok(value @ ValueRef::Packed(_)) => value.into_static(exec_state),
+            Ok(value) => Ok(ValueRef::Owned(value.clone_with_cost(exec_state)?)),
             Err(e) => match e {
-                VmExecutionError::EarlyReturn(v) => Ok(v.into()),
+                VmExecutionError::EarlyReturn(v) => Ok(ValueRef::Owned(v.into())),
                 _ => Err(e),
             },
         }
@@ -437,6 +633,25 @@ impl DefinedFunction {
             DefineType::Private => self.execute_apply(args, exec_state, invoke_ctx),
             DefineType::Public | DefineType::ReadOnly => exec_state
                 .execute_function_as_transaction(
+                    invoke_ctx,
+                    self,
+                    args,
+                    FunctionExecutionOptions::default(),
+                ),
+        }
+    }
+
+    /// Apply this function to reference-backed arguments, retaining them across private calls.
+    pub fn apply_refs(
+        &self,
+        args: Vec<ValueRef<'_>>,
+        exec_state: &mut ExecutionState,
+        invoke_ctx: &InvocationContext,
+    ) -> Result<ValueRef<'static>, VmExecutionError> {
+        match self.define_type {
+            DefineType::Private => self.execute_apply_refs(args, exec_state, invoke_ctx),
+            DefineType::Public | DefineType::ReadOnly => exec_state
+                .execute_function_as_transaction_refs(
                     invoke_ctx,
                     self,
                     args,
@@ -503,6 +718,30 @@ impl CallableType {
 // recursing into compound types. This function does not check for legality of
 // these casts, as that is done in the type-checker. Note: depth of recursion
 // should be capped by earlier checks on the types/values.
+fn type_requires_callable_cast(type_sig: &TypeSignature) -> bool {
+    match type_sig {
+        TypeSignature::CallableType(_) | TypeSignature::TraitReferenceType(_) => true,
+        TypeSignature::OptionalType(inner) => type_requires_callable_cast(inner),
+        TypeSignature::ResponseType(types) => {
+            type_requires_callable_cast(&types.0) || type_requires_callable_cast(&types.1)
+        }
+        TypeSignature::SequenceType(SequenceSubtype::ListType(list)) => {
+            type_requires_callable_cast(list.get_list_item_type())
+        }
+        TypeSignature::TupleType(tuple) => tuple
+            .get_type_map()
+            .values()
+            .any(type_requires_callable_cast),
+        TypeSignature::ListUnionType(_) => true,
+        TypeSignature::IntType
+        | TypeSignature::UIntType
+        | TypeSignature::BoolType
+        | TypeSignature::PrincipalType
+        | TypeSignature::SequenceType(_)
+        | TypeSignature::NoType => false,
+    }
+}
+
 fn clarity2_implicit_cast(
     type_sig: &TypeSignature,
     value: &Value,

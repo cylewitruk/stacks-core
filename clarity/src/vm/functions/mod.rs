@@ -18,10 +18,12 @@ use stacks_common::types::StacksEpochId;
 
 use crate::vm::Value::CallableContract;
 use crate::vm::analysis::errors::CommonCheckErrorKind;
-use crate::vm::callables::{CallableType, NativeHandle, cost_input_sized_vararg};
+use crate::vm::callables::{
+    BorrowingNativeHandle, CallableType, NativeHandle, cost_input_sized_refs,
+};
 use crate::vm::contexts::{ExecutionState, InvocationContext};
 use crate::vm::costs::cost_functions::ClarityCostFunction;
-use crate::vm::costs::{CostTracker, MemoryConsumer, constants as cost_constants, runtime_cost};
+use crate::vm::costs::{CostTracker, constants as cost_constants, runtime_cost};
 use crate::vm::errors::{
     EarlyReturnError, RuntimeCheckErrorKind, SyntaxBindingError, SyntaxBindingErrorType,
     VmExecutionError, check_argument_count, check_arguments_at_least,
@@ -29,7 +31,7 @@ use crate::vm::errors::{
 pub use crate::vm::functions::assets::stx_transfer_consolidated;
 use crate::vm::representations::{ClarityName, SymbolicExpression, SymbolicExpressionType};
 use crate::vm::types::{BuffData, PrincipalData, SequenceData, TypeSignature, Value};
-use crate::vm::{LocalContext, eval, is_reserved};
+use crate::vm::{LocalContext, ValueRef, eval, is_reserved};
 
 macro_rules! switch_on_global_epoch {
     ($Name:ident ($Epoch2Version:ident, $Epoch205Version:ident)) => {
@@ -54,11 +56,17 @@ use super::errors::VmInternalError;
 use crate::vm::ClarityVersion;
 
 mod arithmetic;
+mod composites;
+pub use arithmetic::apply_comparison_refs;
 mod assets;
 pub(crate) mod bitcoin;
 #[cfg(test)]
 mod bitcoin_madhouse;
 mod boolean;
+#[cfg(test)]
+mod borrowed_costs;
+#[cfg(test)]
+mod borrowed_sequences;
 mod conversions;
 mod crypto;
 mod database;
@@ -203,7 +211,9 @@ define_versioned_named_enum_with_max!(NativeFunctions(ClarityVersion) {
 ///   ClarityVersion
 ///
 pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option<CallableType> {
-    use crate::vm::callables::BuiltinKind::{Native, Native205, Special};
+    use crate::vm::callables::BuiltinKind::{
+        BorrowingNative, BorrowingNative205, Native, Native205, Special, StoredSpecial,
+    };
     use crate::vm::functions::NativeFunctions::*;
     if let Some(native_function) = NativeFunctions::lookup_by_name_at_version(name, version) {
         // The Clarity source-level name (e.g. "+", "tuple", "fold") is uniform across all
@@ -272,61 +282,64 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
             ),
             And => Special("special_and", &boolean::special_and),
             Or => Special("special_or", &boolean::special_or),
-            Not => Native(
+            Not => BorrowingNative(
                 "native_not",
-                NativeHandle::SingleArg(&boolean::native_not),
+                BorrowingNativeHandle::SingleArg(&boolean::native_not_ref),
                 ClarityCostFunction::Not,
             ),
-            Equals => Native205(
+            Equals => BorrowingNative205(
                 "native_eq",
-                NativeHandle::MoreArgEnv(&native_eq),
+                BorrowingNativeHandle::MoreArgEnv(&native_eq_ref),
                 ClarityCostFunction::Eq,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
-            If => Special("special_if", &special_if),
-            Let => Special("special_let", &special_let),
-            FetchVar => Special("special_var-get", &database::special_fetch_variable),
+            If => StoredSpecial("special_if", &special_if_ref),
+            Let => StoredSpecial("special_let", &special_let),
+            FetchVar => StoredSpecial(
+                "special_var-get-stored",
+                &database::special_fetch_variable_stored,
+            ),
             SetVar => Special("special_set-var", &database::special_set_variable),
-            Map => Special("special_map", &sequences::special_map),
-            Filter => Special("special_filter", &sequences::special_filter),
-            BuffToIntLe => Native(
+            Map => StoredSpecial("special_map", &sequences::special_map_ref),
+            Filter => StoredSpecial("special_filter", &sequences::special_filter_ref),
+            BuffToIntLe => BorrowingNative(
                 "native_buff_to_int_le",
-                NativeHandle::SingleArg(&conversions::native_buff_to_int_le),
+                BorrowingNativeHandle::SingleArg(&conversions::native_buff_to_int_le_ref),
                 ClarityCostFunction::BuffToIntLe,
             ),
-            BuffToUIntLe => Native(
+            BuffToUIntLe => BorrowingNative(
                 "native_buff_to_uint_le",
-                NativeHandle::SingleArg(&conversions::native_buff_to_uint_le),
+                BorrowingNativeHandle::SingleArg(&conversions::native_buff_to_uint_le_ref),
                 ClarityCostFunction::BuffToUIntLe,
             ),
-            BuffToIntBe => Native(
+            BuffToIntBe => BorrowingNative(
                 "native_buff_to_int_be",
-                NativeHandle::SingleArg(&conversions::native_buff_to_int_be),
+                BorrowingNativeHandle::SingleArg(&conversions::native_buff_to_int_be_ref),
                 ClarityCostFunction::BuffToIntBe,
             ),
-            BuffToUIntBe => Native(
+            BuffToUIntBe => BorrowingNative(
                 "native_buff_to_uint_be",
-                NativeHandle::SingleArg(&conversions::native_buff_to_uint_be),
+                BorrowingNativeHandle::SingleArg(&conversions::native_buff_to_uint_be_ref),
                 ClarityCostFunction::BuffToUIntBe,
             ),
-            StringToInt => Native(
+            StringToInt => BorrowingNative(
                 "native_string_to_int",
-                NativeHandle::SingleArg(&conversions::native_string_to_int),
+                BorrowingNativeHandle::SingleArg(&conversions::native_string_to_int_ref),
                 ClarityCostFunction::StringToInt,
             ),
-            StringToUInt => Native(
+            StringToUInt => BorrowingNative(
                 "native_string_to_uint",
-                NativeHandle::SingleArg(&conversions::native_string_to_uint),
+                BorrowingNativeHandle::SingleArg(&conversions::native_string_to_uint_ref),
                 ClarityCostFunction::StringToUInt,
             ),
-            IntToAscii => Native(
+            IntToAscii => BorrowingNative(
                 "native_int_to_ascii",
-                NativeHandle::SingleArg(&conversions::native_int_to_ascii),
+                BorrowingNativeHandle::SingleArg(&conversions::native_int_to_ascii_ref),
                 ClarityCostFunction::IntToAscii,
             ),
-            IntToUtf8 => Native(
+            IntToUtf8 => BorrowingNative(
                 "native_int_to_utf8",
-                NativeHandle::SingleArg(&conversions::native_int_to_utf8),
+                BorrowingNativeHandle::SingleArg(&conversions::native_int_to_utf8_ref),
                 ClarityCostFunction::IntToUtf8,
             ),
             IsStandard => Special("special_is_standard", &principals::special_is_standard),
@@ -338,74 +351,77 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
                 "special_principal_construct",
                 &principals::special_principal_construct,
             ),
-            Fold => Special("special_fold", &sequences::special_fold),
-            Concat => Special("special_concat", &sequences::special_concat),
-            AsMaxLen => Special("special_as_max_len", &sequences::special_as_max_len),
-            Append => Special("special_append", &sequences::special_append),
-            Len => Native(
+            Fold => StoredSpecial("special_fold", &sequences::special_fold_ref),
+            Concat => StoredSpecial("special_concat", &composites::concat),
+            AsMaxLen => StoredSpecial("special_as_max_len", &sequences::special_as_max_len_ref),
+            Append => StoredSpecial("special_append", &composites::append),
+            Len => BorrowingNative(
                 "native_len",
-                NativeHandle::SingleArg(&sequences::native_len),
+                BorrowingNativeHandle::SingleArg(&sequences::native_len_ref),
                 ClarityCostFunction::Len,
             ),
-            ElementAt | ElementAtAlias => Native(
+            ElementAt | ElementAtAlias => BorrowingNative(
                 "native_element_at",
-                NativeHandle::DoubleArg(&sequences::native_element_at),
+                BorrowingNativeHandle::DoubleArg(&sequences::native_element_at_ref),
                 ClarityCostFunction::ElementAt,
             ),
-            IndexOf | IndexOfAlias => Native205(
+            IndexOf | IndexOfAlias => BorrowingNative205(
                 "native_index_of",
-                NativeHandle::DoubleArg(&sequences::native_index_of),
+                BorrowingNativeHandle::DoubleArg(&sequences::native_index_of_ref),
                 ClarityCostFunction::IndexOf,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
-            Slice => Special("special_slice", &sequences::special_slice),
-            ListCons => Special("special_list_cons", &sequences::list_cons),
-            FetchEntry => Special("special_map-get?", &database::special_fetch_entry),
+            Slice => StoredSpecial("special_slice", &sequences::special_slice_ref),
+            ListCons => StoredSpecial("special_list_cons", &composites::list_cons),
+            FetchEntry => StoredSpecial(
+                "special-map-get-stored",
+                &database::special_fetch_entry_stored,
+            ),
             SetEntry => Special("special_set-entry", &database::special_set_entry),
             InsertEntry => Special("special_insert-entry", &database::special_insert_entry),
             DeleteEntry => Special("special_delete-entry", &database::special_delete_entry),
-            TupleCons => Special("special_tuple", &tuples::tuple_cons),
-            TupleGet => Special("special_get-tuple", &tuples::tuple_get),
-            TupleMerge => Native205(
+            TupleCons => StoredSpecial("special_tuple", &composites::tuple_cons),
+            TupleGet => StoredSpecial("special_get-tuple", &tuples::tuple_get_ref),
+            TupleMerge => BorrowingNative205(
                 "native_merge-tuple",
-                NativeHandle::MoreArgEnv(&tuples::tuple_merge),
+                BorrowingNativeHandle::MoreArgEnv(&composites::tuple_merge),
                 ClarityCostFunction::TupleMerge,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
-            Begin => Native(
+            Begin => BorrowingNative(
                 "native_begin",
-                NativeHandle::MoreArg(&native_begin),
+                BorrowingNativeHandle::MoreArgEnv(&native_begin_ref),
                 ClarityCostFunction::Begin,
             ),
-            Hash160 => Native205(
+            Hash160 => BorrowingNative205(
                 "native_hash160",
-                NativeHandle::SingleArg(&crypto::native_hash160),
+                BorrowingNativeHandle::SingleArg(&crypto::native_hash160_ref),
                 ClarityCostFunction::Hash160,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
-            Sha256 => Native205(
+            Sha256 => BorrowingNative205(
                 "native_sha256",
-                NativeHandle::SingleArg(&crypto::native_sha256),
+                BorrowingNativeHandle::SingleArg(&crypto::native_sha256_ref),
                 ClarityCostFunction::Sha256,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
-            Sha512 => Native205(
+            Sha512 => BorrowingNative205(
                 "native_sha512",
-                NativeHandle::SingleArg(&crypto::native_sha512),
+                BorrowingNativeHandle::SingleArg(&crypto::native_sha512_ref),
                 ClarityCostFunction::Sha512,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
-            Sha512Trunc256 => Native205(
+            Sha512Trunc256 => BorrowingNative205(
                 "native_sha512trunc256",
-                NativeHandle::SingleArg(&crypto::native_sha512trunc256),
+                BorrowingNativeHandle::SingleArg(&crypto::native_sha512trunc256_ref),
                 ClarityCostFunction::Sha512t256,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
-            Keccak256 => Native205(
+            Keccak256 => BorrowingNative205(
                 "native_keccak256",
-                NativeHandle::SingleArg(&crypto::native_keccak256),
+                BorrowingNativeHandle::SingleArg(&crypto::native_keccak256_ref),
                 ClarityCostFunction::Keccak256,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
             Secp256k1Recover => Special(
                 "native_secp256k1-recover",
@@ -415,7 +431,10 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
                 Special("native_secp256k1-verify", &crypto::special_secp256k1_verify)
             }
             Print => Special("special_print", &special_print),
-            ContractCall => Special("special_contract-call", &database::special_contract_call),
+            ContractCall => StoredSpecial(
+                "special_contract-call",
+                &database::special_contract_call_ref,
+            ),
             AsContract => Special("special_as-contract", &special_as_contract),
             ContractOf => Special("special_contract-of", &special_contract_of),
             PrincipalOf => Special("special_principal-of", &crypto::special_principal_of),
@@ -432,71 +451,71 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
                 "special_get_tenure_info",
                 &database::special_get_tenure_info,
             ),
-            ConsSome => Native(
+            ConsSome => BorrowingNative(
                 "native_some",
-                NativeHandle::SingleArg(&options::native_some),
+                BorrowingNativeHandle::SingleArg(&options::native_some_ref),
                 ClarityCostFunction::SomeCons,
             ),
-            ConsOkay => Native(
+            ConsOkay => BorrowingNative(
                 "native_okay",
-                NativeHandle::SingleArg(&options::native_okay),
+                BorrowingNativeHandle::SingleArg(&options::native_okay_ref),
                 ClarityCostFunction::OkCons,
             ),
-            ConsError => Native(
+            ConsError => BorrowingNative(
                 "native_error",
-                NativeHandle::SingleArg(&options::native_error),
+                BorrowingNativeHandle::SingleArg(&options::native_error_ref),
                 ClarityCostFunction::ErrCons,
             ),
-            DefaultTo => Native(
+            DefaultTo => BorrowingNative(
                 "native_default_to",
-                NativeHandle::DoubleArg(&options::native_default_to),
+                BorrowingNativeHandle::DoubleArg(&options::native_default_to_ref),
                 ClarityCostFunction::DefaultTo,
             ),
-            Asserts => Special("special_asserts", &special_asserts),
-            UnwrapRet => Native(
+            Asserts => StoredSpecial("special_asserts", &special_asserts_ref),
+            UnwrapRet => BorrowingNative(
                 "native_unwrap_ret",
-                NativeHandle::DoubleArg(&options::native_unwrap_or_ret),
+                BorrowingNativeHandle::DoubleArg(&options::native_unwrap_or_ret_ref),
                 ClarityCostFunction::UnwrapRet,
             ),
-            UnwrapErrRet => Native(
+            UnwrapErrRet => BorrowingNative(
                 "native_unwrap_err_ret",
-                NativeHandle::DoubleArg(&options::native_unwrap_err_or_ret),
+                BorrowingNativeHandle::DoubleArg(&options::native_unwrap_err_or_ret_ref),
                 ClarityCostFunction::UnwrapErrOrRet,
             ),
-            IsOkay => Native(
+            IsOkay => BorrowingNative(
                 "native_is_okay",
-                NativeHandle::SingleArg(&options::native_is_okay),
+                BorrowingNativeHandle::SingleArg(&options::native_is_okay_ref),
                 ClarityCostFunction::IsOkay,
             ),
-            IsNone => Native(
+            IsNone => BorrowingNative(
                 "native_is_none",
-                NativeHandle::SingleArg(&options::native_is_none),
+                BorrowingNativeHandle::SingleArg(&options::native_is_none_ref),
                 ClarityCostFunction::IsNone,
             ),
-            IsErr => Native(
+            IsErr => BorrowingNative(
                 "native_is_err",
-                NativeHandle::SingleArg(&options::native_is_err),
+                BorrowingNativeHandle::SingleArg(&options::native_is_err_ref),
                 ClarityCostFunction::IsErr,
             ),
-            IsSome => Native(
+            IsSome => BorrowingNative(
                 "native_is_some",
-                NativeHandle::SingleArg(&options::native_is_some),
+                BorrowingNativeHandle::SingleArg(&options::native_is_some_ref),
                 ClarityCostFunction::IsSome,
             ),
-            Unwrap => Native(
+            Unwrap => BorrowingNative(
                 "native_unwrap",
-                NativeHandle::SingleArg(&options::native_unwrap),
+                BorrowingNativeHandle::SingleArg(&options::native_unwrap_ref),
                 ClarityCostFunction::Unwrap,
             ),
-            UnwrapErr => Native(
+            UnwrapErr => BorrowingNative(
                 "native_unwrap_err",
-                NativeHandle::SingleArg(&options::native_unwrap_err),
+                BorrowingNativeHandle::SingleArg(&options::native_unwrap_err_ref),
                 ClarityCostFunction::UnwrapErr,
             ),
-            Match => Special("special_match", &options::special_match),
-            TryRet => Native(
+            Match => StoredSpecial("special_match", &options::special_match_ref),
+            TryRet => BorrowingNative(
                 "native_try_ret",
-                NativeHandle::SingleArg(&options::native_try_ret),
+                BorrowingNativeHandle::SingleArg(&options::native_try_ret_ref),
                 ClarityCostFunction::TryRet,
             ),
             MintAsset => Special("special_mint_asset", &assets::special_mint_asset),
@@ -511,7 +530,7 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
                 "special_get_token_supply",
                 &assets::special_get_token_supply,
             ),
-            AtBlock => Special("special_at_block", &database::special_at_block),
+            AtBlock => StoredSpecial("special_at_block", &database::special_at_block),
             GetStxBalance => Special("special_stx_balance", &assets::special_stx_balance),
             StxTransfer => Special("special_stx_transfer", &assets::special_stx_transfer),
             StxTransferMemo => Special(
@@ -520,14 +539,14 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
             ),
             StxBurn => Special("special_stx_burn", &assets::special_stx_burn),
             StxGetAccount => Special("stx_get_account", &assets::special_stx_account),
-            ToConsensusBuff => Native205(
+            ToConsensusBuff => BorrowingNative205(
                 "to_consensus_buff",
-                NativeHandle::SingleArg(&conversions::to_consensus_buff),
+                BorrowingNativeHandle::SingleArg(&composites::to_consensus),
                 ClarityCostFunction::ToConsensusBuff,
-                &cost_input_sized_vararg,
+                &cost_input_sized_refs,
             ),
             FromConsensusBuff => Special("from_consensus_buff", &conversions::from_consensus_buff),
-            ReplaceAt => Special("replace_at", &sequences::special_replace_at),
+            ReplaceAt => StoredSpecial("replace_at", &composites::replace_at),
             BitwiseAnd => Native(
                 "native_bitwise_and",
                 NativeHandle::MoreArg(&arithmetic::native_bitwise_and),
@@ -605,42 +624,41 @@ pub fn lookup_reserved_functions(name: &str, version: &ClarityVersion) -> Option
     }
 }
 
-fn native_eq(
-    args: Vec<Value>,
+/// Compare reference-backed values while recursively retaining packed containers.
+fn native_eq_ref<'value>(
+    args: Vec<ValueRef<'value>>,
     exec_state: &mut ExecutionState,
     _invoke_ctx: &InvocationContext,
-) -> Result<Value, VmExecutionError> {
-    // TODO: this currently uses the derived equality checks of Value,
-    //   however, that's probably not how we want to implement equality
-    //   checks on the ::ListTypes
-
-    if args.len() < 2 {
-        Ok(Value::Bool(true))
-    } else {
-        let first = &args[0];
-        // check types:
-        let mut arg_type = TypeSignature::type_of(first)?;
-        for x in args.iter() {
-            arg_type = TypeSignature::least_supertype(
-                exec_state.epoch(),
-                &TypeSignature::type_of(x)?,
-                &arg_type,
-            )?;
-            if x != first {
-                return Ok(Value::Bool(false));
-            }
-        }
-        Ok(Value::Bool(true))
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    let Some(first) = args.first() else {
+        return Ok(ValueRef::Owned(Value::Bool(true)));
+    };
+    if args.len() == 1 {
+        return Ok(ValueRef::Owned(Value::Bool(true)));
     }
+    let mut arg_type = first.type_signature()?;
+    for value in &args {
+        arg_type = TypeSignature::least_supertype(
+            exec_state.epoch(),
+            &value.type_signature()?,
+            &arg_type,
+        )?;
+        if !value.value_eq(first)? {
+            return Ok(ValueRef::Owned(Value::Bool(false)));
+        }
+    }
+    Ok(ValueRef::Owned(Value::Bool(true)))
 }
 
-fn native_begin(mut args: Vec<Value>) -> Result<Value, VmExecutionError> {
-    match args.pop() {
-        Some(v) => Ok(v),
-        None => {
-            Err(RuntimeCheckErrorKind::Unreachable("Requires at least args: 1 got 0".into()).into())
-        }
-    }
+/// Return the final argument without materializing a packed result.
+fn native_begin_ref<'value>(
+    mut args: Vec<ValueRef<'value>>,
+    _exec_state: &mut ExecutionState,
+    _invoke_ctx: &InvocationContext,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    args.pop().ok_or_else(|| {
+        RuntimeCheckErrorKind::Unreachable("Requires at least args: 1 got 0".into()).into()
+    })
 }
 
 fn special_print(
@@ -669,26 +687,20 @@ fn special_print(
     Ok(value)
 }
 
-fn special_if(
+/// Evaluate one conditional branch while retaining a packed branch result.
+fn special_if_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_argument_count(3, args)?;
-
     runtime_cost(ClarityCostFunction::If, exec_state, 0)?;
-    // handle the conditional clause.
     let conditional = eval(&args[0], exec_state, invoke_ctx, context)?;
-    match conditional.as_ref() {
-        Value::Bool(result) => {
-            if *result {
-                eval(&args[1], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)
-            } else {
-                eval(&args[2], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)
-            }
-        }
-        _ => Err(RuntimeCheckErrorKind::TypeValueError(
+    match conditional.as_bool()? {
+        Some(true) => eval(&args[1], exec_state, invoke_ctx, context)?.into_static(exec_state),
+        Some(false) => eval(&args[2], exec_state, invoke_ctx, context)?.into_static(exec_state),
+        None => Err(RuntimeCheckErrorKind::TypeValueError(
             Box::new(TypeSignature::BoolType),
             conditional.as_ref().to_error_string(),
         )
@@ -696,29 +708,24 @@ fn special_if(
     }
 }
 
-fn special_asserts(
+/// Evaluate `asserts!` without materializing a successful packed Boolean input.
+fn special_asserts_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_argument_count(2, args)?;
-
     runtime_cost(ClarityCostFunction::Asserts, exec_state, 0)?;
-    // handle the conditional clause.
     let conditional = eval(&args[0], exec_state, invoke_ctx, context)?;
-
-    match conditional.as_ref() {
-        Value::Bool(result) => {
-            if *result {
-                conditional.clone_with_cost(exec_state)
-            } else {
-                let thrown =
-                    eval(&args[1], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
-                Err(EarlyReturnError::AssertionFailed(Box::new(thrown)).into())
-            }
+    match conditional.as_bool()? {
+        Some(true) => conditional.into_static(exec_state),
+        Some(false) => {
+            let thrown =
+                eval(&args[1], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
+            Err(EarlyReturnError::AssertionFailed(Box::new(thrown)).into())
         }
-        _ => Err(RuntimeCheckErrorKind::TypeValueError(
+        None => Err(RuntimeCheckErrorKind::TypeValueError(
             Box::new(TypeSignature::BoolType),
             conditional.as_ref().to_error_string(),
         )
@@ -790,7 +797,7 @@ fn special_let(
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     // (let ((x 1) (y 2)) (+ x y)) -> 3
     // arg0 => binding list
     // arg1..n => body
@@ -818,11 +825,15 @@ fn special_let(
 
             let binding_value = eval(var_sexp, exec_state, invoke_ctx, &inner_context)?;
 
-            let bind_mem_use = binding_value.as_ref().get_memory_use()?;
+            let bind_mem_use = binding_value.get_memory_use()?;
             exec_state.add_memory(bind_mem_use)?;
             memory_use += bind_mem_use; // no check needed, b/c it's done in add_memory.
-            let binding_value = binding_value.clone_with_cost(exec_state)?;
-            if *invoke_ctx.contract_context.get_clarity_version() >= ClarityVersion::Clarity2 && let CallableContract(trait_data) = &binding_value {
+            binding_value.charge_clone_cost(exec_state)?;
+            let binding_value = binding_value.into_cow();
+            if *invoke_ctx.contract_context.get_clarity_version() >= ClarityVersion::Clarity2
+                && binding_value.as_value_ref().is_callable()?
+                && let CallableContract(trait_data) = binding_value.as_value()
+            {
                 inner_context.callable_contracts.insert(binding_name.clone(), trait_data.clone());
             }
             inner_context.variables.insert(binding_name.clone(), binding_value);
@@ -836,7 +847,9 @@ fn special_let(
             last_result.replace(body_result);
         }
         // last_result should always be Some(...), because of the arg len check above.
-        last_result.ok_or_else(|| VmExecutionError::from(VmInternalError::Expect("Failed to get let result".into())))?.clone_with_cost(exec_state)
+        last_result
+            .ok_or_else(|| VmExecutionError::from(VmInternalError::Expect("Failed to get let result".into())))?
+            .into_static(exec_state)
     })
 }
 

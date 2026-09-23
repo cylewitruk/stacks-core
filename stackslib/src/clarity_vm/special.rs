@@ -14,9 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use clarity::boot_util::boot_code_id;
+use clarity::vm::ValueRef;
 use clarity::vm::contexts::GlobalContext;
 use clarity::vm::errors::VmExecutionError;
 use clarity::vm::types::{PrincipalData, QualifiedContractIdentifier, Value};
+use pox_locking::{POX_1_NAME, POX_2_NAME, POX_3_NAME, POX_4_NAME, POX_5_NAME};
 
 /// Handle special cases of contract-calls -- namely, those into PoX that should lock up STX
 pub fn handle_contract_call_special_cases(
@@ -36,5 +39,36 @@ pub fn handle_contract_call_special_cases(
         function_name,
         args,
         result,
+    )
+}
+
+/// Only PoX special cases require compatibility-owned arguments and results.
+pub fn handle_contract_call_special_cases_ref(
+    global_context: &mut GlobalContext,
+    sender: Option<&PrincipalData>,
+    sponsor: Option<&PrincipalData>,
+    contract_id: &QualifiedContractIdentifier,
+    function_name: &str,
+    args: &[ValueRef<'_>],
+    result: &ValueRef<'_>,
+) -> Result<(), VmExecutionError> {
+    if ![POX_1_NAME, POX_2_NAME, POX_3_NAME, POX_4_NAME, POX_5_NAME]
+        .iter()
+        .any(|name| *contract_id == boot_code_id(name, global_context.mainnet))
+    {
+        return Ok(());
+    }
+    let args = args
+        .iter()
+        .map(|value| value.as_ref().clone())
+        .collect::<Vec<_>>();
+    handle_contract_call_special_cases(
+        global_context,
+        sender,
+        sponsor,
+        contract_id,
+        function_name,
+        &args,
+        result.as_ref(),
     )
 }

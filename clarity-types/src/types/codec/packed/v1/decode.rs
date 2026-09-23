@@ -51,7 +51,7 @@ pub fn value(
 ///
 /// The returned length is the value's consensus-serialized length, used to validate the record
 /// header and preserve consensus cost accounting.
-fn body(bytes: &[u8], expected: &TypeSignature) -> Result<(Value, u32), PackedValueError> {
+pub fn body(bytes: &[u8], expected: &TypeSignature) -> Result<(Value, u32), PackedValueError> {
     use TypeSignature::*;
 
     match expected {

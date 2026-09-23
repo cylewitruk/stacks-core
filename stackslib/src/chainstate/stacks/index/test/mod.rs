@@ -18,17 +18,23 @@
 #![allow(unused_assignments)]
 
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use clarity::util::hash::Sha512Trunc256Sum;
+use rusqlite::Connection;
 use stacks_common::types::chainstate::StacksBlockId;
 use stacks_common::util::hash::to_hex;
 
 use crate::chainstate::stacks::index::bits::*;
 use crate::chainstate::stacks::index::marf::*;
 use crate::chainstate::stacks::index::node::*;
+use crate::chainstate::stacks::index::scratch::MarfReadState;
+use crate::chainstate::stacks::index::storage::testing::MarfTestStorage;
 use crate::chainstate::stacks::index::storage::*;
 use crate::chainstate::stacks::index::trie::*;
-use crate::chainstate::stacks::index::{MARFValue, MarfTrieId, TrieLeaf, TrieMerkleProof};
+use crate::chainstate::stacks::index::{
+    Error, MARFValue, MarfTrieId, NodePatching, TrieLeaf, TrieReadSession, TrieReadStorage,
+};
 use crate::chainstate::stacks::{BlockHeaderHash, TrieHash};
 
 pub mod file;
@@ -38,14 +44,144 @@ pub mod marf_regression;
 pub mod node;
 pub mod node_patch;
 pub mod proofs;
+pub mod scratch;
 pub mod squash;
 pub mod storage;
 pub mod trie;
 
+pub trait MarfRootTable<T: MarfTrieId> {
+    fn current_root_to_block_table(&mut self) -> HashMap<TrieHash, T>;
+}
+
+impl<T: MarfTrieId> MarfRootTable<T> for MARF<T> {
+    fn current_root_to_block_table(&mut self) -> HashMap<TrieHash, T> {
+        self.with_storage(|storage| {
+            storage
+                .read_root_to_block_table()
+                .expect("Failed to read root-to-block table")
+        })
+    }
+}
+
+impl<T: MarfTrieId> MarfRootTable<T> for MarfTransaction<'_, T> {
+    fn current_root_to_block_table(&mut self) -> HashMap<TrieHash, T> {
+        self.with_storage(|storage| {
+            storage
+                .read_root_to_block_table()
+                .expect("Failed to read root-to-block table")
+        })
+    }
+}
+
+impl<T: MarfTrieId> MarfRootTable<T> for ReopenedTrieStorageConnection<'_, T> {
+    fn current_root_to_block_table(&mut self) -> HashMap<TrieHash, T> {
+        self.with_storage(|storage| {
+            storage
+                .read_root_to_block_table()
+                .expect("Failed to read root-to-block table")
+        })
+    }
+}
+
+impl<T: MarfTrieId, S: NodePatching, R> MarfRootTable<T> for MarfReadCtx<'_, T, S, R>
+where
+    R: TrieReadStorage<T> + MarfTestStorage<T> + ?Sized,
+{
+    fn current_root_to_block_table(&mut self) -> HashMap<TrieHash, T> {
+        self.storage()
+            .read_root_to_block_table()
+            .expect("Failed to read root-to-block table")
+    }
+}
+
+/// Walk from the given node to the next node on the path, advancing the cursor.
+///
+/// * Returns the [`TriePtr`] which was followed, the _next_ node to walk, and the hash of the
+///   _current_ node.
+/// * Returns `None` if we either didn't find the node, we're out of path, we're at a leaf, or
+///   if a backpointer is encountered.
+///
+/// **NOTE:** This only works if we're walking a trie, not a MARF.
+pub fn walk_from<T: MarfTrieId, Db: Deref<Target = Connection>>(
+    storage: &mut TrieStorageConnection<T, Db>,
+    node: &TrieNodeType,
+    cursor: &mut TrieCursor<T>,
+    decode_scratch: &mut MarfReadState,
+) -> Result<Option<(TriePtr, TrieNodeType, TrieHash)>, Error> {
+    match cursor.walk(node, &storage.get_cur_block()) {
+        Ok(ptr_opt) => {
+            match ptr_opt {
+                None => {
+                    // end of path
+                    Ok(None)
+                }
+                Some(ptr) => {
+                    // end of node path
+                    trace!("Walked to {:?}", &ptr);
+                    let (node, hash) = read_owned_hashed_node(storage, &ptr, decode_scratch)?;
+
+                    Ok(Some((ptr, node, hash)))
+                }
+            }
+        }
+        Err(e) => Err(Error::CursorError(e)),
+    }
+}
+
+pub fn read_owned_hashed_node<T: MarfTrieId, Db: Deref<Target = Connection>>(
+    storage: &mut TrieStorageConnection<T, Db>,
+    ptr: &TriePtr,
+    decode_scratch: &mut MarfReadState,
+) -> Result<(TrieNodeType, TrieHash), Error> {
+    let mut read_session = TrieReadSession::new(storage, decode_scratch);
+    read_session
+        .read_node(ptr)?
+        .into_owned_node()
+        .and_then(|(node, hash)| {
+            hash.map(|hash| (node, hash))
+                .ok_or_else(|| Error::CorruptionError("Missing node hash in trie read".to_string()))
+        })
+}
+
+pub fn read_root<T: MarfTrieId, Db: Deref<Target = Connection>>(
+    storage: &mut TrieStorageConnection<T, Db>,
+) -> Result<(TrieNodeType, TrieHash), Error> {
+    let mut decode_scratch = MarfReadState::new();
+    Trie::read_root(storage, &mut decode_scratch)?
+        .into_owned_node()
+        .and_then(|(node, hash)| {
+            hash.map(|hash| (node, hash))
+                .ok_or_else(|| Error::CorruptionError("Missing node hash in trie read".to_string()))
+        })
+}
+
+pub fn read_nodetype<T: MarfTrieId, Db: Deref<Target = Connection>>(
+    storage: &mut TrieStorageConnection<T, Db>,
+    ptr: &TriePtr,
+) -> Result<(TrieNodeType, TrieHash), Error> {
+    let mut decode_scratch = MarfReadState::new();
+    storage
+        .read_node_with_state(ptr, &mut decode_scratch)?
+        .into_owned_node()
+        .and_then(|(node, hash)| {
+            hash.map(|hash| (node, hash))
+                .ok_or_else(|| Error::CorruptionError("Missing node hash in trie read".to_string()))
+        })
+}
+
+pub fn update_root_hash<T: MarfTrieId, Db: Deref<Target = Connection>>(
+    storage: &mut TrieStorageConnection<T, Db>,
+    cursor: &TrieCursor<T>,
+) -> Result<(), Error> {
+    let mut decode_scratch = MarfReadState::new();
+    Trie::update_root_hash(storage, cursor, &mut decode_scratch)
+}
+
 /// Print out a trie to stderr
-pub fn dump_trie<T>(s: &mut TrieStorageConnection<T>)
+pub fn dump_trie<T, Db>(s: &mut TrieStorageConnection<T, Db>)
 where
     T: MarfTrieId,
+    Db: Deref<Target = Connection>,
 {
     test_debug!("\n----- BEGIN TRIE ------");
 
@@ -59,7 +195,7 @@ where
 
     let root_ptr = s.root_ptr();
     let mut frontier: Vec<(TrieNodeType, TrieHash, usize)> = vec![];
-    let (root, root_hash) = Trie::read_root(s).unwrap();
+    let (root, root_hash) = read_root(s).unwrap();
     frontier.push((root, root_hash, 0));
 
     while !frontier.is_empty() {
@@ -91,7 +227,7 @@ where
                 continue;
             }
             if !is_backptr(ptr.id()) {
-                let (child_node, child_hash) = s.read_nodetype(ptr).unwrap();
+                let (child_node, child_hash) = read_nodetype(s, ptr).unwrap();
                 frontier.push((child_node, child_hash, depth + path_len + 1));
             }
         }
@@ -100,37 +236,51 @@ where
     test_debug!("----- END TRIE ------\n");
 }
 
-pub fn merkle_test(s: &mut TrieStorageConnection<BlockHeaderHash>, path: &[u8], value: &[u8]) {
-    let (_, root_hash) = Trie::read_root(s).unwrap();
-    let triepath = TrieHash::from_bytes(&path[..]).unwrap();
-
+pub fn merkle_test<Db: Deref<Target = Connection>>(
+    s: &mut TrieStorageConnection<BlockHeaderHash, Db>,
+    path: &[u8],
+    value: &[u8],
+) {
     let block_header = BlockHeaderHash([0u8; 32]);
-    s.open_block(&block_header).unwrap();
-
-    let mut marf_value = [0u8; 40];
-    marf_value.copy_from_slice(&value[0..40]);
-
-    let proof =
-        TrieMerkleProof::from_path(s, &triepath, &MARFValue(marf_value), &block_header).unwrap();
-    let empty_root_to_block = HashMap::new();
-
-    assert!(proof.verify(
-        &triepath,
-        &MARFValue(marf_value),
-        &root_hash,
-        &empty_root_to_block
-    ));
+    merkle_test_marf(s, &block_header, path, value, Some(HashMap::new()));
 }
 
-pub fn merkle_test_marf(
-    s: &mut TrieStorageConnection<BlockHeaderHash>,
+pub fn merkle_test_marf<Db: Deref<Target = Connection>>(
+    s: &mut TrieStorageConnection<BlockHeaderHash, Db>,
     header: &BlockHeaderHash,
     path: &[u8],
     value: &[u8],
     root_to_block: Option<HashMap<TrieHash, BlockHeaderHash>>,
 ) -> HashMap<TrieHash, BlockHeaderHash> {
-    s.open_block(header).unwrap();
-    let (_, root_hash) = Trie::read_root(s).unwrap();
+    MarfReadCtx::with_ephemeral(s, |ctx| {
+        verify_marf_merkle_proof(ctx, header, path, value, root_to_block)
+    })
+}
+
+fn verify_marf_merkle_proof<C>(
+    ctx: &mut C,
+    header: &BlockHeaderHash,
+    path: &[u8],
+    value: &[u8],
+    root_to_block: Option<HashMap<TrieHash, BlockHeaderHash>>,
+) -> HashMap<TrieHash, BlockHeaderHash>
+where
+    C: MarfCore<BlockHeaderHash> + MarfRootTable<BlockHeaderHash>,
+{
+    ctx.open_block(header, None).unwrap();
+    let root_hash = ctx
+        .with_read_ctx(|read_ctx| {
+            read_ctx.with_read_state(|storage, _cursor, decode_scratch| {
+                Trie::read_root(storage, decode_scratch).and_then(|read| {
+                    read.into_hash().and_then(|hash| {
+                        hash.ok_or_else(|| {
+                            Error::CorruptionError("Missing node hash in trie read".to_string())
+                        })
+                    })
+                })
+            })
+        })
+        .expect("Failed to get current trie root");
     let triepath = TrieHash::from_bytes(path).unwrap();
 
     let mut marf_value = [0u8; 40];
@@ -138,7 +288,7 @@ pub fn merkle_test_marf(
 
     test_debug!("---------");
     test_debug!(
-        "MARF merkle prove: merkle_test_marf({:?}, {:?}, {:?})?",
+        "MARF merkle prove: verify_marf_merkle_proof({:?}, {:?}, {:?})?",
         header,
         path,
         value
@@ -147,8 +297,10 @@ pub fn merkle_test_marf(
     test_debug!("MARF merkle verify source block: {:?}", header);
     test_debug!("---------");
 
-    let proof = TrieMerkleProof::from_path(s, &triepath, &MARFValue(marf_value), header).unwrap();
-    let root_to_block = root_to_block.unwrap_or_else(|| s.read_root_to_block_table().unwrap());
+    let proof = ctx
+        .prove_path(header, &triepath, &MARFValue(marf_value))
+        .unwrap();
+    let root_to_block = root_to_block.unwrap_or_else(|| ctx.current_root_to_block_table());
 
     test_debug!("---------");
     test_debug!("MARF merkle verify: {:?}", &proof);
@@ -167,43 +319,8 @@ pub fn merkle_test_marf(
     root_to_block
 }
 
-pub fn merkle_test_marf_key_value(
-    s: &mut TrieStorageConnection<BlockHeaderHash>,
-    header: &BlockHeaderHash,
-    key: &String,
-    value: &String,
-    root_to_block: Option<HashMap<TrieHash, BlockHeaderHash>>,
-) -> HashMap<TrieHash, BlockHeaderHash> {
-    test_debug!("---------");
-    test_debug!(
-        "MARF merkle prove: merkle_test_marf({:?}, {:?}, {:?})?",
-        header,
-        key,
-        value
-    );
-    test_debug!("---------");
-
-    s.open_block(header).unwrap();
-    let (_, root_hash) = Trie::read_root(s).unwrap();
-    let proof = TrieMerkleProof::from_entry(s, key, value, header).unwrap();
-
-    test_debug!("---------");
-    test_debug!("MARF merkle verify: {:?}", &proof);
-    test_debug!("MARF merkle verify target root hash: {:?}", &root_hash);
-    test_debug!("MARF merkle verify source block: {:?}", header);
-    test_debug!("---------");
-
-    let root_to_block = root_to_block.unwrap_or_else(|| s.read_root_to_block_table().unwrap());
-    let triepath = TrieHash::from_key(key);
-    let marf_value = MARFValue::from_value(value);
-
-    assert!(proof.verify(&triepath, &marf_value, &root_hash, &root_to_block));
-
-    root_to_block
-}
-
-pub fn make_node_path(
-    s: &mut TrieStorageConnection<BlockHeaderHash>,
+pub fn make_node_path<Db: Deref<Target = Connection>>(
+    s: &mut TrieStorageConnection<BlockHeaderHash, Db>,
     node_id: u8,
     path_segments: &[(Vec<u8>, u8)],
     leaf_data: Vec<u8>,
@@ -338,8 +455,8 @@ pub fn make_node_path(
     (nodes, node_ptrs, hashes)
 }
 
-pub fn make_node4_path(
-    s: &mut TrieStorageConnection<BlockHeaderHash>,
+pub fn make_node4_path<Db: Deref<Target = Connection>>(
+    s: &mut TrieStorageConnection<BlockHeaderHash, Db>,
     path_segments: &[(Vec<u8>, u8)],
     leaf_data: Vec<u8>,
 ) -> (Vec<TrieNodeType>, Vec<TriePtr>, Vec<TrieHash>) {
@@ -400,6 +517,18 @@ pub mod opts {
     pub static OPTS_DEF_EXT_COMP: LazyLock<MARFOpenOpts> =
         LazyLock::new(|| OPTS_DEF_EXT.clone().with_compression(true));
 
+    // Mmap variants of the external-blob configs (for rstest parameterized tests).
+    pub static OPTS_IMM_EXT_MMAP: LazyLock<MARFOpenOpts> =
+        LazyLock::new(|| OPTS_IMM_EXT.clone().with_mmap(true));
+    pub static OPTS_DEF_EXT_MMAP: LazyLock<MARFOpenOpts> =
+        LazyLock::new(|| OPTS_DEF_EXT.clone().with_mmap(true));
+    pub static OPTS_IMM_EXT_COMP_MMAP: LazyLock<MARFOpenOpts> =
+        LazyLock::new(|| OPTS_IMM_EXT_COMP.clone().with_mmap(true));
+    pub static OPTS_DEF_EXT_COMP_MMAP: LazyLock<MARFOpenOpts> =
+        LazyLock::new(|| OPTS_DEF_EXT_COMP.clone().with_mmap(true));
+
+    /// All meaningful combinations: the 8 base configurations plus the 4 external-blob mmap
+    /// variants. Mmap has no effect without external blob storage, so those duplicates are omitted.
     pub static ALL_OPTS: LazyLock<Vec<MARFOpenOpts>> = LazyLock::new(|| {
         vec![
             OPTS_IMM.clone(),
@@ -410,6 +539,10 @@ pub mod opts {
             OPTS_DEF_EXT.clone(),
             OPTS_DEF_COMP.clone(),
             OPTS_DEF_EXT_COMP.clone(),
+            OPTS_IMM_EXT_MMAP.clone(),
+            OPTS_IMM_EXT_COMP_MMAP.clone(),
+            OPTS_DEF_EXT_MMAP.clone(),
+            OPTS_DEF_EXT_COMP_MMAP.clone(),
         ]
     });
 
@@ -423,5 +556,13 @@ pub mod opts {
     #[case::def_ext(&opts::OPTS_DEF_EXT)]
     #[case::def_comp(&opts::OPTS_DEF_COMP)]
     #[case::def_ext_comp(&opts::OPTS_DEF_EXT_COMP)]
+    #[case::imm_ext_mmap(&opts::OPTS_IMM_EXT_MMAP)]
+    #[case::imm_ext_comp_mmap(&opts::OPTS_IMM_EXT_COMP_MMAP)]
+    #[case::def_ext_mmap(&opts::OPTS_DEF_EXT_MMAP)]
+    #[case::def_ext_comp_mmap(&opts::OPTS_DEF_EXT_COMP_MMAP)]
     pub fn tpl_all_opts(#[case] marf_opts: &MARFOpenOpts) {}
 }
+
+mod cache;
+
+mod record_format;

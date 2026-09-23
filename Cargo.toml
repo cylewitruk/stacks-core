@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "stackslib",
+    "crates/extent-ptrhash",
     "stacks-common",
     "stacks-codec",
     "crates/stacks-transactions",
@@ -19,6 +20,7 @@ members = [
     "contrib/clarity-cli",
     "contrib/stacks-cli",
     "contrib/marf-squash",
+    "contrib/clarity-value-storage-migrate",
 ]
 
 exclude = ["contrib/tools/config-docs-generator"]

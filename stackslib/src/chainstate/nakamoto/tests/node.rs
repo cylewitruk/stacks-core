@@ -1022,7 +1022,7 @@ impl TestStacksNode {
 
         let mut miner_tenure_info =
             builder.load_tenure_info(&mut chainstate, burn_dbconn, tenure_cause)?;
-        let reward_set = miner_tenure_info.active_reward_set.clone();
+        let reward_set = (*miner_tenure_info.active_reward_set).clone();
         builder.header.pox_treatment = BitVec::ones(reward_set.pox_treatment_bitvec_len())
             .map_err(|_| {
                 ChainstateError::InvalidStacksBlock(

@@ -1,0 +1,1 @@
+Reuse a whole-file Clarity value mapping across reads and transactions, refresh it at block publication, and remove read-time extent SHA-256 verification. Newly appended values remain readable from shared encoded buffers until publication.

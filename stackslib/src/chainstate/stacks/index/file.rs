@@ -14,26 +14,85 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::{env, fs, io};
 
-#[cfg(test)]
-use rusqlite::params;
+/// Positional read: reads bytes from a file at a given offset without modifying the
+/// file cursor. Maps to `pread(2)` on Unix and `seek_read` on Windows.
+fn pread(fd: &fs::File, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        fd.read_at(buf, offset)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        fd.seek_read(buf, offset)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        compile_error!("pread: unsupported platform");
+    }
+}
+
+/// Positional write: writes bytes to a file at a given offset without modifying the
+/// file cursor. Maps to `pwrite(2)` on Unix and `seek_write` on Windows.
+fn pwrite(fd: &fs::File, buf: &[u8], offset: u64) -> io::Result<usize> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        fd.write_at(buf, offset)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        fd.seek_write(buf, offset)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        compile_error!("pwrite: unsupported platform");
+    }
+}
+
+/// Positional write_all: writes the entire buffer at the given offset.
+/// Loops until all bytes are written (handles short writes).
+fn pwrite_all(fd: &fs::File, mut buf: &[u8], mut offset: u64) -> io::Result<()> {
+    while !buf.is_empty() {
+        let n = pwrite(fd, buf, offset)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "failed to write whole buffer",
+            ));
+        }
+        buf = buf.get(n..).unwrap_or(&[]);
+        offset += n as u64;
+    }
+    Ok(())
+}
+
 use rusqlite::Connection;
 
-use crate::chainstate::stacks::index::bits::{
-    get_node_max_byte_len, read_hash_bytes, read_nodetype_at_head, read_nodetype_at_head_nohash,
-};
 use crate::chainstate::stacks::index::blob_layout::{self, BlobHeader};
-use crate::chainstate::stacks::index::node::{TrieNodeType, TriePtr};
+use crate::chainstate::stacks::index::inline_value::{self, InlineValue};
+use crate::chainstate::stacks::index::mapped_file::FileMapping;
+use crate::chainstate::stacks::index::node::TrieNodeType;
+use crate::chainstate::stacks::index::node::{clear_ctrl_bits, TrieNodeID, TriePtr};
+use crate::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
 use crate::chainstate::stacks::index::storage::NodeHashReader;
-#[cfg(test)]
-use crate::chainstate::stacks::index::storage::TrieStorageConnection;
-use crate::chainstate::stacks::index::{trie_sql, Error, MarfDataEntry, MarfTrieId};
-use crate::types::chainstate::TrieHash;
+use crate::chainstate::stacks::index::{
+    bits, trie_sql, BorrowedNodeBytes, Error, MarfDataEntry, MarfTrieId, NodeDecodeScratch,
+    ReadTrieItem, ReadTrieNode,
+};
+use crate::chainstate::stacks::index::{NodePath, TrieLeaf};
+use crate::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 use crate::util_lib::db::sql_vacuum;
 
 /// Reader-thread count for the bulk header fan-out.
@@ -144,13 +203,17 @@ fn prefetch_file_range(file: &File, offset: u64, len: u64) -> io::Result<()> {
 fn read_blob_header_chunk<T: MarfTrieId + Send + Sync>(
     path: &str,
     chunk: &[MarfDataEntry<T>],
+    format: NodeRecordFormat,
 ) -> Result<Vec<(T, BlobHeader<T>)>, Error> {
     let file = File::open(path).map_err(Error::IOError)?;
-    let mut buf = [0u8; blob_layout::READER_PREFIX_LEN];
+    let mut buf = vec![0u8; format.reader_prefix_len()];
     let mut headers = Vec::with_capacity(chunk.len());
     for entry in chunk {
         read_exact_at(&file, &mut buf, entry.external_offset).map_err(Error::IOError)?;
-        headers.push((entry.block_hash.clone(), BlobHeader::parse(&buf)));
+        headers.push((
+            entry.block_hash.clone(),
+            BlobHeader::parse_format(format, &buf)?,
+        ));
     }
     Ok(headers)
 }
@@ -158,32 +221,90 @@ fn read_blob_header_chunk<T: MarfTrieId + Send + Sync>(
 /// Mapping between block IDs and trie offsets
 pub type TrieIdOffsets = HashMap<u32, u64>;
 
-/// Handle to a flat file containing Trie blobs
+/// Handle to a flat file containing Trie blobs, optionally mmap-accelerated for reads.
+/// When `mmap` is `Some`, hot read methods (`get_node_hash`, `read_trie_item`,
+/// `read_node_type_id`) slice directly into the mapped region instead of using
+/// positional I/O. The `Write`/`Seek` trait impls always go through the fd.
 pub struct TrieFileDisk {
+    record_context: RecordContext,
     fd: File,
     path: String,
-    trie_offsets: TrieIdOffsets,
+    /// Whether mapping is enabled, including deferred conventional maps for empty files.
+    mmap_enabled: bool,
+    /// Shared blob mapping retained by this handle and its reopened views.
+    mmap: Option<FileMapping>,
+    /// Cached mapping from block_id → trie file offset. Interior-mutable so that
+    /// read methods can populate the cache while taking `&self`.
+    trie_offsets: RefCell<TrieIdOffsets>,
+}
+
+impl TrieFileDisk {
+    /// Refresh mapping coverage after synchronized writes, preserving backed pages.
+    fn refresh_mapping(&mut self) -> io::Result<()> {
+        if !self.mmap_enabled {
+            return Ok(());
+        }
+        if self.fd.metadata()?.len() == 0 {
+            return Ok(());
+        } else if let Some(mapping) = &mut self.mmap {
+            // SAFETY: Trie blobs are append-only; shared readers retain immutable prefix pages.
+            unsafe {
+                mapping.refresh(&self.fd)?;
+            }
+        } else {
+            // SAFETY: The first synchronized append establishes an immutable prefix.
+            self.mmap = Some(unsafe { FileMapping::map(&self.fd)? });
+        }
+        Ok(())
+    }
 }
 
 /// Handle to a flat in-memory buffer containing Trie blobs (used for testing)
 pub struct TrieFileRAM {
+    record_context: RecordContext,
     fd: Cursor<Vec<u8>>,
-    trie_offsets: TrieIdOffsets,
+    trie_offsets: RefCell<TrieIdOffsets>,
 }
 
 /// This is flat-file storage for a MARF's tries.  All tries are stored as contiguous byte arrays
 /// within a larger byte array.  The variants differ in how those bytes are backed.  The `RAM`
 /// variant stores data in RAM in a byte buffer, and the `Disk` variant stores data in a flat file
-/// on disk.  This structure is used to support external trie blobs, so that the tries don't need
-/// to be stored in sqlite blobs (which incurs a sqlite paging overhead).  This is useful for when
-/// the tries are too big to fit into a single page, such as the Stacks chainstate.
+/// on disk — optionally with a memory-mapped read overlay for zero-syscall reads.
 pub enum TrieFile {
     RAM(TrieFileRAM),
     Disk(TrieFileDisk),
 }
 
+/// A mapped node or the already-probed body of its first patch.
+pub enum MappedTrieItem<'a> {
+    /// Ordinary nodes retain the borrowed, zero-copy representation.
+    Node(ReadTrieNode<'a>),
+    /// Patch bytes exclude the hash, which has already been decoded.
+    Patch {
+        hash: TrieHash,
+        marker: u8,
+        payload: &'a [u8],
+    },
+}
+
 impl TrieFile {
-    /// Make a new disk-backed TrieFile
+    /// Configure the database layout and immutable value resolver before reading records.
+    pub fn set_record_context(&mut self, context: RecordContext) {
+        match self {
+            Self::Disk(disk) => disk.record_context = context,
+            Self::RAM(ram) => ram.record_context = context,
+        }
+    }
+
+    /// Physical layout and value source shared by this file handle's readers.
+    pub fn record_context(&self) -> &RecordContext {
+        match self {
+            Self::Disk(disk) => &disk.record_context,
+            Self::RAM(ram) => &ram.record_context,
+        }
+    }
+
+    /// Make a new disk-backed TrieFile (no mmap).
     fn new_disk(path: &str, readonly: bool) -> Result<TrieFile, Error> {
         let fd = OpenOptions::new()
             .read(true)
@@ -191,18 +312,91 @@ impl TrieFile {
             .create(!readonly)
             .open(path)?;
         Ok(TrieFile::Disk(TrieFileDisk {
+            record_context: RecordContext::default(),
             fd,
             path: path.to_string(),
-            trie_offsets: TrieIdOffsets::new(),
+            mmap_enabled: false,
+            mmap: None,
+            trie_offsets: RefCell::new(TrieIdOffsets::new()),
         }))
     }
 
     /// Make a new RAM-backed TrieFile
     fn new_ram() -> TrieFile {
         TrieFile::RAM(TrieFileRAM {
+            record_context: RecordContext::default(),
             fd: Cursor::new(vec![]),
-            trie_offsets: TrieIdOffsets::new(),
+            trie_offsets: RefCell::new(TrieIdOffsets::new()),
         })
+    }
+
+    /// Make a new disk-backed TrieFile with mmap-accelerated reads.
+    /// Empty files reserve address space where supported; conventional maps wait for a write.
+    fn new_mmap(path: &str, readonly: bool) -> Result<TrieFile, Error> {
+        let fd = OpenOptions::new()
+            .read(true)
+            .write(!readonly)
+            .create(!readonly)
+            .open(path)?;
+        let file_len = fd.metadata()?.len();
+        let mmap = if file_len > 0 {
+            // SAFETY: The .blobs file is append-only and single-writer. Existing data
+            // at existing offsets never changes. The mmap is read-only.
+            Some(unsafe { FileMapping::map(&fd)? })
+        } else {
+            // Stable reservations can be shared even before the first write.
+            // Conventional mmap cannot map an empty file and remains deferred.
+            unsafe { FileMapping::map(&fd).ok() }
+        };
+        Ok(TrieFile::Disk(TrieFileDisk {
+            record_context: RecordContext::default(),
+            fd,
+            path: path.to_string(),
+            mmap_enabled: true,
+            mmap,
+            trie_offsets: RefCell::new(TrieIdOffsets::new()),
+        }))
+    }
+
+    /// Open an independent read-only descriptor while retaining the shared mapping.
+    pub fn reopen_readonly(&self) -> Result<TrieFile, Error> {
+        match self {
+            Self::Disk(disk) => {
+                #[cfg(unix)]
+                {
+                    let fd = File::open(&disk.path)?;
+                    let source = disk.fd.metadata()?;
+                    let reopened = fd.metadata()?;
+                    if source.dev() != reopened.dev() || source.ino() != reopened.ino() {
+                        return Err(io::Error::other("blob file changed while reopening").into());
+                    }
+                    Ok(Self::Disk(TrieFileDisk {
+                        record_context: disk.record_context.clone(),
+                        fd,
+                        path: disk.path.clone(),
+                        mmap_enabled: disk.mmap_enabled,
+                        mmap: disk.mmap.clone(),
+                        trie_offsets: RefCell::new(TrieIdOffsets::new()),
+                    }))
+                }
+                #[cfg(not(unix))]
+                {
+                    // Preserve independent mappings where descriptor identity is unavailable.
+                    let mut reopened = if disk.mmap_enabled {
+                        Self::new_mmap(&disk.path, true)?
+                    } else {
+                        Self::new_disk(&disk.path, true)?
+                    };
+                    reopened.set_record_context(disk.record_context.clone());
+                    Ok(reopened)
+                }
+            }
+            Self::RAM(ram) => {
+                let mut reopened = Self::new_ram();
+                reopened.set_record_context(ram.record_context.clone());
+                Ok(reopened)
+            }
+        }
     }
 
     /// Does the TrieFile exist at the expected path?
@@ -228,7 +422,14 @@ impl TrieFile {
     /// No-op for RAM-backed TrieFiles.
     pub fn sync_data(&mut self) -> Result<(), io::Error> {
         if let TrieFile::Disk(ref mut data) = self {
+            #[cfg(feature = "commit-residency-diagnostics")]
+            let _sync = stacks_profiler::diagnostic_span!("Commit: Blob sync");
             data.fd.sync_data()?;
+            #[cfg(feature = "commit-residency-diagnostics")]
+            drop(_sync);
+            #[cfg(feature = "commit-residency-diagnostics")]
+            let _map = stacks_profiler::diagnostic_span!("Commit: Blob mapping");
+            data.refresh_mapping()?;
         }
         Ok(())
     }
@@ -250,13 +451,13 @@ impl TrieFile {
         let TrieFile::Disk(disk) = self else {
             return;
         };
-        let Some(&blob_offset) = disk.trie_offsets.get(&block_id) else {
+        let Some(blob_offset) = disk.trie_offsets.borrow().get(&block_id).copied() else {
             return;
         };
         let Some(abs) = blob_offset.checked_add(in_block_ptr) else {
             return;
         };
-        let Ok(len) = get_node_max_byte_len(node_id, u64_ptr_offsets) else {
+        let Ok(len) = bits::get_node_max_byte_len(node_id, u64_ptr_offsets) else {
             return;
         };
         let _ = prefetch_file_range(&disk.fd, abs, len as u64);
@@ -273,13 +474,18 @@ impl TrieFile {
 
     /// Instantiate a TrieFile, given the associated DB path.
     /// If path is ':memory:', then it'll be an in-RAM TrieFile.
-    /// Otherwise, it'll be stored as `$db_path.blobs`.
-    pub fn from_db_path(path: &str, readonly: bool) -> Result<TrieFile, Error> {
+    /// If `use_mmap` is true, the file will be memory-mapped for reads.
+    /// Otherwise, it'll use seek+read I/O on `$db_path.blobs`.
+    pub fn from_db_path(path: &str, readonly: bool, use_mmap: bool) -> Result<TrieFile, Error> {
         if path == ":memory:" {
             Ok(TrieFile::new_ram())
         } else {
             let blob_path = format!("{}.blobs", path);
-            TrieFile::new_disk(&blob_path, readonly)
+            if use_mmap {
+                TrieFile::new_mmap(&blob_path, readonly)
+            } else {
+                TrieFile::new_disk(&blob_path, readonly)
+            }
         }
     }
 
@@ -308,15 +514,20 @@ impl TrieFile {
         Ok(trie_blob)
     }
 
-    /// Read a trie blob in its entirety from the blobs file
-    #[cfg(test)]
-    pub fn read_trie_blob(&mut self, db: &Connection, block_id: u32) -> Result<Vec<u8>, Error> {
+    /// Read a trie blob in its entirety from the blobs file.
+    /// Takes `&self` — uses positional reads.
+    pub fn read_trie_blob_bytes(&self, db: &Connection, block_id: u32) -> Result<Vec<u8>, Error> {
         let (offset, length) = trie_sql::get_external_trie_offset_length(db, block_id)?;
-        self.seek(SeekFrom::Start(offset))?;
-
         let mut buf = vec![0u8; length as usize];
-        self.read_exact(&mut buf)
+        let n = self
+            .read_bytes_at(&mut buf, offset)
             .inspect_err(|e| error!("Failed to read trie blob {block_id}: {e:}"))?;
+        if n < length as usize {
+            return Err(Error::CorruptionError(format!(
+                "Short read for trie blob {block_id}: expected {length} bytes, read {n}"
+            )));
+        }
+        buf.truncate(n);
         Ok(buf)
     }
 
@@ -329,7 +540,9 @@ impl TrieFile {
             .map(|stat| Some(stat.len()))
             .unwrap_or(None);
 
-        info!("Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file");
+        info!(
+            "Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file"
+        );
         sql_vacuum(db)?;
 
         let size_after_opt = fs::metadata(db_path)
@@ -393,7 +606,9 @@ impl TrieFile {
         db_path: &str,
     ) -> Result<(), Error> {
         if trie_sql::detect_partial_migration(db)? {
-            panic!("PARTIAL MIGRATION DETECTED! This is an irrecoverable error. You will need to restart your node from genesis.");
+            panic!(
+                "PARTIAL MIGRATION DETECTED! This is an irrecoverable error. You will need to restart your node from genesis."
+            );
         }
 
         let max_block = trie_sql::count_blocks(db)?;
@@ -429,10 +644,26 @@ impl TrieFile {
                     }
 
                     // append directly to file, so we can get the true offset
-                    self.seek(SeekFrom::End(0))?;
-                    let offset = self.stream_position()?;
-                    self.write_all(&trie_blob)?;
-                    self.flush()?;
+                    let offset = match self {
+                        TrieFile::Disk(ref disk) => disk.fd.metadata()?.len(),
+                        TrieFile::RAM(ref ram) => ram.fd.get_ref().len() as u64,
+                    };
+                    match self {
+                        TrieFile::Disk(ref disk) => {
+                            pwrite_all(&disk.fd, &trie_blob, offset)?;
+                        }
+                        TrieFile::RAM(ref mut ram) => {
+                            let data = ram.fd.get_mut();
+                            let start = offset as usize;
+                            let end = start + trie_blob.len();
+                            if data.len() < end {
+                                data.resize(end, 0);
+                            }
+                            data.get_mut(start..end)
+                                .expect("BUG: just resized to cover range")
+                                .copy_from_slice(&trie_blob);
+                        }
+                    }
 
                     test_debug!("Stored trie blob {} to offset {}", bhh, offset);
                     trie_sql::update_external_trie_blob(
@@ -462,141 +693,508 @@ impl TrieFile {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chainstate::stacks::index::blob_layout;
+
+    fn remove_if_exists(path: &str) {
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => panic!("failed to remove {path}: {e}"),
+        }
+    }
+
+    /// Full-page growth preserves the mapped prefix; an incomplete tail remains readable.
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    #[test]
+    fn mmap_append_and_sync_keep_prefix_address() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("blobs");
+        let page = unsafe { nix::libc::sysconf(nix::libc::_SC_PAGESIZE) } as usize;
+        fs::write(&path, vec![1; page]).unwrap();
+        let mut file = TrieFile::new_mmap(path.to_str().unwrap(), false).unwrap();
+        let original = file.mmap_slice_at(0, page).unwrap().as_ptr();
+        let TrieFile::Disk(disk) = &file else {
+            panic!("disk expected")
+        };
+        pwrite_all(&disk.fd, &vec![2; page + 3], page as u64).unwrap();
+        file.sync_data().unwrap();
+        assert_eq!(file.mmap_slice_at(0, page).unwrap().as_ptr(), original);
+        assert_eq!(
+            file.mmap_slice_at(page as u64, page).unwrap(),
+            vec![2; page]
+        );
+        assert!(file.mmap_slice_at((2 * page) as u64, 3).is_none());
+        let mut tail = [0; 6];
+        assert_eq!(
+            file.read_bytes_at(&mut tail, (2 * page - 3) as u64)
+                .unwrap(),
+            6
+        );
+        assert_eq!(tail, [2; 6]);
+        file.sync_data().unwrap();
+        assert_eq!(file.mmap_slice_at(0, page).unwrap().as_ptr(), original);
+    }
+
+    /// Reopened readers share append visibility and retain the mapping after the writer drops.
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    #[test]
+    fn reopened_mmap_shares_lifetime_and_growth() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("blobs");
+        let page = unsafe { nix::libc::sysconf(nix::libc::_SC_PAGESIZE) } as usize;
+        let mut writer = TrieFile::new_mmap(path.to_str().unwrap(), false).unwrap();
+        let reader = writer.reopen_readonly().unwrap();
+        let sibling = reader.reopen_readonly().unwrap();
+        let TrieFile::Disk(disk) = &writer else {
+            panic!("disk expected")
+        };
+        pwrite_all(&disk.fd, &vec![4; page], 0).unwrap();
+        writer.sync_data().unwrap();
+        let original = writer.mmap_slice_at(0, page).unwrap().as_ptr();
+        let retained = reader.mmap_slice_at(0, page).unwrap();
+        assert_eq!(retained.as_ptr(), original);
+        let TrieFile::Disk(disk) = &writer else {
+            panic!("disk expected")
+        };
+        pwrite_all(&disk.fd, &vec![5; page + 1], page as u64).unwrap();
+        writer.sync_data().unwrap();
+        assert_eq!(retained, vec![4; page]);
+        assert_eq!(
+            sibling.mmap_slice_at(page as u64, page).unwrap(),
+            vec![5; page]
+        );
+        assert!(sibling.mmap_slice_at((page * 2) as u64, 1).is_none());
+        let mut tail = [0];
+        assert_eq!(
+            sibling.read_bytes_at(&mut tail, (page * 2) as u64).unwrap(),
+            1
+        );
+        assert_eq!(tail, [5]);
+        drop(writer);
+        assert_eq!(reader.mmap_slice_at(0, page).unwrap().as_ptr(), original);
+        drop(reader);
+        assert_eq!(sibling.mmap_slice_at(0, page).unwrap().as_ptr(), original);
+    }
+
+    /// Sharing must not pair an old mapping with a descriptor for a replacement file.
+    #[cfg(unix)]
+    #[test]
+    fn reopened_mmap_rejects_replaced_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("blobs");
+        let file = TrieFile::new_mmap(path.to_str().unwrap(), false).unwrap();
+        fs::rename(&path, dir.path().join("old")).unwrap();
+        fs::write(&path, [1]).unwrap();
+        assert!(file.reopen_readonly().is_err());
+    }
+
+    #[test]
+    fn stale_mmap_boundary_reads_fall_back_to_pread() {
+        let db_path = "/tmp/stacks-index-file-stale-mmap-boundary.sqlite";
+        let blob_path = format!("{db_path}.blobs");
+        remove_if_exists(db_path);
+        remove_if_exists(&blob_path);
+        fs::write(&blob_path, b"abcd").unwrap();
+
+        let trie_file = TrieFile::from_db_path(db_path, false, true).unwrap();
+
+        let TrieFile::Disk(disk) = &trie_file else {
+            panic!("expected disk trie file");
+        };
+        pwrite_all(&disk.fd, b"efgh", 4).unwrap();
+        disk.fd.sync_data().unwrap();
+
+        assert!(trie_file.mmap_slice_at(4, 1).is_none());
+        assert!(trie_file.mmap_slice_at(2, 4).is_none());
+
+        let mut exact_eof = [0; 4];
+        let n = trie_file.read_bytes_at(&mut exact_eof, 4).unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(&exact_eof, b"efgh");
+
+        let mut straddling = [0; 4];
+        let n = trie_file.read_bytes_at(&mut straddling, 2).unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(&straddling, b"cdef");
+
+        remove_if_exists(&blob_path);
+    }
+}
+
+impl Write for TrieFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            TrieFile::RAM(ram) => ram.fd.write(buf),
+            TrieFile::Disk(disk) => disk.fd.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            TrieFile::RAM(ram) => ram.fd.flush(),
+            TrieFile::Disk(disk) => disk.fd.flush(),
+        }
+    }
+}
+
+impl Seek for TrieFile {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match self {
+            TrieFile::RAM(ram) => ram.fd.seek(pos),
+            TrieFile::Disk(disk) => disk.fd.seek(pos),
+        }
+    }
+}
+
 /// NodeHashReader for TrieFile
 pub struct TrieFileNodeHashReader<'a> {
     db: &'a Connection,
-    file: &'a mut TrieFile,
+    file: &'a TrieFile,
     block_id: u32,
+    trie_offset: Option<u64>,
 }
 
 impl<'a> TrieFileNodeHashReader<'a> {
     pub fn new(
         db: &'a Connection,
-        file: &'a mut TrieFile,
+        file: &'a TrieFile,
         block_id: u32,
+        trie_offset: Option<u64>,
     ) -> TrieFileNodeHashReader<'a> {
-        TrieFileNodeHashReader { db, file, block_id }
+        TrieFileNodeHashReader {
+            db,
+            file,
+            block_id,
+            trie_offset,
+        }
     }
 }
 
 impl NodeHashReader for TrieFileNodeHashReader<'_> {
-    fn read_node_hash_bytes<W: Write>(&mut self, ptr: &TriePtr, w: &mut W) -> Result<(), Error> {
-        let trie_offset = self.file.get_trie_offset(self.db, self.block_id)?;
-        self.file.seek(SeekFrom::Start(trie_offset + ptr.ptr()))?;
-        let hash_buff = read_hash_bytes(self.file)?;
-        w.write_all(&hash_buff).map_err(|e| e.into())
+    fn read_node_hash<W: Write>(&mut self, ptr: &TriePtr, w: &mut W) -> Result<(), Error> {
+        let hash = self
+            .file
+            .get_node_hash(self.db, self.block_id, ptr, self.trie_offset)?;
+        w.write_all(hash.as_ref()).map_err(|e| e.into())
     }
 }
 
 impl TrieFile {
     /// Cache a known trie blob offset.
-    pub(super) fn cache_trie_offset(&mut self, block_id: u32, offset: u64) {
+    pub(super) fn cache_trie_offset(&mut self, block_id: u32, offset: u64) -> Result<(), Error> {
+        self.validate_header_at(offset)?;
         let offsets_cache = match self {
             TrieFile::RAM(ref mut ram) => &mut ram.trie_offsets,
             TrieFile::Disk(ref mut disk) => &mut disk.trie_offsets,
         };
-        offsets_cache.insert(block_id, offset);
+        offsets_cache.borrow_mut().insert(block_id, offset);
+        Ok(())
     }
 
     /// Determine the file offset in the TrieFile where a serialized trie starts.
     /// The offsets are stored in the given DB, and are cached indefinitely once loaded.
-    pub fn get_trie_offset(&mut self, db: &Connection, block_id: u32) -> Result<u64, Error> {
-        let offset_opt = match self {
-            TrieFile::RAM(ref ram) => ram.trie_offsets.get(&block_id),
-            TrieFile::Disk(ref disk) => disk.trie_offsets.get(&block_id),
+    /// Takes `&self` — the offset cache uses interior mutability (`RefCell`).
+    pub fn get_trie_offset(&self, db: &Connection, block_id: u32) -> Result<u64, Error> {
+        let cache = match self {
+            TrieFile::RAM(ref ram) => &ram.trie_offsets,
+            TrieFile::Disk(ref disk) => &disk.trie_offsets,
         };
-        match offset_opt {
-            Some(offset) => Ok(*offset),
-            None => {
-                let (offset, _length) = trie_sql::get_external_trie_offset_length(db, block_id)?;
-                match self {
-                    TrieFile::RAM(ref mut ram) => ram.trie_offsets.insert(block_id, offset),
-                    TrieFile::Disk(ref mut disk) => disk.trie_offsets.insert(block_id, offset),
-                };
-                Ok(offset)
+        if let Some(offset) = cache.borrow().get(&block_id).copied() {
+            return Ok(offset);
+        }
+        let (offset, _length) = trie_sql::get_external_trie_offset_length(db, block_id)?;
+        self.validate_header_at(offset)?;
+        cache.borrow_mut().insert(block_id, offset);
+        Ok(offset)
+    }
+
+    /// Validate an immutable trie's version before admitting its offset to the cache.
+    fn validate_header_at(&self, offset: u64) -> Result<(), Error> {
+        let format = self.record_context().format;
+        if format == NodeRecordFormat::Legacy {
+            return Ok(());
+        }
+        let mut bytes = [0u8; blob_layout::ROOT_NODE_OFFSET];
+        let count = self.read_bytes_at(&mut bytes, offset)?;
+        format.validate_trie_header(&bytes[..count])
+    }
+
+    /// Read up to `buf.len()` bytes at a given file offset without modifying any cursor state.
+    /// Uses mmap when available and the requested range is covered; otherwise falls back to `pread`.
+    ///
+    /// The mmap may be stale when another connection (e.g., the chains coordinator) has
+    /// appended data that this connection's mmap doesn't cover yet. In that case we
+    /// gracefully fall back to `pread`, which always sees the latest file contents.
+    fn read_bytes_at(&self, buf: &mut [u8], offset: u64) -> Result<usize, Error> {
+        match self {
+            TrieFile::Disk(ref disk) => {
+                if let Some(ref mmap) = disk.mmap {
+                    let start = offset as usize;
+                    let end = start.checked_add(buf.len()).ok_or(Error::OverflowError)?;
+                    if let Some(src) = mmap.get(start..end) {
+                        buf.copy_from_slice(src);
+                        return Ok(buf.len());
+                    }
+
+                    // Mmap doesn't cover this full range; fall through to pread.
+                    //
+                    // Reopened views share coverage, but independent storage opens may
+                    // still have stale mappings. The partial EOF page is also read here.
+                }
+                let mut total = 0;
+                while total < buf.len() {
+                    let read_offset = offset
+                        .checked_add(total as u64)
+                        .ok_or(Error::OverflowError)?;
+                    let dst = buf.get_mut(total..).ok_or(Error::OverflowError)?;
+                    match pread(&disk.fd, dst, read_offset) {
+                        Ok(0) => break,
+                        Ok(n) => total += n,
+                        Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                        Err(e) => return Err(Error::IOError(e)),
+                    }
+                }
+                Ok(total)
+            }
+            TrieFile::RAM(ref ram) => {
+                let data = ram.fd.get_ref();
+                let start = offset as usize;
+                let bytes = data.get(start..).ok_or(Error::NotFoundError)?;
+                let len = buf.len().min(bytes.len());
+                let dst = buf.get_mut(..len).ok_or(Error::NotFoundError)?;
+                let src = bytes.get(..len).ok_or(Error::NotFoundError)?;
+                dst.copy_from_slice(src);
+                Ok(len)
             }
         }
     }
 
-    /// Obtain a TrieHash for a node, given its block ID and pointer
-    pub fn get_node_hash_bytes(
-        &mut self,
-        db: &Connection,
-        block_id: u32,
-        ptr: &TriePtr,
-    ) -> Result<TrieHash, Error> {
-        let offset = self.get_trie_offset(db, block_id)?;
-        self.seek(SeekFrom::Start(offset + ptr.ptr()))?;
-        let hash_buff = read_hash_bytes(self)?;
-        Ok(TrieHash(hash_buff))
+    /// Get a slice from the mmap region at the given offset, if mmap is active and covers at
+    /// least `min_len` bytes. Returns `None` if the mmap is disabled or stale for the requested
+    /// range.
+    fn mmap_slice_at(&self, offset: u64, min_len: usize) -> Option<&[u8]> {
+        if let TrieFile::Disk(ref disk) = self {
+            let mmap = disk.mmap.as_ref()?;
+            let start = offset as usize;
+            let end = start.checked_add(min_len)?;
+            mmap.get(start..end)?;
+            mmap.get(start..)
+        } else {
+            None
+        }
     }
 
-    /// Obtain a TrieNodeType and its associated TrieHash for a node, given its block ID and
-    /// pointer
-    pub fn read_node_type(
-        &mut self,
-        db: &Connection,
-        block_id: u32,
+    /// Read bytes at a known file position into scratch, then decode.
+    /// For mmap: slices directly into the mapped region (zero-copy decode).
+    /// For disk: uses `pread` into scratch's node_bytes buffer.
+    /// For RAM: slices the in-memory buffer.
+    fn read_item_at_offset<'a>(
+        &self,
+        file_offset: u64,
         ptr: &TriePtr,
-    ) -> Result<(TrieNodeType, TrieHash), Error> {
-        let offset = self.get_trie_offset(db, block_id)?;
-        self.seek(SeekFrom::Start(offset + ptr.ptr()))?;
-        read_nodetype_at_head(self, ptr.id())
-    }
+        scratch: &'a mut impl NodeDecodeScratch,
+    ) -> Result<ReadTrieItem<'a>, Error> {
+        let format = self.record_context().format;
+        let max_len = format.max_record_len(ptr.id())?;
 
-    /// Obtain a TrieNodeType, given its block ID and pointer
-    pub fn read_node_type_nohash(
-        &mut self,
-        db: &Connection,
-        block_id: u32,
-        ptr: &TriePtr,
-    ) -> Result<TrieNodeType, Error> {
-        let offset = self.get_trie_offset(db, block_id)?;
-        self.seek(SeekFrom::Start(offset + ptr.ptr()))?;
-        read_nodetype_at_head_nohash(self, ptr.id())
-    }
-
-    /// Obtain a TrieHash for a node, given the node's block's hash (used only in testing)
-    #[cfg(test)]
-    pub fn get_node_hash_bytes_by_bhh<T: MarfTrieId>(
-        &mut self,
-        db: &Connection,
-        bhh: &T,
-        ptr: &TriePtr,
-    ) -> Result<TrieHash, Error> {
-        let (offset, _length) = trie_sql::get_external_trie_offset_length_by_bhh(db, bhh)?;
-        self.seek(SeekFrom::Start(offset + ptr.ptr()))?;
-        let hash_buff = read_hash_bytes(self)?;
-        Ok(TrieHash(hash_buff))
-    }
-
-    /// Get all (root hash, trie hash) pairs for this TrieFile
-    #[cfg(test)]
-    pub fn read_all_block_hashes_and_roots<T: MarfTrieId>(
-        &mut self,
-        db: &Connection,
-    ) -> Result<Vec<(TrieHash, T)>, Error> {
-        let mut s =
-            db.prepare("SELECT block_hash, external_offset FROM marf_data WHERE unconfirmed = 0 ORDER BY block_hash")?;
-        let rows = s.query_and_then(params![], |row| {
-            let block_hash: T = row.get_unwrap("block_hash");
-            let offset_i64: i64 = row.get_unwrap("external_offset");
-            let offset = offset_i64 as u64;
-            let start = TrieStorageConnection::<T>::root_ptr_disk() as u64;
-
-            self.seek(SeekFrom::Start(offset + start))?;
-            let hash_buff = read_hash_bytes(self)?;
-            let root_hash = TrieHash(hash_buff);
-
-            trace!(
-                "Root hash for block {} at offset {} is {}",
-                &block_hash,
-                offset + start,
-                &root_hash
-            );
-            Ok((root_hash, block_hash))
+        // Fast path: mmap slice available — decode directly from it.
+        if let Some(bytes) = self.mmap_slice_at(file_offset, max_len) {
+            return bits::read_trie_item_from_slice_format(bytes, ptr.id(), format, scratch);
+        }
+        // Slow path: positional read into scratch's reusable buffer, then decode.
+        // Pattern: take buffer → pread → decode (extracts hash + node ID from bytes,
+        // copies decoded node into scratch slots) → restore buffer for reuse.
+        let mut buf = scratch.take_node_bytes();
+        if buf.len() < max_len {
+            buf.resize(max_len, 0);
+        }
+        let buf_len = buf.len();
+        let read_buf = buf.get_mut(..max_len).ok_or_else(|| {
+            Error::CorruptionError(format!(
+                "Trie blob read buffer shorter than requested max length: {} < {}",
+                buf_len, max_len
+            ))
         })?;
-        rows.collect()
+        let n = self.read_bytes_at(read_buf, file_offset)?;
+        let result: Result<(Option<TrieHash>, TrieNodeID), Error> = (|| {
+            let read_bytes = buf.get(..n).ok_or_else(|| Error::OverflowError)?;
+            let record = format.parse(read_bytes)?;
+            record.decode_into_scratch(ptr.id(), scratch)?;
+            Ok((record.hash, record.logical_type()))
+        })();
+        scratch.restore_node_bytes(buf);
+        let (hash, stored_node_id) = result?;
+        if stored_node_id == TrieNodeID::Patch {
+            Ok(ReadTrieItem::from_patch(scratch.patch(), hash))
+        } else {
+            Ok(ReadTrieItem::from_node(ReadTrieNode::from_state_borrowed(
+                scratch.get_ref(),
+                hash,
+            )))
+        }
+    }
+
+    /// Read hash bytes at a known file position.
+    fn read_hash_at(&self, file_offset: u64) -> Result<TrieHash, Error> {
+        if self.record_context().format.is_type_first() {
+            return self.read_node_type_at(file_offset).map(|(_, hash)| hash);
+        }
+        if let Some(bytes) = self.mmap_slice_at(file_offset, TRIEHASH_ENCODED_SIZE) {
+            let (hash, _) = bits::parse_hash_from_bytes(bytes)?;
+            return Ok(hash);
+        }
+        let mut buf = [0u8; TRIEHASH_ENCODED_SIZE];
+        let n = self.read_bytes_at(&mut buf, file_offset)?;
+        if n < TRIEHASH_ENCODED_SIZE {
+            return Err(Error::CorruptionError(
+                "Failed to read hash in full via pread".to_string(),
+            ));
+        }
+        Ok(TrieHash(buf))
+    }
+
+    /// Read node type ID and hash at a known file position.
+    fn read_node_type_at(&self, file_offset: u64) -> Result<(TrieNodeID, TrieHash), Error> {
+        let context = self.record_context();
+        if let Some(bytes) = self.mmap_slice_at(file_offset, TRIEHASH_ENCODED_SIZE + 1) {
+            let record = context.format.parse(bytes)?;
+            // A hashless leaf can straddle the stable mapping's complete-page boundary.
+            if record.hash.is_some()
+                || bytes.len() >= context.format.max_record_len(TrieNodeID::Leaf as u8)?
+            {
+                return Ok((record.logical_type(), context.hash(record)?));
+            }
+        }
+        let mut buf = [0u8; 1 + 33 + inline_value::LENGTH_BYTES + inline_value::MAX_BYTES];
+        let prefix_len = TRIEHASH_ENCODED_SIZE + 1;
+        let count = self.read_bytes_at(&mut buf[..prefix_len], file_offset)?;
+        let record = context.format.parse(&buf[..count])?;
+        if let Some(hash) = record.hash {
+            return Ok((record.logical_type(), hash));
+        }
+        let count = self.read_bytes_at(&mut buf, file_offset)?;
+        let record = context.format.parse(&buf[..count])?;
+        Ok((record.logical_type(), context.hash(record)?))
+    }
+
+    /// Obtain a [`TrieHash`] for a node, given its block ID and pointer.
+    ///
+    /// If `trie_offset` is `Some`, uses the pre-resolved offset (bypassing the offset
+    /// cache). Otherwise resolves the offset from the cache or SQL.
+    pub fn get_node_hash(
+        &self,
+        db: &Connection,
+        block_id: u32,
+        ptr: &TriePtr,
+        trie_offset: Option<u64>,
+    ) -> Result<TrieHash, Error> {
+        let offset = trie_offset.map_or_else(|| self.get_trie_offset(db, block_id), Ok)?;
+        self.read_hash_at(offset + ptr.ptr())
+    }
+
+    /// Read a trie item (node or patch) at the given block and pointer.
+    ///
+    /// If `trie_offset` is `Some`, uses the pre-resolved offset (bypassing the offset
+    /// cache). Otherwise resolves the offset from the cache or SQL.
+    pub fn read_trie_item<'a>(
+        &self,
+        db: &Connection,
+        block_id: u32,
+        ptr: &TriePtr,
+        trie_offset: Option<u64>,
+        scratch: &'a mut impl NodeDecodeScratch,
+    ) -> Result<ReadTrieItem<'a>, Error> {
+        let offset = trie_offset.map_or_else(|| self.get_trie_offset(db, block_id), Ok)?;
+        self.read_item_at_offset(offset + ptr.ptr(), ptr, scratch)
+    }
+
+    /// Read a trie item as borrowed bytes from the mmap region (zero-copy).
+    /// Returns `None` if the requested bytes are not covered by mmap.
+    /// Takes `&self` — no cursor state needed.
+    pub fn read_trie_item_borrowed<'a>(
+        &'a self,
+        db: &Connection,
+        block_id: u32,
+        ptr: &TriePtr,
+        trie_offset: Option<u64>,
+    ) -> Result<Option<MappedTrieItem<'a>>, Error> {
+        if !matches!(self, TrieFile::Disk(disk) if disk.mmap.is_some()) {
+            return Ok(None);
+        }
+        let offset = trie_offset.map_or_else(|| self.get_trie_offset(db, block_id), Ok)?;
+        let format = self.record_context().format;
+        let max_len = format.max_record_len(ptr.id())?;
+        let Some(bytes) = self.mmap_slice_at(offset + ptr.ptr(), max_len) else {
+            return Ok(None);
+        };
+        let record = format.parse(bytes)?;
+        if record.logical_type() == TrieNodeID::Patch {
+            let hash = record
+                .hash
+                .ok_or_else(|| Error::CorruptionError("Patch missing hash".into()))?;
+            return Ok(Some(MappedTrieItem::Patch {
+                hash,
+                marker: record.marker,
+                payload: record.payload,
+            }));
+        }
+        if record.logical_type() as u8 != clear_ctrl_bits(ptr.id()) {
+            return Err(Error::CorruptionError(
+                "Mapped node disagrees with pointer".into(),
+            ));
+        }
+        if record.marker == TrieNodeID::InlineLeaf as u8 {
+            let mut path = NodePath::default();
+            let path_len = bits::path_from_bytes_slice_into(record.payload, &mut path)?;
+            let (value_range, descriptor_range, _) =
+                InlineValue::ranges(&record.payload[path_len..])?;
+            let start = usize::try_from(offset.checked_add(ptr.ptr()).ok_or(Error::OverflowError)?)
+                .map_err(|_| Error::OverflowError)?
+                .checked_add(record.prefix_len)
+                .and_then(|n| n.checked_add(path_len))
+                .ok_or(Error::OverflowError)?;
+            let range = start
+                .checked_add(value_range.start)
+                .ok_or(Error::OverflowError)?
+                ..start
+                    .checked_add(descriptor_range.end)
+                    .ok_or(Error::OverflowError)?;
+            let TrieFile::Disk(disk) = self else {
+                unreachable!("checked mapped disk")
+            };
+            let mapping = disk.mmap.as_ref().expect("checked mapping").clone();
+            let inline = InlineValue::from_mapping(mapping, range, value_range.len() as u8)?;
+            let leaf = TrieLeaf {
+                path,
+                data: None,
+                extent: None,
+                inline: Some(inline),
+            };
+            return Ok(Some(MappedTrieItem::Node(ReadTrieNode::from_owned(
+                TrieNodeType::Leaf(leaf),
+                None,
+            ))));
+        }
+        let node_bytes = BorrowedNodeBytes::from_record(record);
+        Ok(Some(MappedTrieItem::Node(ReadTrieNode::from_stable_bytes(
+            node_bytes,
+            record.hash,
+        ))))
+    }
+
+    /// Read the node type ID and hash at the given block and pointer.
+    pub fn read_node_type_id(
+        &self,
+        db: &Connection,
+        block_id: u32,
+        ptr: &TriePtr,
+        trie_offset: Option<u64>,
+    ) -> Result<(TrieNodeID, TrieHash), Error> {
+        let offset = trie_offset.map_or_else(|| self.get_trie_offset(db, block_id), Ok)?;
+        self.read_node_type_at(offset + ptr.ptr())
     }
 
     /// Append a serialized trie to the TrieFile.
@@ -604,10 +1202,25 @@ impl TrieFile {
     pub fn append_trie_blob(&mut self, db: &Connection, buf: &[u8]) -> Result<u64, Error> {
         let offset = trie_sql::get_external_blobs_length(db)?;
         test_debug!("Write trie of {} bytes at {}", buf.len(), offset);
-        self.seek(SeekFrom::Start(offset))?;
-        self.write_all(buf)?;
-        self.flush()?;
-        self.sync_data()?;
+
+        match self {
+            TrieFile::Disk(ref mut disk) => {
+                pwrite_all(&disk.fd, buf, offset)?;
+                disk.fd.sync_data()?;
+                disk.refresh_mapping()?;
+            }
+            TrieFile::RAM(ref mut ram) => {
+                let data = ram.fd.get_mut();
+                let start = offset as usize;
+                let end = start + buf.len();
+                if data.len() < end {
+                    data.resize(end, 0);
+                }
+                data.get_mut(start..end)
+                    .expect("BUG: just resized to cover range")
+                    .copy_from_slice(buf);
+            }
+        }
         Ok(offset)
     }
 
@@ -618,9 +1231,10 @@ impl TrieFile {
         block_id: u32,
     ) -> Result<BlobHeader<T>, Error> {
         let blob_offset = self.get_trie_offset(db, block_id)?;
-        let mut buf = [0u8; blob_layout::READER_PREFIX_LEN];
+        let format = self.record_context().format;
+        let mut buf = vec![0u8; format.reader_prefix_len()];
         self.read_blob_bytes_at(blob_offset, &mut buf)?;
-        Ok(BlobHeader::parse(&buf))
+        Ok(BlobHeader::parse_format(format, &buf)?)
     }
 
     /// Bulk-read the [`BlobHeader`] of every entry in offset order.
@@ -649,13 +1263,16 @@ impl TrieFile {
         let num_threads = header_read_parallelism().min(sorted_entries.len());
         let chunk_size = sorted_entries.len().div_ceil(num_threads);
         let path = &disk.path;
+        let format = disk.record_context.format;
 
         std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(num_threads);
             for chunk in sorted_entries.chunks(chunk_size) {
                 let handle = std::thread::Builder::new()
                     .name("marf-header-read".into())
-                    .spawn_scoped(scope, move || read_blob_header_chunk::<T>(path, chunk))
+                    .spawn_scoped(scope, move || {
+                        read_blob_header_chunk::<T>(path, chunk, format)
+                    })
                     .map_err(Error::IOError)?;
                 handles.push(handle);
             }
@@ -704,88 +1321,95 @@ impl TrieFile {
     }
 }
 
-/// Boilerplate Write implementation for TrieFileDisk.  Plumbs through to the inner fd.
-impl Write for TrieFileDisk {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.fd.write(buf)
-    }
+#[cfg(test)]
+mod testing {
+    use rusqlite::params;
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.fd.flush()
-    }
-}
+    use super::*;
+    use crate::types::chainstate::TrieHash;
 
-/// Boilerplate Write implementation for TrieFileRAM.  Plumbs through to the inner fd.
-impl Write for TrieFileRAM {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.fd.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.fd.flush()
-    }
-}
-
-/// Boilerplate Write implementation for TrieFile enum.  Plumbs through to the inner struct.
-impl Write for TrieFile {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            TrieFile::RAM(ref mut ram) => ram.write(buf),
-            TrieFile::Disk(ref mut disk) => disk.write(buf),
+    impl TrieFile {
+        pub fn read_trie_blob(&self, db: &Connection, block_id: u32) -> Result<Vec<u8>, Error> {
+            self.read_trie_blob_bytes(db, block_id)
         }
-    }
 
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            TrieFile::RAM(ref mut ram) => ram.flush(),
-            TrieFile::Disk(ref mut disk) => disk.flush(),
+        /// Obtain a TrieHash for a node, given the node's block's hash (used only in testing)
+        pub fn get_node_hash_by_bhh<T: MarfTrieId>(
+            &self,
+            db: &Connection,
+            bhh: &T,
+            ptr: &TriePtr,
+        ) -> Result<TrieHash, Error> {
+            let (offset, _length) = trie_sql::get_external_trie_offset_length_by_bhh(db, bhh)?;
+            self.read_hash_at(offset + ptr.ptr())
         }
-    }
-}
 
-/// Boilerplate Read implementation for TrieFileDisk.  Plumbs through to the inner fd.
-impl Read for TrieFileDisk {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.fd.read(buf)
-    }
-}
+        /// Get all (root hash, trie hash) pairs for this TrieFile
+        pub fn read_all_block_hashes_and_roots<T: MarfTrieId>(
+            &self,
+            db: &Connection,
+        ) -> Result<Vec<(TrieHash, T)>, Error> {
+            let mut s =
+                db.prepare("SELECT block_hash, external_offset FROM marf_data WHERE unconfirmed = 0 ORDER BY block_hash")?;
+            let rows = s.query_and_then(params![], |row| {
+                let block_hash: T = row.get_unwrap("block_hash");
+                let offset_i64: i64 = row.get_unwrap("external_offset");
+                let offset = offset_i64 as u64;
+                let start = blob_layout::ROOT_NODE_OFFSET as u64;
 
-/// Boilerplate Read implementation for TrieFileRAM.  Plumbs through to the inner fd.
-impl Read for TrieFileRAM {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.fd.read(buf)
-    }
-}
+                let root_hash = self.read_hash_at(offset + start)?;
 
-/// Boilerplate Read implementation for TrieFile enum.  Plumbs through to the inner struct.
-impl Read for TrieFile {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            TrieFile::RAM(ref mut ram) => ram.read(buf),
-            TrieFile::Disk(ref mut disk) => disk.read(buf),
+                trace!(
+                    "Root hash for block {} at offset {} is {}",
+                    &block_hash,
+                    offset + start,
+                    &root_hash
+                );
+                Ok((root_hash, block_hash))
+            })?;
+            rows.collect()
         }
     }
 }
 
-/// Boilerplate Seek implementation for TrieFileDisk.  Plumbs through to the inner fd
-impl Seek for TrieFileDisk {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.fd.seek(pos)
-    }
-}
+#[cfg(all(test, unix))]
+mod hash_tail_tests {
+    use super::*;
+    use crate::chainstate::stacks::index::node::TrieNodeType;
+    use crate::chainstate::stacks::index::{MARFValue, TrieLeaf};
 
-/// Boilerplate Seek implementation for TrieFileDisk.  Plumbs through to the inner fd
-impl Seek for TrieFileRAM {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.fd.seek(pos)
-    }
-}
-
-impl Seek for TrieFile {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        match self {
-            TrieFile::RAM(ref mut ram) => ram.seek(pos),
-            TrieFile::Disk(ref mut disk) => disk.seek(pos),
+    /// Hash probes must read the full leaf when only its prefix lies in mapped complete pages.
+    #[test]
+    fn hashless_leaf_crossing_mapped_prefix_uses_file_tail() {
+        // SAFETY: sysconf returns the process page size and does not dereference pointers.
+        let page = unsafe { nix::libc::sysconf(nix::libc::_SC_PAGESIZE) };
+        assert!(page > 0);
+        for format in [
+            NodeRecordFormat::TypeFirstV2,
+            NodeRecordFormat::TypeFirstV3,
+            NodeRecordFormat::TypeFirstV4,
+        ] {
+            let leaf = TrieLeaf::from_value(&[17; 31], MARFValue([7; 40]));
+            let expected = bits::get_leaf_hash(&leaf);
+            let mut encoded = vec![];
+            format
+                .write_node(&mut encoded, &TrieNodeType::Leaf(leaf), expected, false)
+                .unwrap();
+            let offset = page as usize - 40;
+            let mut bytes = vec![0; offset];
+            bytes.extend(&encoded);
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("tail.blobs");
+            fs::write(&path, bytes).unwrap();
+            let mut file = TrieFile::new_mmap(path.to_str().unwrap(), true).unwrap();
+            file.set_record_context(RecordContext {
+                format,
+                value_resolver: None,
+            });
+            assert_eq!(
+                file.read_node_type_at(offset as u64).unwrap(),
+                (TrieNodeID::Leaf, expected)
+            );
         }
     }
 }

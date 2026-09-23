@@ -25,7 +25,7 @@ use clarity::vm::contexts::{AssetMap, OwnedEnvironment};
 use clarity::vm::costs::{CostTracker, ExecutionCost, LimitedCostTracker};
 use clarity::vm::database::{
     BurnStateDB, ClarityBackingStore, ClarityDatabase, ClarityExecutionCache, HeadersDB,
-    RollbackWrapper, RollbackWrapperPersistedLog, STXBalance, NULL_BURN_STATE_DB, NULL_HEADER_DB,
+    NULL_BURN_STATE_DB, NULL_HEADER_DB, RollbackWrapper, RollbackWrapperPersistedLog, STXBalance,
 };
 use clarity::vm::errors::VmExecutionError;
 use clarity::vm::events::{STXEventType, STXMintEventData};
@@ -39,13 +39,12 @@ use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 use crate::burnchains::PoxConstants;
 use crate::chainstate::nakamoto::signer_set::NakamotoSigners;
 use crate::chainstate::stacks::boot::{
-    make_pox_5_body, make_sip_031_body, BOOT_CODE_COSTS, BOOT_CODE_COSTS_2,
-    BOOT_CODE_COSTS_2_TESTNET, BOOT_CODE_COSTS_3, BOOT_CODE_COSTS_4,
-    BOOT_CODE_COST_VOTING_TESTNET as BOOT_CODE_COST_VOTING, BOOT_CODE_POX_TESTNET, COSTS_2_NAME,
-    COSTS_3_NAME, COSTS_4_NAME, POX_2_MAINNET_CODE, POX_2_NAME, POX_2_TESTNET_CODE,
+    BOOT_CODE_COST_VOTING_TESTNET as BOOT_CODE_COST_VOTING, BOOT_CODE_COSTS, BOOT_CODE_COSTS_2,
+    BOOT_CODE_COSTS_2_TESTNET, BOOT_CODE_COSTS_3, BOOT_CODE_COSTS_4, BOOT_CODE_POX_TESTNET,
+    COSTS_2_NAME, COSTS_3_NAME, COSTS_4_NAME, POX_2_MAINNET_CODE, POX_2_NAME, POX_2_TESTNET_CODE,
     POX_3_MAINNET_CODE, POX_3_NAME, POX_3_TESTNET_CODE, POX_4_CODE, POX_4_NAME, POX_5_NAME,
     SIGNERS_BODY, SIGNERS_DB_0_BODY, SIGNERS_DB_1_BODY, SIGNERS_NAME, SIGNERS_VOTING_BODY,
-    SIGNERS_VOTING_NAME, SIP_031_NAME,
+    SIGNERS_VOTING_NAME, SIP_031_NAME, make_pox_5_body, make_sip_031_body,
 };
 use crate::chainstate::stacks::db::{StacksAccount, StacksChainState};
 use crate::chainstate::stacks::events::{StacksTransactionEvent, StacksTransactionReceipt};
@@ -58,7 +57,7 @@ use crate::chainstate::stacks::{
 use crate::clarity_vm::database::marf::{
     BoxedClarityMarfStoreTransaction, MarfedKV, ReadOnlyMarfStore,
 };
-use crate::core::{StacksEpoch, StacksEpochId, FIRST_STACKS_BLOCK_ID, GENESIS_EPOCH};
+use crate::core::{FIRST_STACKS_BLOCK_ID, GENESIS_EPOCH, StacksEpoch, StacksEpochId};
 use crate::util_lib::boot::{boot_code_acc, boot_code_addr, boot_code_id, boot_code_tx_auth};
 use crate::util_lib::db::Error as DatabaseError;
 use crate::util_lib::strings::StacksString;
@@ -2374,7 +2373,9 @@ impl Drop for ClarityTransactionConnection<'_, '_> {
             match self.cost_track.as_mut() {
                 Some(t) => t.reset_memory(),
                 None => {
-                    error!("Failed to reset the memory of the Clarity transaction's cost_track handle while thread panicking");
+                    error!(
+                        "Failed to reset the memory of the Clarity transaction's cost_track handle while thread panicking"
+                    );
                 }
             }
         } else {
@@ -2550,6 +2551,7 @@ impl ClarityTransactionConnection<'_, '_> {
     /// Commit the changes from the edit log.
     /// panics if there is more than one open savepoint
     pub fn commit(mut self) -> Result<(), ClarityError> {
+        let _phase = stacks_profiler::diagnostic_span!("Tx: Writeback");
         let log = self
             .log
             .take()
@@ -2637,18 +2639,18 @@ mod tests {
     use std::path::PathBuf;
 
     use clarity::types::chainstate::{BurnchainHeaderHash, SortitionId, StacksAddress};
+    use clarity::vm::ClarityName;
     use clarity::vm::analysis::errors::RuntimeCheckErrorKind;
     use clarity::vm::database::{ClarityBackingStore, STXBalance, SqliteConnection};
     use clarity::vm::test_util::{TEST_BURN_STATE_DB, TEST_HEADER_DB};
     use clarity::vm::types::{StandardPrincipalData, TupleData, Value};
-    use clarity::vm::ClarityName;
     use stacks_common::consts::CHAIN_ID_TESTNET;
     use stacks_common::types::chainstate::ConsensusHash;
     use stacks_common::types::sqlite::NO_PARAMS;
 
     use super::*;
-    use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection as _};
     use crate::chainstate::stacks::index::ClarityMarfTrieId;
+    use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection as _};
     use crate::clarity_vm::database::marf::MarfedKV;
     use crate::core::PEER_VERSION_EPOCH_2_0;
 
@@ -2908,20 +2910,22 @@ mod tests {
                         &ResourceBudget::unlimited(),
                     )
                     .unwrap();
-                assert!(format!(
-                    "{}",
-                    tx.initialize_smart_contract(
-                        &contract_identifier,
-                        ClarityVersion::Clarity1,
-                        &ct_ast,
-                        contract,
-                        None,
-                        |_, _| None,
-                        &ResourceBudget::unlimited()
+                assert!(
+                    format!(
+                        "{}",
+                        tx.initialize_smart_contract(
+                            &contract_identifier,
+                            ClarityVersion::Clarity1,
+                            &ct_ast,
+                            contract,
+                            None,
+                            |_, _| None,
+                            &ResourceBudget::unlimited()
+                        )
+                        .unwrap_err()
                     )
-                    .unwrap_err()
-                )
-                .contains("Contract already exists"));
+                    .contains("Contract already exists")
+                );
 
                 tx.commit().unwrap();
             }
@@ -3331,20 +3335,22 @@ mod tests {
                 Value::okay(Value::Int(1)).unwrap()
             );
 
-            assert!(format!(
-                "{:?}",
-                conn.as_transaction(|tx| tx.run_contract_call(
-                    &sender,
-                    None,
-                    &contract_identifier,
-                    "set-bar",
-                    &[Value::Int(10), Value::Int(0)],
-                    |_, _| Some("testing rollback".into()),
-                    &ResourceBudget::unlimited()
-                ))
-                .unwrap_err()
-            )
-            .contains("DivisionByZero"));
+            assert!(
+                format!(
+                    "{:?}",
+                    conn.as_transaction(|tx| tx.run_contract_call(
+                        &sender,
+                        None,
+                        &contract_identifier,
+                        "set-bar",
+                        &[Value::Int(10), Value::Int(0)],
+                        |_, _| Some("testing rollback".into()),
+                        &ResourceBudget::unlimited()
+                    ))
+                    .unwrap_err()
+                )
+                .contains("DivisionByZero")
+            );
 
             // prior transaction should have rolled back due to runtime error
             assert_eq!(

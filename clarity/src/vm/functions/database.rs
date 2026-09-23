@@ -25,6 +25,7 @@ use crate::vm::callables::DefineType;
 use crate::vm::contexts::{ExecutionState, InvocationContext};
 use crate::vm::costs::cost_functions::ClarityCostFunction;
 use crate::vm::costs::{CostTracker, MemoryConsumer, constants as cost_constants, runtime_cost};
+use crate::vm::database::StoredValue;
 use crate::vm::errors::{
     RuntimeCheckErrorKind, RuntimeError, VmExecutionError, VmInternalError, check_argument_count,
     check_arguments_at_least,
@@ -34,7 +35,7 @@ use crate::vm::types::{
     BlockInfoProperty, BuffData, BurnBlockInfoProperty, PrincipalData, SequenceData,
     StacksBlockInfoProperty, TenureInfoProperty, TupleData, TypeSignature, Value,
 };
-use crate::vm::{ClarityVersion, LocalContext, eval};
+use crate::vm::{ClarityVersion, LocalContext, PackedValueCow, ValueRef, eval};
 
 switch_on_global_epoch!(special_fetch_variable(
     special_fetch_variable_v200,
@@ -48,6 +49,101 @@ switch_on_global_epoch!(special_fetch_entry(
     special_fetch_entry_v200,
     special_fetch_entry_v205
 ));
+
+/// Fetch a data variable without eagerly materializing a Binary V1 packed record.
+pub fn special_fetch_variable_stored(
+    args: &[SymbolicExpression],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    _context: &LocalContext,
+) -> Result<ValueRef<'static>, VmExecutionError> {
+    check_argument_count(1, args)?;
+    let var_name = args[0]
+        .match_atom()
+        .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
+    let contract = &invoke_ctx.contract_context.contract_identifier;
+    let data_types = invoke_ctx
+        .contract_context
+        .meta_data_var
+        .get(var_name)
+        .ok_or(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "No such data variable: {var_name}"
+        )))?;
+    let epoch = *exec_state.epoch();
+    if epoch == StacksEpochId::Epoch10 {
+        panic!("Executing Clarity method during Epoch 1.0, before Clarity")
+    }
+    if epoch == StacksEpochId::Epoch20 {
+        runtime_cost(
+            ClarityCostFunction::FetchVar,
+            exec_state,
+            data_types.value_type.size()?,
+        )?;
+    }
+    let result = exec_state
+        .global_context
+        .database
+        .lookup_variable_stored_with_size(contract, var_name, data_types, &epoch);
+    if epoch != StacksEpochId::Epoch20 {
+        let cost_input = result
+            .as_ref()
+            .map(|value| value.serialized_byte_len)
+            .unwrap_or(data_types.value_type.size()?.into());
+        runtime_cost(ClarityCostFunction::FetchVar, exec_state, cost_input)?;
+    }
+    result.map(|result| match result.value {
+        StoredValue::Owned(value) => ValueRef::Owned(value),
+        StoredValue::Packed(value) => ValueRef::Packed(PackedValueCow::stored(value)),
+    })
+}
+
+/// Fetch a map entry without eagerly materializing a Binary V1 packed record.
+pub fn special_fetch_entry_stored(
+    args: &[SymbolicExpression],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<ValueRef<'static>, VmExecutionError> {
+    check_argument_count(2, args)?;
+    let map_name = args[0]
+        .match_atom()
+        .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
+    let key = eval(&args[1], exec_state, invoke_ctx, context)?;
+    let contract = &invoke_ctx.contract_context.contract_identifier;
+    let data_types = invoke_ctx
+        .contract_context
+        .meta_data_map
+        .get(map_name)
+        .ok_or(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "No such map: {map_name}"
+        )))?;
+    let epoch = *exec_state.epoch();
+    if epoch == StacksEpochId::Epoch10 {
+        panic!("Executing Clarity method during Epoch 1.0, before Clarity")
+    }
+    if epoch == StacksEpochId::Epoch20 {
+        runtime_cost(
+            ClarityCostFunction::FetchEntry,
+            exec_state,
+            data_types.value_type.size()? + data_types.key_type.size()?,
+        )?;
+    }
+    let result = exec_state
+        .global_context
+        .database
+        .fetch_entry_stored_with_size_ref(contract, map_name, &key, data_types, &epoch);
+    if epoch != StacksEpochId::Epoch20 {
+        let cost_input = result
+            .as_ref()
+            .map(|value| value.serialized_byte_len)
+            .unwrap_or((data_types.value_type.size()? + data_types.key_type.size()?).into());
+        runtime_cost(ClarityCostFunction::FetchEntry, exec_state, cost_input)?;
+    }
+    result.map(|result| match result.value {
+        StoredValue::Owned(value) => ValueRef::Owned(value),
+        StoredValue::Packed(value) => ValueRef::Packed(PackedValueCow::stored(value)),
+    })
+}
 switch_on_global_epoch!(special_set_entry(
     special_set_entry_v200,
     special_set_entry_v205
@@ -61,12 +157,23 @@ switch_on_global_epoch!(special_delete_entry(
     special_delete_entry_v205
 ));
 
+/// Owned compatibility entrypoint for contract-call tests and legacy callers.
 pub fn special_contract_call(
+    args: &[SymbolicExpression],
+    exec: &mut ExecutionState,
+    invoke: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_contract_call_ref(args, exec, invoke, context)?.into_owned()
+}
+
+/// Invoke another contract without converting compound arguments or results into owned trees.
+pub fn special_contract_call_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_arguments_at_least(2, args)?;
 
     // the second part of the contract_call cost (i.e., the load contract cost)
@@ -82,9 +189,7 @@ pub fn special_contract_call(
     let mut rest_args = Vec::with_capacity(rest_args_len);
     for arg in rest_args_slice.iter() {
         let evaluated_arg = eval(arg, exec_state, invoke_ctx, context)?;
-        rest_args.push(SymbolicExpression::atom_value(
-            evaluated_arg.clone_with_cost(exec_state)?,
-        ));
+        rest_args.push(evaluated_arg.into_static(exec_state)?);
     }
 
     let (contract_identifier, type_returns_constraint) = match &args[0].expr {
@@ -235,23 +340,24 @@ pub fn special_contract_call(
         .into();
 
     let nested_ctx = invoke_ctx.with_caller(contract_principal);
-    let result = exec_state.execute_contract(
+    let result = exec_state.execute_contract_refs(
         &nested_ctx,
         &contract_identifier,
         function_name,
-        &rest_args,
+        rest_args,
         false,
     )?;
 
     // sanitize contract-call outputs in epochs >= 2.4
-    let result_type = TypeSignature::type_of(&result)?;
-    let (result, _) = Value::sanitize_value(exec_state.epoch(), &result_type, result)
+    let result_type = result.type_signature()?;
+    let (result, _) = result
+        .sanitize(exec_state.epoch(), &result_type)?
         .ok_or_else(|| RuntimeCheckErrorKind::CouldNotDetermineType)?;
 
     // Ensure that the expected type from the trait spec admits
     // the type of the value returned by the dynamic dispatch.
     if let Some(returns_type_signature) = type_returns_constraint {
-        let actual_returns = TypeSignature::type_of(&result)?;
+        let actual_returns = result.type_signature()?;
         if !returns_type_signature.admits_type(exec_state.epoch(), &actual_returns)? {
             return Err(RuntimeCheckErrorKind::ReturnTypesMustMatch(
                 Box::new(returns_type_signature),
@@ -375,14 +481,14 @@ pub fn special_set_variable_v200(
         data_types.value_type.size()?,
     )?;
 
-    exec_state.add_memory(value.as_ref().get_memory_use()?)?;
+    exec_state.add_memory(value.get_memory_use()?)?;
 
-    let value = value.clone_with_cost(exec_state)?;
+    let value = value.into_static(exec_state)?;
     let epoch = *exec_state.epoch();
     exec_state
         .global_context
         .database
-        .set_variable(contract, var_name, value, data_types, &epoch)
+        .set_variable_ref(contract, var_name, value, data_types, &epoch)
         .map(|data| data.value)
 }
 
@@ -418,12 +524,12 @@ pub fn special_set_variable_v205(
             "No such data variable: {var_name}"
         )))?;
 
-    let value = value.clone_with_cost(exec_state)?;
+    let value = value.into_static(exec_state)?;
     let epoch = *exec_state.epoch();
     let result = exec_state
         .global_context
         .database
-        .set_variable(contract, var_name, value, data_types, &epoch);
+        .set_variable_ref(contract, var_name, value, data_types, &epoch);
 
     let result_size = match &result {
         Ok(data) => data.serialized_byte_len,
@@ -527,7 +633,7 @@ pub fn special_at_block(
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     if !exec_state.epoch().supports_at_block() {
         return Err(RuntimeCheckErrorKind::AtBlockUnavailable.into());
     }
@@ -535,27 +641,23 @@ pub fn special_at_block(
 
     runtime_cost(ClarityCostFunction::AtBlock, exec_state, 0)?;
     let value = eval(&args[0], exec_state, invoke_ctx, context)?;
-    let bhh = match value.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) => {
-            if data.len() != 32 {
-                return Err(RuntimeError::BadBlockHash(data.clone()).into());
-            } else {
-                StacksBlockId::from(data.as_slice())
-            }
-        }
-        _ => {
-            return Err(RuntimeCheckErrorKind::TypeValueError(
-                Box::new(TypeSignature::BUFFER_32),
-                value.as_ref().to_error_string(),
-            )
-            .into());
-        }
+    let Some(data) = value.as_buffer_bytes()? else {
+        return Err(RuntimeCheckErrorKind::TypeValueError(
+            Box::new(TypeSignature::BUFFER_32),
+            value.as_ref().to_error_string(),
+        )
+        .into());
+    };
+    let bhh = if data.len() == 32 {
+        StacksBlockId::from(data)
+    } else {
+        return Err(RuntimeError::BadBlockHash(data.to_vec()).into());
     };
 
     exec_state.add_memory(cost_constants::AT_BLOCK_MEMORY)?;
     let result = exec_state
         .evaluate_at_block(bhh, &args[1], invoke_ctx, context)
-        .and_then(|v| v.clone_with_cost(exec_state));
+        .and_then(|value| value.into_static(exec_state));
     exec_state.drop_memory(cost_constants::AT_BLOCK_MEMORY)?;
 
     result
@@ -599,16 +701,16 @@ pub fn special_set_entry_v200(
         data_types.value_type.size()? + data_types.key_type.size()?,
     )?;
 
-    exec_state.add_memory(key.as_ref().get_memory_use()?)?;
-    exec_state.add_memory(value.as_ref().get_memory_use()?)?;
+    exec_state.add_memory(key.get_memory_use()?)?;
+    exec_state.add_memory(value.get_memory_use()?)?;
 
-    let key = key.clone_with_cost(exec_state)?;
-    let value = value.clone_with_cost(exec_state)?;
+    let key = key.into_static(exec_state)?;
+    let value = value.into_static(exec_state)?;
     let epoch = *exec_state.epoch();
     exec_state
         .global_context
         .database
-        .set_entry(contract, map_name, key, value, data_types, &epoch)
+        .set_entry_ref(contract, map_name, key, value, data_types, &epoch)
         .map(|data| data.value)
 }
 
@@ -646,13 +748,13 @@ pub fn special_set_entry_v205(
             "No such map: {map_name}"
         )))?;
 
-    let key = key.clone_with_cost(exec_state)?;
-    let value = value.clone_with_cost(exec_state)?;
+    let key = key.into_static(exec_state)?;
+    let value = value.into_static(exec_state)?;
     let epoch = *exec_state.epoch();
     let result = exec_state
         .global_context
         .database
-        .set_entry(contract, map_name, key, value, data_types, &epoch);
+        .set_entry_ref(contract, map_name, key, value, data_types, &epoch);
 
     let result_size = match &result {
         Ok(data) => data.serialized_byte_len,
@@ -704,17 +806,17 @@ pub fn special_insert_entry_v200(
         data_types.value_type.size()? + data_types.key_type.size()?,
     )?;
 
-    exec_state.add_memory(key.as_ref().get_memory_use()?)?;
-    exec_state.add_memory(value.as_ref().get_memory_use()?)?;
+    exec_state.add_memory(key.get_memory_use()?)?;
+    exec_state.add_memory(value.get_memory_use()?)?;
 
     let epoch = *exec_state.epoch();
 
-    let key = key.clone_with_cost(exec_state)?;
-    let value = value.clone_with_cost(exec_state)?;
+    let key = key.into_static(exec_state)?;
+    let value = value.into_static(exec_state)?;
     exec_state
         .global_context
         .database
-        .insert_entry(contract, map_name, key, value, data_types, &epoch)
+        .insert_entry_ref(contract, map_name, key, value, data_types, &epoch)
         .map(|data| data.value)
 }
 
@@ -752,13 +854,13 @@ pub fn special_insert_entry_v205(
             "No such map: {map_name}"
         )))?;
 
-    let key = key.clone_with_cost(exec_state)?;
-    let value = value.clone_with_cost(exec_state)?;
+    let key = key.into_static(exec_state)?;
+    let value = value.into_static(exec_state)?;
     let epoch = *exec_state.epoch();
     let result = exec_state
         .global_context
         .database
-        .insert_entry(contract, map_name, key, value, data_types, &epoch);
+        .insert_entry_ref(contract, map_name, key, value, data_types, &epoch);
 
     let result_size = match &result {
         Ok(data) => data.serialized_byte_len,
@@ -808,13 +910,13 @@ pub fn special_delete_entry_v200(
         data_types.key_type.size()?,
     )?;
 
-    exec_state.add_memory(key.as_ref().get_memory_use()?)?;
+    exec_state.add_memory(key.get_memory_use()?)?;
 
     let epoch = *exec_state.epoch();
     exec_state
         .global_context
         .database
-        .delete_entry(contract, map_name, key.as_ref(), data_types, &epoch)
+        .delete_entry_ref(contract, map_name, &key, data_types, &epoch)
         .map(|data| data.value)
 }
 
@@ -851,10 +953,10 @@ pub fn special_delete_entry_v205(
         )))?;
 
     let epoch = *exec_state.epoch();
-    let result = exec_state.global_context.database.delete_entry(
+    let result = exec_state.global_context.database.delete_entry_ref(
         contract,
         map_name,
-        key.as_ref(),
+        &key,
         data_types,
         &epoch,
     );

@@ -25,7 +25,161 @@ use crate::vm::errors::{
     check_arguments_at_least,
 };
 use crate::vm::types::{CallableData, OptionalData, ResponseData, TypeSignature, Value};
-use crate::vm::{self, ClarityName, ClarityVersion, SymbolicExpression};
+use crate::vm::{self, ClarityName, ClarityVersion, SymbolicExpression, ValueRef};
+
+/// Unwrap an optional or committed response while retaining packed backing storage.
+pub fn native_unwrap_ref<'value>(
+    input: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    if input.is_optional()? {
+        return input
+            .optional_child()?
+            .ok_or_else(|| RuntimeError::UnwrapFailure.into());
+    }
+    if input.is_response()? {
+        let (committed, child) = input.response_child()?;
+        return committed
+            .then_some(child)
+            .ok_or_else(|| RuntimeError::UnwrapFailure.into());
+    }
+    Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+        "Expected optional or response value: {}",
+        input.as_ref()
+    ))
+    .into())
+}
+
+/// Unwrap an optional or committed response, returning `thrown` on failure.
+pub fn native_unwrap_or_ret_ref<'value>(
+    input: ValueRef<'value>,
+    thrown: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    match native_unwrap_ref(input) {
+        Ok(value) => Ok(value),
+        Err(VmExecutionError::Runtime(RuntimeError::UnwrapFailure, _)) => {
+            Err(EarlyReturnError::UnwrapFailed(Box::new(thrown.into_owned()?)).into())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Unwrap the error branch of a response while retaining packed backing storage.
+pub fn native_unwrap_err_ref<'value>(
+    input: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    if !input.is_response()? {
+        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "Expected response value: {}",
+            input.as_ref()
+        ))
+        .into());
+    }
+    let (committed, child) = input.response_child()?;
+    (!committed)
+        .then_some(child)
+        .ok_or_else(|| RuntimeError::UnwrapFailure.into())
+}
+
+/// Unwrap an error response, returning `thrown` on failure.
+pub fn native_unwrap_err_or_ret_ref<'value>(
+    input: ValueRef<'value>,
+    thrown: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    match native_unwrap_err_ref(input) {
+        Ok(value) => Ok(value),
+        Err(VmExecutionError::Runtime(RuntimeError::UnwrapFailure, _)) => {
+            Err(EarlyReturnError::UnwrapFailed(Box::new(thrown.into_owned()?)).into())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Implement `try!` without materializing its success branch.
+pub fn native_try_ret_ref<'value>(
+    input: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    if input.is_optional()? {
+        return input
+            .optional_child()?
+            .ok_or_else(|| EarlyReturnError::UnwrapFailed(Box::new(Value::none())).into());
+    }
+    if input.is_response()? {
+        let (committed, child) = input.response_child()?;
+        return if committed {
+            Ok(child)
+        } else {
+            let value = Value::error(child.into_owned()?).map_err(|_| {
+                VmInternalError::Expect(
+                    "BUG: Failed to construct new response type from old response type".into(),
+                )
+            })?;
+            Err(EarlyReturnError::UnwrapFailed(Box::new(value)).into())
+        };
+    }
+    Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+        "Expected optional or response value: {}",
+        input.as_ref()
+    ))
+    .into())
+}
+
+/// Test whether an optional has an active child without materializing it.
+pub fn native_is_some_ref(input: ValueRef<'_>) -> Result<ValueRef<'_>, VmExecutionError> {
+    if !input.is_optional()? {
+        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "Expected option value: {}",
+            input.as_ref()
+        ))
+        .into());
+    }
+    Ok(ValueRef::Owned(Value::Bool(
+        input.optional_child()?.is_some(),
+    )))
+}
+
+/// Test whether an optional is empty without materializing it.
+pub fn native_is_none_ref(input: ValueRef<'_>) -> Result<ValueRef<'_>, VmExecutionError> {
+    native_is_some_ref(input).and_then(|value| match value {
+        ValueRef::Owned(Value::Bool(is_some)) => Ok(ValueRef::Owned(Value::Bool(!is_some))),
+        _ => Err(VmInternalError::Expect("is-some must return a Boolean".into()).into()),
+    })
+}
+
+/// Test whether a response is committed without materializing it.
+pub fn native_is_okay_ref(input: ValueRef<'_>) -> Result<ValueRef<'_>, VmExecutionError> {
+    if !input.is_response()? {
+        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "Expected response value: {}",
+            input.as_ref()
+        ))
+        .into());
+    }
+    let (committed, _) = input.response_child()?;
+    Ok(ValueRef::Owned(Value::Bool(committed)))
+}
+
+/// Test whether a response is an error without materializing it.
+pub fn native_is_err_ref(input: ValueRef<'_>) -> Result<ValueRef<'_>, VmExecutionError> {
+    native_is_okay_ref(input).and_then(|value| match value {
+        ValueRef::Owned(Value::Bool(is_okay)) => Ok(ValueRef::Owned(Value::Bool(!is_okay))),
+        _ => Err(VmInternalError::Expect("is-ok must return a Boolean".into()).into()),
+    })
+}
+
+/// Return an optional child or the caller-provided default without materializing either branch.
+pub fn native_default_to_ref<'value>(
+    default: ValueRef<'value>,
+    input: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    if !input.is_optional()? {
+        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "Expected option value: {}",
+            input.as_ref()
+        ))
+        .into());
+    }
+    Ok(input.optional_child()?.unwrap_or(default))
+}
 
 fn inner_unwrap(to_unwrap: Value) -> Result<Option<Value>, VmExecutionError> {
     let result = match to_unwrap {
@@ -156,7 +310,7 @@ fn eval_with_new_binding(
             },
         );
     }
-    inner_context.variables.insert(bind_name, bind_value);
+    inner_context.variables.insert(bind_name, bind_value.into());
     let result = vm::eval(body, exec_state, invoke_ctx, &inner_context)
         .and_then(|v| v.clone_with_cost(exec_state));
 
@@ -280,6 +434,124 @@ pub fn special_match(
     }
 }
 
+/// Bind one reference-backed match value and stabilize the selected branch result.
+fn eval_with_new_binding_ref(
+    body: &SymbolicExpression,
+    bind_name: ClarityName,
+    bind_value: ValueRef<'_>,
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<ValueRef<'static>, VmExecutionError> {
+    let mut inner_context = context.extend()?;
+    if vm::is_reserved(
+        &bind_name,
+        invoke_ctx.contract_context.get_clarity_version(),
+    ) || invoke_ctx
+        .contract_context
+        .lookup_function(&bind_name)
+        .is_some()
+        || inner_context.lookup_variable(&bind_name).is_some()
+    {
+        return Err(RuntimeCheckErrorKind::NameAlreadyUsed(bind_name.into()).into());
+    }
+
+    let memory_use = bind_value.get_memory_use()?;
+    exec_state.add_memory(memory_use)?;
+    let bind_value = bind_value.into_cow();
+    if *invoke_ctx.contract_context.get_clarity_version() >= ClarityVersion::Clarity2
+        && bind_value.as_value_ref().is_callable()?
+        && let CallableContract(trait_data) = bind_value.as_value()
+    {
+        inner_context.callable_contracts.insert(
+            bind_name.clone(),
+            CallableData {
+                contract_identifier: trait_data.contract_identifier.clone(),
+                trait_identifier: trait_data.trait_identifier.clone(),
+            },
+        );
+    }
+    inner_context.variables.insert(bind_name, bind_value);
+    let result = vm::eval(body, exec_state, invoke_ctx, &inner_context)
+        .and_then(|value| value.into_static(exec_state));
+    exec_state.drop_memory(memory_use)?;
+    result
+}
+
+/// Evaluate `match` while retaining packed optional/response children in branch bindings.
+pub fn special_match_ref(
+    args: &[SymbolicExpression],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<ValueRef<'static>, VmExecutionError> {
+    check_arguments_at_least(1, args)?;
+    let input = vm::eval(&args[0], exec_state, invoke_ctx, context)?;
+    input.charge_clone_cost(exec_state)?;
+    runtime_cost(ClarityCostFunction::Match, exec_state, 0)?;
+
+    if input.is_optional()? {
+        if args.len() != 4 {
+            return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+                "Bad match option syntax: args {} != 3",
+                args.len() - 1
+            ))
+            .into());
+        }
+        let bind_name = args[1]
+            .match_atom()
+            .ok_or_else(|| {
+                RuntimeCheckErrorKind::Unreachable("Bad match option syntax: expected name".into())
+            })?
+            .clone();
+        return match input.optional_child()? {
+            Some(child) => eval_with_new_binding_ref(
+                &args[2], bind_name, child, exec_state, invoke_ctx, context,
+            ),
+            None => vm::eval(&args[3], exec_state, invoke_ctx, context)?.into_static(exec_state),
+        };
+    }
+
+    if input.is_response()? {
+        if args.len() != 5 {
+            return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+                "Bad match response syntax: args {} != 4",
+                args.len() - 1
+            ))
+            .into());
+        }
+        let (committed, child) = input.response_child()?;
+        let (name_index, body_index) = if committed { (1, 2) } else { (3, 4) };
+        let bind_name = args[name_index]
+            .match_atom()
+            .ok_or_else(|| {
+                RuntimeCheckErrorKind::Unreachable(
+                    "Bad match response syntax: expected name".into(),
+                )
+            })?
+            .clone();
+        return eval_with_new_binding_ref(
+            &args[body_index],
+            bind_name,
+            child,
+            exec_state,
+            invoke_ctx,
+            context,
+        );
+    }
+
+    Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+        "Bad match input: {}",
+        input.type_signature()?
+    ))
+    .into())
+}
+
+/// Construct an optional while retaining a packed child's original byte owner.
+pub fn native_some_ref<'a>(input: ValueRef<'a>) -> Result<ValueRef<'a>, VmExecutionError> {
+    input.into_optional()
+}
+
 pub fn native_some(input: Value) -> Result<Value, VmExecutionError> {
     Ok(Value::some(input)?)
 }
@@ -337,4 +609,14 @@ pub fn native_default_to(default: Value, input: Value) -> Result<Value, VmExecut
         ))
         .into()),
     }
+}
+
+/// Construct a response retaining a shared success payload.
+pub fn native_okay_ref<'a>(input: ValueRef<'a>) -> Result<ValueRef<'a>, VmExecutionError> {
+    input.into_response(true)
+}
+
+/// Construct a response retaining a shared error payload.
+pub fn native_error_ref<'a>(input: ValueRef<'a>) -> Result<ValueRef<'a>, VmExecutionError> {
+    input.into_response(false)
 }

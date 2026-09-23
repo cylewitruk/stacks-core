@@ -363,6 +363,22 @@ impl<'a> Directory<'a> {
         )?)
     }
 
+    /// Return one child after validating its adjacent offsets.
+    pub fn child(&self, index: usize) -> Result<&'a [u8], PackedValueError> {
+        if index >= self.count {
+            return Err(PackedValueError::BorrowedView(
+                "directory child index out of bounds",
+            ));
+        }
+        let start = self.offset(index)?;
+        let end = self.offset(index + 1)?;
+        if end < start || end > self.data.len() {
+            return Err(PackedValueError::BorrowedView("invalid directory ordering"));
+        }
+        self.data
+            .get(start..end)
+            .ok_or(PackedValueError::BorrowedView("invalid child offsets"))
+    }
     /// Iterate through every child while validating each offset exactly once.
     pub fn children(&self) -> DirectoryChildren<'_, 'a> {
         DirectoryChildren {

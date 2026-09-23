@@ -120,6 +120,32 @@ impl<'a> PackedPrincipal<'a> {
         }
     }
 
+    /// Borrow an admitted principal without repeating address/name grammar validation.
+    pub fn from_admitted(bytes: &'a [u8]) -> Result<Self, PackedValueError> {
+        match bytes.split_first() {
+            Some((0, body)) => {
+                Ok(Self::Standard(body.try_into().map_err(|_| {
+                    PackedValueError::BorrowedView("invalid principal width")
+                })?))
+            }
+            Some((1, body)) => {
+                let (issuer, name) =
+                    body.split_at_checked(21)
+                        .ok_or(PackedValueError::BorrowedView(
+                            "truncated contract principal",
+                        ))?;
+                // A public safe accessor returning &str must still establish Rust's UTF-8 invariant.
+                let name = str::from_utf8(name)
+                    .map_err(|_| PackedValueError::BorrowedView("invalid contract name UTF-8"))?;
+                Ok(Self::Contract {
+                    issuer: issuer.try_into().expect("fixed issuer width"),
+                    name,
+                })
+            }
+            _ => Err(PackedValueError::BorrowedView("invalid principal kind")),
+        }
+    }
+
     /// Return this principal's consensus-serialized byte length.
     pub fn consensus_byte_len(&self) -> Result<u32, PackedValueError> {
         match self {
@@ -329,6 +355,19 @@ impl<'a> IntegerLane<'a> {
         Ok(lane)
     }
 
+    /// Address an admitted integer lane without searching for its widest element.
+    pub fn from_admitted(elements: &'a [u8], count: usize) -> Result<Self, PackedValueError> {
+        let lane = Self::parse(elements, count, |count, data_length| {
+            PackedRecordError::EmptyUnsignedLane { count, data_length }
+        })?;
+        if lane.width > MAX_INTEGER_WIDTH {
+            return Err(PackedValueError::BorrowedView(
+                "integer lane exceeds 128 bits",
+            ));
+        }
+        Ok(lane)
+    }
+
     /// Validate common non-empty, evenly-divisible lane framing.
     fn parse<F>(elements: &'a [u8], count: usize, empty_error: F) -> Result<Self, PackedValueError>
     where
@@ -360,6 +399,34 @@ impl<'a> IntegerLane<'a> {
     pub fn iter(&self) -> slice::ChunksExact<'a, u8> {
         debug_assert_eq!(self.elements.len(), self.width * self.count);
         self.elements.chunks_exact(self.width)
+    }
+
+    /// Decode one unsigned lane element without materializing the lane.
+    pub fn unsigned_at(&self, index: usize) -> Result<u128, PackedValueError> {
+        self.element(index).map(decode_padded_u128)
+    }
+
+    /// Decode one signed lane element without materializing the lane.
+    pub fn signed_at(&self, index: usize) -> Result<i128, PackedValueError> {
+        self.element(index).map(decode_padded_i128)
+    }
+
+    /// Borrow one fixed-width lane element.
+    fn element(&self, index: usize) -> Result<&'a [u8], PackedValueError> {
+        if index >= self.count {
+            return Err(PackedValueError::BorrowedView(
+                "integer lane index out of bounds",
+            ));
+        }
+        let start = index
+            .checked_mul(self.width)
+            .ok_or(PackedValueError::SizeOverflow)?;
+        let end = start
+            .checked_add(self.width)
+            .ok_or(PackedValueError::SizeOverflow)?;
+        self.elements
+            .get(start..end)
+            .ok_or(PackedValueError::BorrowedView("truncated integer lane"))
     }
 
     /// Return the consensus-serialized length of the lane's elements.
@@ -434,6 +501,20 @@ pub fn validate_bool_lane(elements: &[u8], count: usize) -> Result<u32, PackedVa
         }
     }
     u32::try_from(count).map_err(|_| PackedValueError::SizeOverflow)
+}
+
+/// Decode an admitted signed scalar with only the bounds needed for sign extension.
+pub fn decode_admitted_i128(bytes: &[u8]) -> Option<i128> {
+    (1..=MAX_INTEGER_WIDTH)
+        .contains(&bytes.len())
+        .then(|| decode_padded_i128(bytes))
+}
+
+/// Decode an admitted unsigned scalar with only the bounds needed for zero extension.
+pub fn decode_admitted_u128(bytes: &[u8]) -> Option<u128> {
+    (1..=MAX_INTEGER_WIDTH)
+        .contains(&bytes.len())
+        .then(|| decode_padded_u128(bytes))
 }
 
 /// Validate and decode one minimally encoded signed scalar.

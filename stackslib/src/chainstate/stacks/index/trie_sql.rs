@@ -14,23 +14,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 
 use rusqlite::blob::Blob;
 use rusqlite::{params, Connection, DatabaseName, OptionalExtension, Transaction};
 
 #[cfg(test)]
-use crate::chainstate::stacks::index::bits::read_hash_bytes;
-use crate::chainstate::stacks::index::bits::{
-    read_node_hash_bytes as bits_read_node_hash_bytes, read_nodetype, read_nodetype_nohash,
+use crate::chainstate::stacks::index::blob_layout;
+use crate::chainstate::stacks::index::node::{TrieNodeID, TriePtr};
+use crate::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
+use crate::chainstate::stacks::index::{
+    bits, trie_sql, Error, MarfDataEntry, MarfTrieId, NodeDecodeScratch, ReadTrieItem,
 };
-use crate::chainstate::stacks::index::node::{TrieNodeType, TriePtr};
-#[cfg(test)]
-use crate::chainstate::stacks::index::storage::TrieStorageConnection;
-use crate::chainstate::stacks::index::{trie_sql, Error, MarfDataEntry, MarfTrieId};
 use crate::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 use crate::types::sqlite::NO_PARAMS;
-use crate::util_lib::db::{query_count, query_row, table_exists, tx_begin_immediate, u64_to_sql};
+use crate::util_lib::db::{self, table_exists, tx_begin_immediate, u64_to_sql};
 
 static SQL_MARF_DATA_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS marf_data (
@@ -103,9 +101,11 @@ UPDATE schema_version SET version = 3;
 
 pub static SQL_MARF_EXTERNAL_BLOBS_SCHEMA_VERSION: u64 = 2;
 pub static SQL_MARF_SCHEMA_VERSION: u64 = 3;
+/// Opt-in physical-format version; older binaries reject marker-first trie stores.
+pub const SQL_MARF_TYPE_FIRST_SCHEMA_VERSION: u64 = 4;
 
 pub fn create_tables_if_needed(conn: &mut Connection) -> Result<(), Error> {
-    let tx = tx_begin_immediate(conn)?;
+    let tx = db::tx_begin_immediate(conn)?;
 
     tx.execute_batch(SQL_MARF_DATA_TABLE)?;
     tx.execute_batch(SQL_MARF_MINED_TABLE)?;
@@ -475,7 +475,7 @@ pub fn migrate_tables_if_needed<T: MarfTrieId>(conn: &mut Connection) -> Result<
                 debug!("Migrate MARF data from schema 1 to schema 2");
 
                 // add external_* fields
-                let tx = tx_begin_immediate(conn)?;
+                let tx = db::tx_begin_immediate(conn)?;
                 tx.execute_batch(SQL_MARF_DATA_TABLE_SCHEMA_2)?;
                 tx.commit()?;
             }
@@ -486,6 +486,14 @@ pub fn migrate_tables_if_needed<T: MarfTrieId>(conn: &mut Connection) -> Result<
                 let tx = tx_begin_immediate(conn)?;
                 tx.execute_batch(SQL_MARF_DATA_TABLE_SCHEMA_3)?;
                 tx.commit()?;
+            }
+            SQL_MARF_TYPE_FIRST_SCHEMA_VERSION => {
+                if !NodeRecordFormat::from_database(conn)?.is_type_first() {
+                    return Err(Error::CorruptionError(
+                        "Schema 4 requires type-first metadata".into(),
+                    ));
+                }
+                break;
             }
             x if x == SQL_MARF_SCHEMA_VERSION => {
                 // done
@@ -504,7 +512,7 @@ pub fn migrate_tables_if_needed<T: MarfTrieId>(conn: &mut Connection) -> Result<
     }
 
     if first_version >= SQL_MARF_EXTERNAL_BLOBS_SCHEMA_VERSION
-        && get_migrated_version(conn) != SQL_MARF_SCHEMA_VERSION
+        && get_migrated_version(conn) != get_schema_version(conn)
         && !trie_sql::detect_partial_migration(conn)?
     {
         // The schema changed after the external-blob migration. If this DB was
@@ -521,6 +529,11 @@ pub fn migrate_tables_if_needed<T: MarfTrieId>(conn: &mut Connection) -> Result<
 /// Used for read-only opens, where applying migrations would not be possible.
 pub fn ensure_no_migration_necessary<T: MarfTrieId>(conn: &mut Connection) -> Result<(), Error> {
     let version = get_schema_version(conn);
+    if version == SQL_MARF_TYPE_FIRST_SCHEMA_VERSION
+        && NodeRecordFormat::from_database(conn)?.is_type_first()
+    {
+        return Ok(());
+    }
     if version != SQL_MARF_SCHEMA_VERSION {
         return Err(Error::CorruptionError(format!(
             "MARF schema version {version} is not compatible with read-only open (expected {SQL_MARF_SCHEMA_VERSION})"
@@ -573,9 +586,29 @@ pub fn get_latest_confirmed_block_hash<T: MarfTrieId>(conn: &Connection) -> Resu
     .map_err(|e| e.into())
 }
 
+/// Optional covering index for immutable block metadata; SQLite maintains it transactionally.
+const SQL_BLOCK_HASH_LOOKUP_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS block_id_hash_marf_data ON marf_data(block_id, block_hash)";
+
+/// An equal-endpoint range permits a covering-index plan instead of forcing a rowid lookup.
+/// Databases opened read-only before index installation retain the rowid-range fallback.
+const SQL_GET_BLOCK_HASH: &str =
+    "SELECT block_hash FROM marf_data WHERE block_id BETWEEN ?1 AND ?1";
+
+/// Install the optional lookup index for a writable headers database, without changing trie data.
+pub fn ensure_block_hash_lookup_index(conn: &Connection) -> Result<(), Error> {
+    conn.execute_batch(SQL_BLOCK_HASH_LOOKUP_INDEX)?;
+    Ok(())
+}
+
+/// Look up the block hash for a local trie identifier.
 pub fn get_block_hash<T: MarfTrieId>(conn: &Connection, local_id: u32) -> Result<T, Error> {
+    #[cfg(feature = "commit-residency-diagnostics")]
+    let _span = stacks_profiler::diagnostic_span!("MARF: Block hash SQL");
+    #[cfg(feature = "commit-residency-diagnostics")]
+    let _io = crate::util_lib::db_io_probe::QueryProbe::begin(conn);
     let result = conn
-        .prepare_cached("SELECT block_hash FROM marf_data WHERE block_id = ?")?
+        .prepare_cached(SQL_GET_BLOCK_HASH)?
         .query_row(params![local_id], |row| row.get("block_hash"))
         .optional()?;
     result.ok_or_else(|| {
@@ -621,8 +654,8 @@ fn inner_write_external_trie_blob<T: MarfTrieId>(
             block_hash,
             empty_blob,
             0,
-            u64_to_sql(offset)?,
-            u64_to_sql(length)?,
+            db::u64_to_sql(offset)?,
+            db::u64_to_sql(length)?,
             block_id,
         ];
         let mut s =
@@ -641,8 +674,8 @@ fn inner_write_external_trie_blob<T: MarfTrieId>(
             block_hash,
             empty_blob,
             0,
-            u64_to_sql(offset)?,
-            u64_to_sql(length)?,
+            db::u64_to_sql(offset)?,
+            db::u64_to_sql(length)?,
         ];
         let mut s =
             conn.prepare("INSERT INTO marf_data (block_hash, data, unconfirmed, external_offset, external_length) VALUES (?, ?, ?, ?, ?)")?;
@@ -749,7 +782,7 @@ pub fn write_trie_blob_to_unconfirmed<T: MarfTrieId>(
     Ok(block_id)
 }
 
-/// Open a trie blob. Returns a Blob<'a> readable/writeable handle to it.
+/// Open a trie blob in read-only mode. Returns a Blob<'a> readable handle to it.
 pub fn open_trie_blob(conn: &Connection, block_id: u32) -> Result<Blob<'_>, Error> {
     let blob = conn.blob_open(
         DatabaseName::Main,
@@ -761,14 +794,16 @@ pub fn open_trie_blob(conn: &Connection, block_id: u32) -> Result<Blob<'_>, Erro
     Ok(blob)
 }
 
-/// Open a trie blob. Returns a Blob<'a> readable handle to it.
+/// Open a trie blob in read-only mode. Returns a Blob<'a> readable handle to it.
+/// Passes `read_only = true` to rusqlite, which maps to `flags = 0` in the
+/// underlying sqlite3_blob_open call — safe to call on a read-only connection.
 pub fn open_trie_blob_readonly(conn: &Connection, block_id: u32) -> Result<Blob<'_>, Error> {
     let blob = conn.blob_open(
         DatabaseName::Main,
         "marf_data",
         "data",
         block_id.into(),
-        false,
+        true,
     )?;
     Ok(blob)
 }
@@ -780,14 +815,14 @@ pub fn read_all_block_hashes_and_roots<T: MarfTrieId>(
     let mut s = conn.prepare(
         "SELECT block_hash, data FROM marf_data WHERE unconfirmed = 0 ORDER BY block_hash",
     )?;
+    let format = NodeRecordFormat::from_database(conn)?;
     let rows = s.query_and_then(NO_PARAMS, |row| {
         let block_hash: T = row.get_unwrap("block_hash");
         let data = row
             .get_ref("data")?
             .as_blob()
             .expect("DB Corruption: MARF data is non-blob");
-        let start = TrieStorageConnection::<T>::root_ptr_disk() as usize;
-        let trie_hash = TrieHash(read_hash_bytes(&mut &data[start..])?);
+        let trie_hash = blob_layout::BlobHeader::<T>::parse_format(format, data)?.root_hash;
         Ok((trie_hash, block_hash))
     })?;
     rows.collect()
@@ -799,6 +834,7 @@ pub fn read_node_hash_bytes<W: Write>(
     w: &mut W,
     block_id: u32,
     ptr: &TriePtr,
+    context: &RecordContext,
 ) -> Result<(), Error> {
     let mut blob = conn.blob_open(
         DatabaseName::Main,
@@ -807,33 +843,19 @@ pub fn read_node_hash_bytes<W: Write>(
         block_id.into(),
         true,
     )?;
-    let hash_buff = bits_read_node_hash_bytes(&mut blob, ptr)?;
-    w.write_all(&hash_buff).map_err(|e| e.into())
+    context.format.validate_reader_header(&mut blob)?;
+    blob.seek(SeekFrom::Start(ptr.ptr()))?;
+    let (_, hash) = context.read_probe(&mut blob)?;
+    w.write_all(hash.as_ref()).map_err(|e| e.into())
 }
 
-/// Read a node's hash from a sqlite-stored blob, given its block header hash
-pub fn read_node_hash_bytes_by_bhh<W: Write, T: MarfTrieId>(
-    conn: &Connection,
-    w: &mut W,
-    bhh: &T,
-    ptr: &TriePtr,
-) -> Result<(), Error> {
-    let row_id: i64 = conn.query_row(
-        "SELECT block_id FROM marf_data WHERE block_hash = ?",
-        &[bhh],
-        |r| r.get("block_id"),
-    )?;
-    let mut blob = conn.blob_open(DatabaseName::Main, "marf_data", "data", row_id, true)?;
-    let hash_buff = bits_read_node_hash_bytes(&mut blob, ptr)?;
-    w.write_all(&hash_buff).map_err(|e| e.into())
-}
-
-/// Read a node and its hash from a sqlite-stored trie blob
-pub fn read_node_type(
+pub fn read_trie_item<'a>(
     conn: &Connection,
     block_id: u32,
     ptr: &TriePtr,
-) -> Result<(TrieNodeType, TrieHash), Error> {
+    scratch: &'a mut impl NodeDecodeScratch,
+    format: NodeRecordFormat,
+) -> Result<ReadTrieItem<'a>, Error> {
     let mut blob = conn.blob_open(
         DatabaseName::Main,
         "marf_data",
@@ -841,23 +863,9 @@ pub fn read_node_type(
         block_id.into(),
         true,
     )?;
-    read_nodetype(&mut blob, ptr)
-}
-
-/// Read a node from a sqlite-stored trie blob, excluding its hash.
-pub fn read_node_type_nohash(
-    conn: &Connection,
-    block_id: u32,
-    ptr: &TriePtr,
-) -> Result<TrieNodeType, Error> {
-    let mut blob = conn.blob_open(
-        DatabaseName::Main,
-        "marf_data",
-        "data",
-        block_id.into(),
-        true,
-    )?;
-    read_nodetype_nohash(&mut blob, ptr)
+    format.validate_reader_header(&mut blob)?;
+    blob.seek(SeekFrom::Start(ptr.ptr()))?;
+    bits::read_trie_item_at_head_ref_format(&mut blob, ptr.id(), format, scratch)
 }
 
 /// Get the offset and length of a trie blob in the trie blobs file.
@@ -867,7 +875,8 @@ pub fn get_external_trie_offset_length(
 ) -> Result<(u64, u64), Error> {
     let qry = "SELECT external_offset, external_length FROM marf_data WHERE block_id = ?1";
     let args = params![block_id];
-    let (offset, length): (u64, u64) = query_row(conn, qry, args)?.ok_or(Error::NotFoundError)?;
+    let (offset, length): (u64, u64) =
+        db::query_row(conn, qry, args)?.ok_or(Error::NotFoundError)?;
     Ok((offset, length))
 }
 
@@ -878,7 +887,8 @@ pub fn get_external_trie_offset_length_by_bhh<T: MarfTrieId>(
 ) -> Result<(u64, u64), Error> {
     let qry = "SELECT external_offset, external_length FROM marf_data WHERE block_hash = ?1";
     let args = params![bhh];
-    let (offset, length): (u64, u64) = query_row(conn, qry, args)?.ok_or(Error::NotFoundError)?;
+    let (offset, length): (u64, u64) =
+        db::query_row(conn, qry, args)?.ok_or(Error::NotFoundError)?;
     Ok((offset, length))
 }
 
@@ -886,7 +896,7 @@ pub fn get_external_trie_offset_length_by_bhh<T: MarfTrieId>(
 /// which the next trie will be appended.
 pub fn get_external_blobs_length(conn: &Connection) -> Result<u64, Error> {
     let qry = "SELECT (external_offset + external_length) AS blobs_length FROM marf_data ORDER BY external_offset DESC LIMIT 1";
-    let max_len: u64 = query_row(conn, qry, NO_PARAMS)?.unwrap_or(0);
+    let max_len: u64 = db::query_row(conn, qry, NO_PARAMS)?.unwrap_or(0);
     Ok(max_len)
 }
 
@@ -900,12 +910,12 @@ pub fn detect_partial_migration(conn: &Connection) -> Result<bool, Error> {
         return Ok(false);
     }
 
-    let num_migrated = query_count(
+    let num_migrated = db::query_count(
         conn,
         "SELECT COUNT(*) FROM marf_data WHERE external_offset = 0 AND external_length = 0 AND unconfirmed = 0",
         NO_PARAMS,
     )?;
-    let num_not_migrated = query_count(
+    let num_not_migrated = db::query_count(
         conn,
         "SELECT COUNT(*) FROM marf_data WHERE external_offset != 0 AND external_length != 0 AND unconfirmed = 0",
         NO_PARAMS,
@@ -917,7 +927,7 @@ pub fn detect_partial_migration(conn: &Connection) -> Result<bool, Error> {
 pub fn set_migrated(conn: &Connection) -> Result<(), Error> {
     conn.execute(
         "UPDATE migrated_version SET version = ?1",
-        &[&u64_to_sql(SQL_MARF_SCHEMA_VERSION)?],
+        &[&db::u64_to_sql(get_schema_version(conn))?],
     )
     .map_err(|e| e.into())
     .map(|_| ())
@@ -927,6 +937,7 @@ pub fn get_node_hash_bytes(
     conn: &Connection,
     block_id: u32,
     ptr: &TriePtr,
+    context: &RecordContext,
 ) -> Result<TrieHash, Error> {
     let mut blob = conn.blob_open(
         DatabaseName::Main,
@@ -935,14 +946,17 @@ pub fn get_node_hash_bytes(
         block_id.into(),
         true,
     )?;
-    let hash_buff = bits_read_node_hash_bytes(&mut blob, ptr)?;
-    Ok(TrieHash(hash_buff))
+    context.format.validate_reader_header(&mut blob)?;
+    blob.seek(SeekFrom::Start(ptr.ptr()))?;
+    let (_, hash) = context.read_probe(&mut blob)?;
+    Ok(hash)
 }
 
 pub fn get_node_hash_bytes_by_bhh<T: MarfTrieId>(
     conn: &Connection,
     bhh: &T,
     ptr: &TriePtr,
+    context: &RecordContext,
 ) -> Result<TrieHash, Error> {
     let row_id: i64 = conn.query_row(
         "SELECT block_id FROM marf_data WHERE block_hash = ?",
@@ -950,8 +964,28 @@ pub fn get_node_hash_bytes_by_bhh<T: MarfTrieId>(
         |r| r.get("block_id"),
     )?;
     let mut blob = conn.blob_open(DatabaseName::Main, "marf_data", "data", row_id, true)?;
-    let hash_buff = bits_read_node_hash_bytes(&mut blob, ptr)?;
-    Ok(TrieHash(hash_buff))
+    context.format.validate_reader_header(&mut blob)?;
+    blob.seek(SeekFrom::Start(ptr.ptr()))?;
+    let (_, hash) = context.read_probe(&mut blob)?;
+    Ok(hash)
+}
+
+pub fn probe_node_type(
+    conn: &Connection,
+    block_id: u32,
+    ptr: &TriePtr,
+    context: &RecordContext,
+) -> Result<(TrieNodeID, TrieHash), Error> {
+    let mut blob = conn.blob_open(
+        DatabaseName::Main,
+        "marf_data",
+        "data",
+        block_id.into(),
+        true,
+    )?;
+    context.format.validate_reader_header(&mut blob)?;
+    blob.seek(SeekFrom::Start(ptr.ptr()))?;
+    context.read_probe(&mut blob)
 }
 
 pub fn tx_lock_bhh_for_extension<T: MarfTrieId>(
@@ -1049,4 +1083,164 @@ pub fn clear_tables(tx: &Transaction) -> Result<(), Error> {
     tx.execute("DELETE FROM marf_data", NO_PARAMS)?;
     tx.execute("DELETE FROM mined_blocks", NO_PARAMS)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod block_hash_lookup_tests {
+    use super::*;
+    use stacks_common::types::chainstate::StacksBlockId;
+
+    /// Make sparse identifiers so an equal-endpoint range cannot return a neighbor.
+    fn fixture() -> Connection {
+        let mut db = Connection::open_in_memory().unwrap();
+        create_tables_if_needed(&mut db).unwrap();
+        for id in [1u32, 7, 1000] {
+            let hash = StacksBlockId([id as u8; 32]);
+            db.execute(
+                "INSERT INTO marf_data VALUES (?1, ?2, zeroblob(8192), 0)",
+                params![id, hash],
+            )
+            .unwrap();
+        }
+        db
+    }
+
+    /// The indexed and legacy paths agree on sparse identifiers and missing rows.
+    #[test]
+    fn block_hash_lookup_legacy_and_covering_index() {
+        let db = fixture();
+        for indexed in [false, true] {
+            if indexed {
+                ensure_block_hash_lookup_index(&db).unwrap();
+            }
+            for id in [1u32, 7, 1000] {
+                assert_eq!(
+                    get_block_hash::<StacksBlockId>(&db, id).unwrap(),
+                    StacksBlockId([id as u8; 32])
+                );
+            }
+            for id in [0u32, 2, 8, 999, 1001, u32::MAX] {
+                std::assert_matches!(
+                    get_block_hash::<StacksBlockId>(&db, id),
+                    Err(Error::NotFoundError)
+                );
+            }
+        }
+        let plan: String = db
+            .query_row(
+                &format!("EXPLAIN QUERY PLAN {SQL_GET_BLOCK_HASH}"),
+                [7],
+                |row| row.get(3),
+            )
+            .unwrap();
+        assert!(
+            plan.contains("COVERING INDEX block_id_hash_marf_data"),
+            "{plan}"
+        );
+        ensure_block_hash_lookup_index(&db).unwrap();
+    }
+
+    /// Updates, deletes, insertions and rollback have identical index visibility.
+    #[test]
+    fn block_hash_lookup_transaction_visibility() {
+        let mut db = fixture();
+        ensure_block_hash_lookup_index(&db).unwrap();
+        {
+            let tx = db.transaction().unwrap();
+            tx.execute(
+                "UPDATE marf_data SET block_hash=?1 WHERE block_id=7",
+                [StacksBlockId([9; 32])],
+            )
+            .unwrap();
+            tx.execute("DELETE FROM marf_data WHERE block_id=1", [])
+                .unwrap();
+            tx.execute(
+                "INSERT INTO marf_data VALUES (8, ?1, zeroblob(0), 1)",
+                [StacksBlockId([8; 32])],
+            )
+            .unwrap();
+            assert_eq!(
+                get_block_hash::<StacksBlockId>(&tx, 7).unwrap(),
+                StacksBlockId([9; 32])
+            );
+            std::assert_matches!(
+                get_block_hash::<StacksBlockId>(&tx, 1),
+                Err(Error::NotFoundError)
+            );
+            assert_eq!(
+                get_block_hash::<StacksBlockId>(&tx, 8).unwrap(),
+                StacksBlockId([8; 32])
+            );
+            tx.rollback().unwrap();
+        }
+        assert_eq!(
+            get_block_hash::<StacksBlockId>(&db, 7).unwrap(),
+            StacksBlockId([7; 32])
+        );
+        assert_eq!(
+            get_block_hash::<StacksBlockId>(&db, 1).unwrap(),
+            StacksBlockId([1; 32])
+        );
+        std::assert_matches!(
+            get_block_hash::<StacksBlockId>(&db, 8),
+            Err(Error::NotFoundError)
+        );
+    }
+
+    /// Normal writable migration installs the index once and preserves schema compatibility.
+    #[test]
+    fn block_hash_lookup_migration_and_readonly() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("index.sqlite");
+        let mut db = Connection::open(&path).unwrap();
+        create_tables_if_needed(&mut db).unwrap();
+        assert_eq!(
+            migrate_tables_if_needed::<StacksBlockId>(&mut db).unwrap(),
+            1
+        );
+        ensure_block_hash_lookup_index(&db).unwrap();
+        assert_eq!(
+            migrate_tables_if_needed::<StacksBlockId>(&mut db).unwrap(),
+            SQL_MARF_SCHEMA_VERSION
+        );
+        db.execute("INSERT INTO marf_data (block_id,block_hash,data,unconfirmed) VALUES (7,?1,zeroblob(0),0)", [StacksBlockId([7;32])]).unwrap();
+        drop(db);
+        let mut ro =
+            Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        ensure_no_migration_necessary::<StacksBlockId>(&mut ro).unwrap();
+        assert_eq!(
+            get_block_hash::<StacksBlockId>(&ro, 7).unwrap(),
+            StacksBlockId([7; 32])
+        );
+    }
+    /// Headers opens install the index while ordinary MARF migration stays unchanged.
+    #[test]
+    fn block_hash_lookup_headers_open() {
+        use crate::chainstate::stacks::db::StacksChainState;
+        use crate::chainstate::stacks::index::marf::MarfConnection;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("headers.sqlite");
+        for _ in 0..2 {
+            let marf = StacksChainState::open_index(path.to_str().unwrap(), None).unwrap();
+            let count: i64 = marf
+                .sqlite_conn()
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE name='block_id_hash_marf_data'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1);
+        }
+        let mut plain = fixture();
+        migrate_tables_if_needed::<StacksBlockId>(&mut plain).unwrap();
+        let count: i64 = plain
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name='block_id_hash_marf_data'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
 }

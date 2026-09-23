@@ -1,0 +1,1 @@
+Read persisted Clarity value commitments directly from validated extent headers without decoding or rehashing payloads.

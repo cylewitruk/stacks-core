@@ -27,7 +27,7 @@ use super::{
     ValueDescriptor, ValueDescriptorError, ValueDescriptorVersion,
 };
 use crate::representations::ClarityName;
-use crate::types::Value;
+use crate::types::{SequenceSubtype, StringSubtype, TypeSignature, Value};
 
 /// Width of the descriptor version prefix omitted from [`DescriptorParser::bytes`].
 const VALUE_DESCRIPTOR_VERSION_LEN: usize = 1;
@@ -126,6 +126,22 @@ pub fn parse_value_descriptor(bytes: &[u8]) -> Result<ActiveShape, PackedValueEr
     DescriptorParser::new(body).parse()
 }
 
+/// Check the physical shape of an encoder-produced descriptor against a storage schema.
+/// This does not inspect value payloads or revalidate sequence contents and declared bounds.
+pub fn matches_storage_schema(
+    bytes: &[u8],
+    expected: &TypeSignature,
+) -> Result<bool, PackedValueError> {
+    let Some((&version, body)) = bytes.split_first() else {
+        return Ok(false);
+    };
+    if version != VALUE_DESCRIPTOR_VERSION {
+        return Ok(false);
+    }
+    let mut parser = DescriptorParser::new(body);
+    Ok(parser.matches_schema(expected, 0)? && parser.cursor == body.len())
+}
+
 /// Stateful reader for one recursive value descriptor body.
 struct DescriptorParser<'a> {
     /// Descriptor body, excluding its version byte.
@@ -138,6 +154,91 @@ impl<'a> DescriptorParser<'a> {
     /// Begin parsing one descriptor body.
     fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, cursor: 0 }
+    }
+
+    /// Compare trusted descriptor framing without allocating a shape tree.
+    fn matches_schema(
+        &mut self,
+        expected: &TypeSignature,
+        depth: u8,
+    ) -> Result<bool, PackedValueError> {
+        use TypeSignature::*;
+        if depth >= crate::types::MAX_TYPE_DEPTH {
+            return Ok(false);
+        }
+        let child_depth = depth + 1;
+        Ok(
+            match (ShapeOpcode::from_byte(self.take_byte()?)?, expected) {
+                (ShapeOpcode::Int, IntType)
+                | (ShapeOpcode::UInt, UIntType)
+                | (ShapeOpcode::Bool, BoolType) => true,
+                (ShapeOpcode::Buffer, SequenceType(SequenceSubtype::BufferType(_))) => true,
+                (
+                    ShapeOpcode::Ascii,
+                    SequenceType(SequenceSubtype::StringType(StringSubtype::ASCII(_))),
+                ) => true,
+                (
+                    ShapeOpcode::Utf8,
+                    SequenceType(SequenceSubtype::StringType(StringSubtype::UTF8(_))),
+                ) => true,
+                (
+                    ShapeOpcode::Principal,
+                    PrincipalType | CallableType(_) | TraitReferenceType(_),
+                ) => true,
+                (ShapeOpcode::OptionalNone, OptionalType(_)) => true,
+                (ShapeOpcode::Optional, OptionalType(child)) => {
+                    self.matches_schema(child, child_depth)?
+                }
+                (ShapeOpcode::ResponseOk, ResponseType(children)) => {
+                    self.matches_schema(&children.0, child_depth)?
+                }
+                (ShapeOpcode::ResponseErr, ResponseType(children)) => {
+                    self.matches_schema(&children.1, child_depth)?
+                }
+                (ShapeOpcode::Response, ResponseType(children)) => {
+                    self.matches_schema(&children.0, child_depth)?
+                        && self.matches_schema(&children.1, child_depth)?
+                }
+                (ShapeOpcode::Tuple, TupleType(tuple)) => {
+                    let count = self.take_varuint()? as usize;
+                    if count != tuple.get_type_map().len() {
+                        return Ok(false);
+                    }
+                    for (name, child) in tuple.get_type_map() {
+                        let length = usize::from(self.take_byte()?);
+                        let end = self
+                            .cursor
+                            .checked_add(length)
+                            .ok_or(PackedValueError::SizeOverflow)?;
+                        if self.bytes.get(self.cursor..end) != Some(name.as_bytes()) {
+                            return Ok(false);
+                        }
+                        self.cursor = end;
+                        if !self.matches_schema(child, child_depth)? {
+                            return Ok(false);
+                        }
+                    }
+                    true
+                }
+                (ShapeOpcode::EmptyList, SequenceType(SequenceSubtype::ListType(_))) => true,
+                (ShapeOpcode::List, SequenceType(SequenceSubtype::ListType(list))) => {
+                    self.matches_schema(list.get_list_item_type(), child_depth)?
+                }
+                (ShapeOpcode::ListElements, SequenceType(SequenceSubtype::ListType(list))) => {
+                    let count = self.take_varuint()? as usize;
+                    if count > self.bytes.len().saturating_sub(self.cursor) {
+                        return Ok(false);
+                    }
+                    for _ in 0..count {
+                        if !self.matches_schema(list.get_list_item_type(), child_depth)? {
+                            return Ok(false);
+                        }
+                    }
+                    true
+                }
+                _ => false,
+            },
+        )
     }
 
     /// Parse one complete descriptor body with no trailing bytes.
@@ -611,5 +712,43 @@ mod tests {
                 .unwrap(),
             consensus
         );
+    }
+    /// Storage shape matching allows admitted bounds but detects historical tuple shape changes.
+    #[test]
+    fn storage_schema_matching_preserves_shape_fallback() {
+        use crate::types::{TupleData, TypeSignature, Value};
+        let value = Value::from(
+            TupleData::from_data(vec![
+                ("n".try_into().unwrap(), Value::UInt(3)),
+                (
+                    "s".try_into().unwrap(),
+                    Value::some(Value::Bool(true)).unwrap(),
+                ),
+            ])
+            .unwrap(),
+        );
+        let descriptor = super::encode_value_descriptor(&value).unwrap();
+        assert!(
+            super::matches_storage_schema(
+                descriptor.as_bytes(),
+                &TypeSignature::type_of(&value).unwrap()
+            )
+            .unwrap()
+        );
+        let other = Value::from(
+            TupleData::from_data(vec![("n".try_into().unwrap(), Value::UInt(3))]).unwrap(),
+        );
+        assert!(
+            !super::matches_storage_schema(
+                descriptor.as_bytes(),
+                &TypeSignature::type_of(&other).unwrap()
+            )
+            .unwrap()
+        );
+        assert!(
+            !super::matches_storage_schema(descriptor.as_bytes(), &TypeSignature::UIntType)
+                .unwrap()
+        );
+        assert!(!super::matches_storage_schema(&[], &TypeSignature::UIntType).unwrap());
     }
 }

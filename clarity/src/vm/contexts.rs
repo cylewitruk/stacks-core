@@ -50,7 +50,7 @@ use crate::vm::types::{
     TraitIdentifier, TypeSignature, Value,
 };
 use crate::vm::version::ClarityVersion;
-use crate::vm::{ValueRef, ast, eval, is_reserved, stx_transfer_consolidated};
+use crate::vm::{ValueCow, ValueRef, ast, eval, is_reserved, stx_transfer_consolidated};
 
 pub const MAX_CONTEXT_DEPTH: u64 = 256;
 pub const MAX_EVENTS_BATCH: u64 = 50 * 1024 * 1024;
@@ -257,7 +257,7 @@ pub struct ContractContext {
 pub struct LocalContext<'a> {
     pub function_context: Option<&'a LocalContext<'a>>,
     pub parent: Option<&'a LocalContext<'a>>,
-    pub variables: HashMap<ClarityName, Value>,
+    pub variables: HashMap<ClarityName, ValueCow>,
     pub callable_contracts: HashMap<ClarityName, CallableData>,
     depth: u64,
 }
@@ -772,7 +772,15 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         args: &[SymbolicExpression],
         read_only: bool,
     ) -> Result<Value, VmExecutionError> {
-        self.inner_execute_contract(invoke_ctx, contract, tx_name, args, read_only, false)
+        self.inner_execute_contract(
+            invoke_ctx,
+            contract,
+            tx_name,
+            ContractArguments::Expressions(args),
+            read_only,
+            false,
+        )?
+        .into_owned()
     }
 
     /// This method is exposed for callers that need to invoke a private method directly.
@@ -786,7 +794,34 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         args: &[SymbolicExpression],
         read_only: bool,
     ) -> Result<Value, VmExecutionError> {
-        self.inner_execute_contract(invoke_ctx, contract, tx_name, args, read_only, true)
+        self.inner_execute_contract(
+            invoke_ctx,
+            contract,
+            tx_name,
+            ContractArguments::Expressions(args),
+            read_only,
+            true,
+        )?
+        .into_owned()
+    }
+
+    /// Call another contract while retaining evaluated argument and result payloads.
+    pub fn execute_contract_refs(
+        &mut self,
+        invoke_ctx: &InvocationContext,
+        contract: &QualifiedContractIdentifier,
+        name: &str,
+        args: Vec<ValueRef<'_>>,
+        read_only: bool,
+    ) -> Result<ValueRef<'static>, VmExecutionError> {
+        self.inner_execute_contract(
+            invoke_ctx,
+            contract,
+            name,
+            ContractArguments::Values(args),
+            read_only,
+            false,
+        )
     }
 
     /// This method handles actual execution of contract-calls on a contract.
@@ -800,10 +835,10 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         invoke_ctx: &InvocationContext,
         contract_identifier: &QualifiedContractIdentifier,
         tx_name: &str,
-        args: &[SymbolicExpression],
+        args: ContractArguments<'_>,
         read_only: bool,
         allow_private: bool,
-    ) -> Result<Value, VmExecutionError> {
+    ) -> Result<ValueRef<'static>, VmExecutionError> {
         let contract_size = self
             .global_context
             .database
@@ -826,28 +861,12 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
                 return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!("Public function not read-only: {contract_identifier} {tx_name}")).into());
             }
 
-            let args: Result<Vec<Value>, VmExecutionError> = args.iter()
-                .map(|arg| {
-                    let value = arg.match_atom_value()
-                        .ok_or_else(|| VmInternalError::InvariantViolation(format!("Passed non-value expression to exec_tx on {tx_name}!")))?;
-                    // sanitize contract-call inputs in epochs >= 2.4
-                    // testing todo: ensure sanitize_value() preserves trait callability!
-                    let expected_type = TypeSignature::type_of(value)?;
-                    let (sanitized_value, _) = Value::sanitize_value(
-                        self.epoch(),
-                        &expected_type,
-                        value.clone(),
-                    ).ok_or_else(|| RuntimeCheckErrorKind::TypeValueError(
-                            Box::new(expected_type),
-                            value.to_error_string(),
-                        )
-                    )?;
-
-                    Ok(sanitized_value)
-                })
-                .collect();
-
-            let args = args?;
+            let args = args.into_values(tx_name)?.into_iter().map(|value| {
+                let expected = value.type_signature()?;
+                let source = value.into_cow();
+                let value = source.as_value_ref().sanitize(self.epoch(), &expected)?.ok_or_else(|| RuntimeCheckErrorKind::TypeValueError(Box::new(expected), source.as_value().to_error_string()))?.0;
+                Ok(value.into_cow())
+            }).collect::<Result<Vec<_>, VmExecutionError>>()?;
 
             let func_identifier = func.get_identifier();
             if self.call_stack.contains(&func_identifier) {
@@ -865,12 +884,17 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
                 contract_identifier: &callee_view.contract_context.contract_identifier,
                 function: &func,
             });
-            call.begin(self, &callee_view, CallArguments::Values(&args));
-            call.did_evaluate_arguments(self, &callee_view, &args);
-
-            let res = self.execute_function_as_transaction(invoke_ctx, &func, &args, options);
-
-            call.finish(self, &callee_view, &res);
+            let trace_args = self.has_eval_hooks().then(|| args.iter().map(|value| value.as_value().clone()).collect::<Vec<_>>());
+            if let Some(trace_args) = &trace_args {
+                call.begin(self, &callee_view, CallArguments::Values(trace_args));
+                call.did_evaluate_arguments(self, &callee_view, trace_args);
+            }
+            let res = self.execute_function_as_transaction_refs(invoke_ctx, &func, args.iter().map(|value| value.as_value_ref()).collect(), options);
+            let res = if trace_args.is_some() {
+                let trace_result = res.and_then(ValueRef::into_owned);
+                call.finish(self, &callee_view, &trace_result);
+                trace_result.map(ValueRef::Owned)
+            } else { res };
             self.call_stack.remove(&func_identifier, true)?;
 
             match res {
@@ -882,7 +906,7 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
                             invoke_ctx.sponsor.as_ref(),
                             contract_identifier,
                             tx_name,
-                            &args,
+                            &args.iter().map(|value| value.as_value_ref()).collect::<Vec<_>>(),
                             &value
                         )?;
                     }
@@ -906,6 +930,23 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
         args: &[Value],
         options: FunctionExecutionOptions<'_>,
     ) -> Result<Value, VmExecutionError> {
+        self.execute_function_as_transaction_refs(
+            invoke_ctx,
+            function,
+            args.iter().map(ValueRef::Borrowed).collect(),
+            options,
+        )?
+        .into_owned()
+    }
+
+    /// Execute a transaction boundary while retaining shared arguments and response payloads.
+    pub fn execute_function_as_transaction_refs(
+        &mut self,
+        invoke_ctx: &InvocationContext,
+        function: &DefinedFunction,
+        args: Vec<ValueRef<'_>>,
+        options: FunctionExecutionOptions<'_>,
+    ) -> Result<ValueRef<'static>, VmExecutionError> {
         let make_read_only = function.is_read_only();
 
         if make_read_only {
@@ -920,14 +961,14 @@ impl<'a, 'b, 'hooks> ExecutionState<'a, 'b, 'hooks> {
 
         let callee_view = invoke_ctx.with_contract_context(next_contract_context);
 
-        let result = function.execute_apply(args, self, &callee_view);
+        let result = function.execute_apply_refs(args, self, &callee_view);
 
         if make_read_only {
             self.global_context.roll_back()?;
             result
         } else {
             self.global_context
-                .handle_tx_result(result, options.allow_private)
+                .handle_tx_result_refs(result, options.allow_private)
         }
     }
 
@@ -1651,14 +1692,34 @@ impl<'a, 'hooks> GlobalContext<'a, 'hooks> {
         result: Result<Value, VmExecutionError>,
         allow_private: bool,
     ) -> Result<Value, VmExecutionError> {
+        self.handle_tx_result_refs(result.map(ValueRef::Owned), allow_private)?
+            .into_owned()
+    }
+
+    /// Commit or roll back using only the response tag, retaining its payload.
+    pub fn handle_tx_result_refs(
+        &mut self,
+        result: Result<ValueRef<'static>, VmExecutionError>,
+        allow_private: bool,
+    ) -> Result<ValueRef<'static>, VmExecutionError> {
         if let Ok(result) = result {
-            if let Value::Response(data) = result {
-                if data.committed {
+            if result.is_response()? {
+                let committed = match &result {
+                    ValueRef::Packed(value) => {
+                        value
+                            .as_view()
+                            .response_child()
+                            .map_err(crate::vm::packed_vm_error)?
+                            .0
+                    }
+                    _ => matches!(result.as_ref(), Value::Response(data) if data.committed),
+                };
+                if committed {
                     self.commit()?;
                 } else {
                     self.roll_back()?;
                 }
-                Ok(Value::Response(data))
+                Ok(result)
             } else if allow_private && cfg!(feature = "devtools") {
                 self.commit()?;
                 Ok(result)
@@ -1666,7 +1727,7 @@ impl<'a, 'hooks> GlobalContext<'a, 'hooks> {
                 self.roll_back()?;
                 Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
                     "Public function must return response: {}",
-                    TypeSignature::type_of(&result)?
+                    result.type_signature()?
                 ))
                 .into())
             }
@@ -1822,7 +1883,7 @@ impl<'a> LocalContext<'a> {
         }
     }
 
-    pub fn lookup_variable(&self, name: &str) -> Option<&Value> {
+    pub fn lookup_variable(&self, name: &str) -> Option<&ValueCow> {
         match self.variables.get(name) {
             Some(value) => Some(value),
             None => match self.parent {
@@ -2140,5 +2201,35 @@ mod test {
                 "Contract already exists: S1G2081040G2081040G2081040G208105NK8PE5.dup".into()
             ))
         );
+    }
+}
+
+/// Contract-call inputs retain either entrypoint literals or already-evaluated runtime views.
+enum ContractArguments<'a> {
+    /// External transaction arguments retain their literal-expression validation.
+    Expressions(&'a [SymbolicExpression]),
+    /// In-VM calls retain independent payload owners.
+    Values(Vec<ValueRef<'a>>),
+}
+
+impl<'a> ContractArguments<'a> {
+    /// Validate entrypoint literals only after contract/function lookup, preserving error order.
+    fn into_values(self, name: &str) -> Result<Vec<ValueRef<'a>>, VmExecutionError> {
+        match self {
+            Self::Values(values) => Ok(values),
+            Self::Expressions(expressions) => expressions
+                .iter()
+                .map(|arg| {
+                    arg.match_atom_value()
+                        .map(ValueRef::Borrowed)
+                        .ok_or_else(|| {
+                            VmInternalError::InvariantViolation(format!(
+                                "Passed non-value expression to exec_tx on {name}!"
+                            ))
+                            .into()
+                        })
+                })
+                .collect(),
+        }
     }
 }

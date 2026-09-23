@@ -16,6 +16,9 @@ name = "blockstack_lib"
 path = "src/lib.rs"
 
 [dependencies]
+extent-ptrhash = { path = "../crates/extent-ptrhash" }
+stacks-profiler.workspace = true
+rapidhash = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 rand_chacha = { workspace = true }
@@ -39,6 +42,7 @@ stacks-transactions = { path = "../crates/stacks-transactions" }
 pox-locking = { path = "../pox-locking" }
 libstackerdb = { path = "../libstackerdb" }
 siphasher = "0.3.7"
+memmap2 = "0.9"
 rusqlite = { workspace = true }
 time = "0.3.41"
 toml = { workspace = true }
@@ -78,6 +82,12 @@ madhouse = { workspace = true }
 insta = { version = "1.37.0", features = ["ron"] }
 
 [features]
+commit-residency-diagnostics = ["dedup-io-diagnostics", "extent-ptrhash/diagnostics"]
+dedup-io-diagnostics = []
+direct-value-eager = []
+marf-mmap-diagnostics = []
+direct-value-diagnostics = ["clarity/direct-value-diagnostics"]
+marf-read-bench-counters = []
 default = []
 profile-sqlite = []
 disable-costs = []

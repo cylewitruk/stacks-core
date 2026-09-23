@@ -16,9 +16,9 @@
 //! Version 1 sizing and canonical packed encoding.
 
 use super::{
-    PACKED_VALUE_HEADER_LEN, PACKED_VALUE_VERSION, PackedCodecInvariant, PackedValue,
-    PackedValueError, PackedValueVersion, ValueDescriptor, descriptor, directory, layout,
-    primitive, validate_packed_body_len,
+    descriptor, directory, layout, primitive, validate_packed_body_len, PackedCodecInvariant,
+    PackedValue, PackedValueError, PackedValueVersion, ValueDescriptor, PACKED_VALUE_HEADER_LEN,
+    PACKED_VALUE_VERSION,
 };
 use crate::types::serialization::SerializationError;
 use crate::types::{
@@ -127,6 +127,14 @@ pub fn transcode(consensus: &[u8]) -> Result<PackedValue, PackedValueError> {
     let consensus_byte_len =
         u32::try_from(consensus.len()).map_err(|_| PackedValueError::SizeOverflow)?;
     value_with_consensus_len(&value, consensus_byte_len)
+}
+
+/// Measure the complete packed record without allocating encoded payload bytes.
+pub fn encoded_byte_len(value: &Value) -> Result<usize, PackedValueError> {
+    body_size(value)?
+        .compact_len
+        .checked_add(PACKED_VALUE_HEADER_LEN)
+        .ok_or(PackedValueError::SizeOverflow)
 }
 
 /// Measure final and peak body lengths so encoding needs one output allocation.
@@ -418,7 +426,7 @@ fn deserialize_canonical_consensus(consensus: &[u8]) -> Result<Value, PackedValu
 mod tests {
     use rstest::rstest;
 
-    use super::{BodySize, body_size};
+    use super::{body_size, BodySize};
     use crate::representations::ClarityName;
     use crate::types::codec::packed::{PackedValue, PackedValueRef, PackedValueVersion};
     use crate::types::{TupleData, TypeSignature, Value};

@@ -22,10 +22,11 @@ use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 use super::fmt_duration;
 use super::node_store::{CountingWriter, NodeStore};
 use crate::chainstate::stacks::index::bits::{
-    get_leaf_hash, get_node_byte_len, is_inline_child_ptr, reserved_root_size,
-    resolve_inline_child_offsets, write_nodetype_bytes,
+    get_leaf_hash, is_inline_child_ptr, reserved_root_size, resolve_inline_child_offsets,
 };
-use crate::chainstate::stacks::index::node::{is_backptr, TrieNodeType};
+use crate::chainstate::stacks::index::node::{is_backptr, TrieNodeID, TrieNodeType};
+use crate::chainstate::stacks::index::packed_branch;
+use crate::chainstate::stacks::index::record::NodeRecordFormat;
 use crate::chainstate::stacks::index::{blob_layout, BlockMap, Error, MarfTrieId, TrieHasher};
 
 /// Recompute content hashes in reverse NodeStore order.
@@ -104,6 +105,7 @@ pub(crate) fn stream_squash_blob<T: MarfTrieId, F: Write + Seek>(
     store: &mut NodeStore,
     parent_hash: &T,
     sink: &mut F,
+    format: NodeRecordFormat,
 ) -> Result<u64, Error> {
     let n = store.len();
     if n == 0 {
@@ -120,17 +122,25 @@ pub(crate) fn stream_squash_blob<T: MarfTrieId, F: Write + Seek>(
     let header_size = blob_layout::ROOT_NODE_OFFSET as u64;
 
     let root_node = store.read_node(0)?;
-    let root_reserved_size = reserved_root_size(get_node_byte_len(&root_node), root_node.ptrs())?;
+    let root_reserved_size = if format == NodeRecordFormat::TypeFirstV4 {
+        // Bound the complete image without an additional pass over the temporary node file.
+        let bound = (n as u64)
+            .checked_mul(format.max_record_len(TrieNodeID::Node256 as u8)? as u64)
+            .and_then(|size| size.checked_add(header_size))
+            .ok_or(Error::OverflowError)?;
+        (33 + packed_branch::payload_len_with_targets(&root_node, |ptr| {
+            Ok(if is_inline_child_ptr(ptr) {
+                bound
+            } else {
+                ptr.ptr()
+            })
+        })?) as u64
+    } else {
+        reserved_root_size(format.node_len(&root_node, false), root_node.ptrs())?
+    };
 
     // Write the fixed blob header.
-    sink.write_all(parent_hash.as_bytes())
-        .map_err(Error::IOError)?;
-    sink.seek(SeekFrom::Start(
-        base + blob_layout::RESERVED_FIELD_OFFSET as u64,
-    ))
-    .map_err(Error::IOError)?;
-    sink.write_all(&0u32.to_le_bytes())
-        .map_err(Error::IOError)?;
+    format.write_trie_header(&mut sink, parent_hash)?;
 
     sink.seek(SeekFrom::Start(
         base.checked_add(header_size)
@@ -161,7 +171,7 @@ pub(crate) fn stream_squash_blob<T: MarfTrieId, F: Write + Seek>(
             resolve_inline_child_offsets(node.ptrs_mut(), &blob_offsets)?;
         }
 
-        write_nodetype_bytes(&mut sink, &node, hash)?;
+        format.write_node(&mut sink, &node, *hash, false)?;
     }
 
     let end = sink.position();
@@ -180,11 +190,13 @@ pub(crate) fn stream_squash_blob<T: MarfTrieId, F: Write + Seek>(
         base.checked_add(header_size).ok_or(Error::OverflowError)?,
     ))
     .map_err(Error::IOError)?;
-    let root_written = write_nodetype_bytes(&mut sink, &root_node, store.get_hash(0))?;
-    debug_assert!(
-        root_written <= root_reserved_size,
-        "root wrote {root_written} bytes but only {root_reserved_size} were reserved"
-    );
+    format.write_node(&mut sink, &root_node, *store.get_hash(0), false)?;
+    let root_written = sink.position() - base - header_size;
+    if root_written > root_reserved_size {
+        return Err(Error::CorruptionError(
+            "Squash root exceeds reservation".into(),
+        ));
+    }
 
     // Leave the caller positioned at the end of the blob, as if the write had
     // been a single forward stream.

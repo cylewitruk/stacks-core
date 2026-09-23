@@ -27,10 +27,15 @@ use super::{
     PackedValueError, PackedValueRef, PackedValueVersion, ReconstructionError, ValueDescriptor,
     ValueDescriptorError, ValueDescriptorRef, ValueDescriptorVersion,
 };
-use crate::types::{BOUND_VALUE_SERIALIZATION_BYTES, MAX_VALUE_SIZE, TypeSignature, Value};
+use crate::types::{TypeSignature, Value, BOUND_VALUE_SERIALIZATION_BYTES, MAX_VALUE_SIZE};
 
 mod decode;
+mod view;
+pub use view::{
+    PackedListView, PackedPrincipalView, PackedTupleView, PackedValueKind, PackedValueView,
+};
 mod descriptor;
+pub use descriptor::matches_storage_schema;
 mod directory;
 mod encode;
 mod layout;
@@ -85,6 +90,11 @@ pub const BOUND_VALUE_DESCRIPTOR_BYTES: usize = BOUND_VALUE_SERIALIZATION_BYTES 
 /// Encode one value as a complete V1 packed record.
 pub fn encode(value: &Value) -> Result<PackedValue, PackedValueError> {
     encode::value(value)
+}
+
+/// Measure the complete V1 packed record without allocating encoded bytes.
+pub fn encoded_byte_len(value: &Value) -> Result<usize, PackedValueError> {
+    encode::encoded_byte_len(value)
 }
 
 /// Encode one complete V1 packed record after an opaque caller-owned prefix.
@@ -187,3 +197,6 @@ fn validate_packed_body_len(body_len: usize) -> Result<(), PackedValueError> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod type_access_tests;

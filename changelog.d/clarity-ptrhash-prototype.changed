@@ -1,0 +1,1 @@
+Add an experimental offline PtrHash base with exact extent-digest verification and a transactional SQLite delta for Clarity value deduplication.

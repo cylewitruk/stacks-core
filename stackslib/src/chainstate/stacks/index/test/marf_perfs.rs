@@ -21,7 +21,11 @@ use clarity::types::chainstate::{BlockHeaderHash, TrieHash};
 use stacks_common::util::get_epoch_time_ms;
 use stacks_common::util::hash::to_hex;
 
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MARF};
+use super::marf::MarfTestExt;
+use crate::chainstate::stacks::index::marf::{
+    MARF, MARFOpenOpts, MarfConnection, MarfCore as _, MarfReadCtx,
+};
+use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::storage::TrieFileStorage;
 use crate::chainstate::stacks::index::test::{merkle_test_marf, opts};
 use crate::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue, TrieLeaf};
@@ -96,9 +100,9 @@ fn marf_insert_random_1048576_4096_file_storage() {
         let values = values
             .into_iter()
             .map(|x| MARFValue::from_value(&x))
-            .collect();
+            .collect::<Vec<_>>();
 
-        m.insert_batch(&keys, values).unwrap();
+        m.insert_batch(&keys, &values).unwrap();
         end_time = get_epoch_time_ms();
 
         let flush_start_time = get_epoch_time_ms();
@@ -178,12 +182,17 @@ fn marf_read_random_1048576_4096_file_storage() {
         let mut f_store = TrieFileStorage::new_memory(marf_opts).unwrap();
         let mut f = f_store.connection();
 
+        let cursor = &mut None;
+        let nested_cursor = &mut None;
+        let scratch = &mut MarfReadState::new();
+        let mut read_ctx = MarfReadCtx::new(&mut f, cursor, nested_cursor, scratch);
+
         let block_header = BlockHeaderHash::from_bytes(&[
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0xf0, 0xff, 0xff,
         ])
         .unwrap();
-        f.open_block(&block_header).unwrap();
+        read_ctx.open_block(&block_header, None).unwrap();
 
         let mut seed = TrieHash::EMPTY.as_bytes().to_vec();
         let mut start_time = 0;
@@ -207,40 +216,25 @@ fn marf_read_random_1048576_4096_file_storage() {
                 ],
             );
 
-            let read_value = MARF::get_path(
-                &mut f,
-                &block_header,
-                &TrieHash::from_bytes(&path[..]).unwrap(),
-            )
-            .unwrap()
-            .unwrap();
-            assert_eq!(read_value.data.to_vec(), value.data.to_vec());
+            let read_value = read_ctx.expect_path(&block_header, &triepath);
+            assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), value.data.as_ref().expect("resolved test leaf").to_vec());
 
-            // can make a merkle proof to each one
-            if do_merkle_check {
-                merkle_test_marf(&mut f, &block_header, &path, &value.data.to_vec(), None);
-            }
-            if i % 128 == 0 {
-                let end_time = get_epoch_time_ms();
-                let (read_count, write_count) = f.stats();
-                let (node_reads, backptr_reads, node_writes) = f.node_stats();
-                let (leaf_reads, leaf_writes) = f.leaf_stats();
-                debug!(
-                    "Got {} in {} (1 get = {} ms).  Read = {}, Write = {}, Node Reads = {}, Node Writes = {}, Backptr Reads = {}, Leaf Reads = {}, Leaf Writes = {}",
-                    i,
-                    end_time - start_time,
-                    ((end_time - start_time) as f64) / 128.0,
-                    read_count,
-                    write_count,
-                    node_reads,
-                    node_writes,
-                    backptr_reads,
-                    leaf_reads,
-                    leaf_writes
-                );
+            read_ctx.with_storage(|storage| {
+                // can make a merkle proof to each one
+                if do_merkle_check {
+                    merkle_test_marf(storage, &block_header, &path, &value.data.as_ref().expect("resolved test leaf").to_vec(), None);
+                }
+                if i % 128 == 0 {
+                    let end_time = get_epoch_time_ms();
+                    let (read_count, write_count) = storage.stats();
+                    let (node_reads, backptr_reads, node_writes) = storage.node_stats();
+                    let (leaf_reads, leaf_writes) = storage.leaf_stats();
+                    debug!("Got {} in {} (1 get = {} ms).  Read = {}, Write = {}, Node Reads = {}, Node Writes = {}, Backptr Reads = {}, Leaf Reads = {}, Leaf Writes = {}",
+                            i, end_time - start_time, ((end_time - start_time) as f64) / 128.0, read_count, write_count, node_reads, node_writes, backptr_reads, leaf_reads, leaf_writes);
 
-                start_time = get_epoch_time_ms();
-            }
+                    start_time = get_epoch_time_ms();
+                }
+            });
         }
     }
 }

@@ -60,6 +60,20 @@ impl<'a> CallTraceFrame<'a> {
         }
     }
 
+    /// Notifies hooks of one reference-backed argument, materializing it only when tracing is
+    /// active.
+    pub fn did_evaluate_value_ref(
+        &self,
+        exec_state: &mut impl EvalHookNotifier,
+        invoke_ctx: &InvocationContext,
+        arg_index: usize,
+        value: &ValueRef<'_>,
+    ) {
+        if self.0.is_some() {
+            self.did_evaluate_argument(exec_state, invoke_ctx, arg_index, value.as_ref());
+        }
+    }
+
     /// Notifies hooks that all pre-evaluated call arguments are available.
     pub fn did_evaluate_arguments(
         &self,
@@ -81,6 +95,34 @@ impl<'a> CallTraceFrame<'a> {
     ) {
         if let Some(call) = &self.0 {
             exec_state.notify_did_finish_call(invoke_ctx, call, res);
+        }
+    }
+
+    /// Notifies hooks of a reference-producing call without materializing its result unless a
+    /// hook is active.
+    pub fn finish_value_ref<'value>(
+        &self,
+        exec_state: &mut impl EvalHookNotifier,
+        invoke_ctx: &InvocationContext,
+        res: Result<ValueRef<'value>, VmExecutionError>,
+    ) -> Result<ValueRef<'value>, VmExecutionError> {
+        let Some(call) = &self.0 else {
+            return res;
+        };
+        match res {
+            Ok(value) => {
+                let observed = Ok(value.as_ref().clone());
+                exec_state.notify_did_finish_call(invoke_ctx, call, &observed);
+                Ok(value)
+            }
+            Err(error) => {
+                let observed = Err(error);
+                exec_state.notify_did_finish_call(invoke_ctx, call, &observed);
+                match observed {
+                    Err(error) => Err(error),
+                    Ok(_) => unreachable!("the observed call result was constructed as an error"),
+                }
+            }
         }
     }
 }
