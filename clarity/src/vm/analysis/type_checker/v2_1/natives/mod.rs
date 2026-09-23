@@ -52,14 +52,14 @@ pub enum TypedNativeFunction {
     Simple(SimpleNativeFunction),
 }
 
-#[allow(clippy::type_complexity)]
-pub struct SpecialNativeFunction(
-    &'static dyn Fn(
-        &mut TypeChecker,
-        &[SymbolicExpression],
-        &TypingContext,
-    ) -> Result<TypeSignature, StaticCheckError>,
-);
+/// Type-checks a special native function in this epoch's checker.
+type SpecialNativeFn = dyn Fn(
+    &mut TypeChecker,
+    &[SymbolicExpression],
+    &TypingContext,
+) -> Result<TypeSignature, StaticCheckError>;
+
+pub struct SpecialNativeFunction(&'static SpecialNativeFn);
 pub struct SimpleNativeFunction(pub FunctionType);
 
 fn check_special_list_cons(
@@ -228,14 +228,7 @@ fn check_special_merge(
         update.len(),
     )?;
 
-    base.shallow_merge(&mut update);
-    if checker.epoch.fixes_tuple_merge_size_check() {
-        // 4.0+: reject an oversized merged tuple cleanly with `ValueTooLarge` at the merge
-        // site. `?` converts `ClarityTypeError::ValueTooLarge` into `StaticCheckError`.
-        // Pre-4.0 the check is absent, so the oversized type propagates exactly as before
-        // (surfacing later as a block-invalidating `InvariantViolation` when it is sized).
-        base.checked_value_size()?;
-    }
+    base.shallow_merge(&mut update)?;
     Ok(TypeSignature::TupleType(base))
 }
 

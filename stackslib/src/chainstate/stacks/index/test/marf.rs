@@ -18,8 +18,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fs;
 
-use clarity::types::chainstate::{BlockHeaderHash, TrieHash};
-use stacks_common::types::chainstate::StacksBlockId;
+use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash};
 use stacks_common::util::hash::to_hex;
 
 use super::MarfRootTable;
@@ -1559,11 +1558,12 @@ fn marf_insert_get_128_fork_256() {
 
     for i in 1..8 {
         let parent_row = &fork_headers[i - 1];
-        for j in 0..parent_row.len() {
-            let parent_hash = &parent_row[j];
-            for k in (2 * j)..(2 * j + 2) {
-                let child_hash = &fork_headers[i][k];
-
+        for (j, parent_hash) in parent_row.iter().enumerate() {
+            for (k, child_hash) in fork_headers[i][..(2 * j + 2)]
+                .iter()
+                .enumerate()
+                .skip(2 * j)
+            {
                 debug!("Branch from {:?} to {:?}", parent_hash, child_hash);
                 m.begin(parent_hash, child_hash).unwrap();
 
@@ -1612,7 +1612,7 @@ fn marf_insert_get_128_fork_256() {
 
     let mut block_table = None;
 
-    for k in 0..expected_chain_tips.len() {
+    for (k, expected_chain_tip) in expected_chain_tips.iter().enumerate() {
         for l in 0..128 {
             let raw_value = [
                 7u8,

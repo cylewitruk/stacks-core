@@ -23,6 +23,8 @@ use std::sync::Arc;
 
 use rusqlite::Connection;
 use sha2::Digest;
+use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
+use stacks_common::util::macros::is_trace;
 
 use crate::chainstate::stacks::index::marf::MarfReadCtx;
 use crate::chainstate::stacks::index::node::{
@@ -35,8 +37,6 @@ use crate::chainstate::stacks::index::{
     bits, Error, MarfTrieId, NodeParking, NodePatching, NodePath, ReadNodeBacking, ReadTrieNode,
     TrieHasher, TrieLeaf, TrieReadStorage,
 };
-use crate::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
-use crate::util::macros::is_trace;
 
 /// We don't actually instantiate a Trie, but we still need to pass a type parameter for the
 /// storage implementation.

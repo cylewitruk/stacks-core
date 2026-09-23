@@ -18,6 +18,8 @@ use std::io::{Seek, SeekFrom, Write};
 
 use rusqlite::blob::Blob;
 use rusqlite::{params, Connection, DatabaseName, OptionalExtension, Transaction};
+use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
+use stacks_common::types::sqlite::NO_PARAMS;
 
 #[cfg(test)]
 use crate::chainstate::stacks::index::blob_layout;
@@ -26,8 +28,6 @@ use crate::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
 use crate::chainstate::stacks::index::{
     bits, trie_sql, Error, MarfDataEntry, MarfTrieId, NodeDecodeScratch, ReadTrieItem,
 };
-use crate::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
-use crate::types::sqlite::NO_PARAMS;
 use crate::util_lib::db::{self, table_exists, tx_begin_immediate, u64_to_sql};
 
 static SQL_MARF_DATA_TABLE: &str = "
@@ -357,7 +357,7 @@ pub fn bulk_read_squashed_blocks<T: MarfTrieId>(
 /// would. Lets test fixtures outside the MARF module populate squash
 /// metadata without writing MARF-internal SQL. The table itself is created
 /// by the schema-3 migration.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub fn test_insert_squashed_block<T: MarfTrieId>(
     conn: &Connection,
     height: u32,
@@ -378,7 +378,7 @@ pub fn test_insert_squashed_block<T: MarfTrieId>(
 
 /// Test-only: append a `marf_squashed_blocks` row one above the current
 /// maximum height.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub fn test_append_squashed_block<T: MarfTrieId>(
     conn: &Connection,
     block_hash: &T,

@@ -2910,7 +2910,6 @@ pub mod test {
                 &BlockHeaderHash([(dbi + 1) as u8; 32]),
             );
 
-            let mut next_nonce = 0;
             for i in 0..contracts.len() {
                 let contract_name = contract_names[i];
                 let contract = contracts[i].to_string();
@@ -2925,7 +2924,7 @@ pub mod test {
 
                 tx_contract.chain_id = 0x80000000;
                 tx_contract.set_tx_fee(0);
-                tx_contract.set_origin_nonce(next_nonce);
+                tx_contract.set_origin_nonce(i as u64);
 
                 let mut signer = StacksTransactionSigner::new(&tx_contract);
                 signer.sign_origin(&privk).unwrap();
@@ -2949,8 +2948,6 @@ pub mod test {
                         expected_errors[i].to_string()
                     };
                 assert_eq!(receipt.vm_error.as_deref(), Some(expected_error.as_str()));
-
-                next_nonce += 1;
             }
 
             conn.commit_block();
@@ -3593,7 +3590,7 @@ pub mod test {
         let signed_tx = signer.get_tx().unwrap();
 
         // invalid contract-calls
-        let contract_calls = vec![
+        let contract_calls = [
             (
                 addr.clone(),
                 "hello-world",
@@ -4195,7 +4192,7 @@ pub mod test {
 
         // mint names to recv_addr, and set a post-condition on the contract-principal to check it.
         // assert contract does not possess the name
-        for (_i, pass_condition) in [NonfungibleConditionCode::Sent].iter().enumerate() {
+        for pass_condition in [NonfungibleConditionCode::Sent].iter() {
             let name = Value::buff_from(next_name.to_be_bytes().to_vec()).unwrap();
             next_name += 1;
 
@@ -4314,7 +4311,7 @@ pub mod test {
 
         // mint names to recv_addr, and set a post-condition on the contract-principal to check it.
         // assert contract still possesses the name (should fail)
-        for (_i, fail_condition) in [NonfungibleConditionCode::NotSent].iter().enumerate() {
+        for fail_condition in [NonfungibleConditionCode::NotSent].iter() {
             let name = Value::buff_from(next_name.to_be_bytes().to_vec()).unwrap();
             next_name += 1;
 
@@ -4719,13 +4716,12 @@ pub mod test {
 
         // mint 100 stackaroos and the name to recv_addr, and set a post-condition for each asset on the contract-principal
         // assert contract sent ==, <=, or >= 100 stackaroos
-        for (_i, pass_condition) in [
+        for pass_condition in [
             FungibleConditionCode::SentEq,
             FungibleConditionCode::SentGe,
             FungibleConditionCode::SentLe,
         ]
         .iter()
-        .enumerate()
         {
             let name = Value::buff_from(next_name.to_be_bytes().to_vec()).unwrap();
             next_name += 1;
@@ -4800,13 +4796,12 @@ pub mod test {
 
         // recv_addr sends 100 stackaroos and name back to addr_publisher.
         // assert recv_addr sent ==, <=, or >= 100 stackaroos
-        for (_i, pass_condition) in [
+        for pass_condition in [
             FungibleConditionCode::SentEq,
             FungibleConditionCode::SentGe,
             FungibleConditionCode::SentLe,
         ]
         .iter()
-        .enumerate()
         {
             let name = Value::buff_from(next_recv_name.to_be_bytes().to_vec()).unwrap();
             next_recv_name += 1;
@@ -4851,13 +4846,12 @@ pub mod test {
         // mint 100 stackaroos and the name to recv_addr, but neglect to set a fungible post-condition.
         // assert contract sent ==, <=, or >= 100 stackaroos, and that the name was removed from
         // the contract
-        for (_i, fail_condition) in [
+        for fail_condition in [
             FungibleConditionCode::SentEq,
             FungibleConditionCode::SentGe,
             FungibleConditionCode::SentLe,
         ]
         .iter()
-        .enumerate()
         {
             let name = Value::buff_from(next_name.to_be_bytes().to_vec()).unwrap();
             next_name += 1;
@@ -4897,13 +4891,12 @@ pub mod test {
         // mint 100 stackaroos and the name to recv_addr, but neglect to set a non-fungible post-condition.
         // assert contract sent ==, <=, or >= 100 stackaroos, and that the name was removed from
         // the contract
-        for (_i, fail_condition) in [
+        for fail_condition in [
             FungibleConditionCode::SentEq,
             FungibleConditionCode::SentGe,
             FungibleConditionCode::SentLe,
         ]
         .iter()
-        .enumerate()
         {
             let name = Value::buff_from(next_name.to_be_bytes().to_vec()).unwrap();
             next_name += 1;
@@ -4943,13 +4936,12 @@ pub mod test {
         // recv_addr sends 100 stackaroos and name back to addr_publisher, but forgets a fungible
         // post-condition.
         // assert recv_addr sent ==, <=, or >= 100 stackaroos
-        for (_i, fail_condition) in [
+        for fail_condition in [
             FungibleConditionCode::SentEq,
             FungibleConditionCode::SentGe,
             FungibleConditionCode::SentLe,
         ]
         .iter()
-        .enumerate()
         {
             let name = Value::buff_from(final_recv_name.to_be_bytes().to_vec()).unwrap();
 
@@ -4990,13 +4982,12 @@ pub mod test {
         // recv_addr sends 100 stackaroos and name back to addr_publisher, but forgets a non-fungible
         // post-condition.
         // assert recv_addr sent ==, <=, or >= 100 stackaroos
-        for (_i, fail_condition) in [
+        for fail_condition in [
             FungibleConditionCode::SentEq,
             FungibleConditionCode::SentGe,
             FungibleConditionCode::SentLe,
         ]
         .iter()
-        .enumerate()
         {
             let name = Value::buff_from(final_recv_name.to_be_bytes().to_vec()).unwrap();
 
@@ -6681,7 +6672,7 @@ pub mod test {
     ) -> Result<(u64, StacksTransactionReceipt), Error> {
         let epoch = clarity_block.get_epoch();
 
-        if !StacksBlock::validate_transactions_static_epoch(&vec![tx.clone()], epoch) {
+        if !StacksBlock::validate_transactions_static_epoch(&[tx.clone()], epoch) {
             let msg = format!(
                 "Invalid transaction {}: target epoch is not activated",
                 tx.txid()

@@ -1109,7 +1109,7 @@ impl Value {
                     .map(|(value, _did_sanitize)| value)
             })
             .collect();
-        let list_data = list_data_opt.ok_or_else(|| ClarityTypeError::ListTypeMismatch)?;
+        let list_data = list_data_opt.ok_or(ClarityTypeError::ListTypeMismatch)?;
         Ok(Value::Sequence(SequenceData::List(ListData {
             data: list_data,
             type_signature: type_sig,
@@ -1166,8 +1166,7 @@ impl Value {
                     // so from_str_radix only sees valid hex and never errors here.
                     let u = u32::from_str_radix(&scalar_value, 16)
                         .map_err(|_| ClarityTypeError::InvalidUtf8Encoding)?;
-                    let c =
-                        char::from_u32(u).ok_or_else(|| ClarityTypeError::InvalidUtf8Encoding)?;
+                    let c = char::from_u32(u).ok_or(ClarityTypeError::InvalidUtf8Encoding)?;
                     let mut encoded_char: Vec<u8> = vec![0; c.len_utf8()];
                     c.encode_utf8(&mut encoded_char[..]);
                     encoded_char
@@ -1481,7 +1480,7 @@ impl ListData {
         let max_len = self.type_signature.get_max_len() + other_seq.type_signature.get_max_len();
         for item in other_seq.data.into_iter() {
             let (item, _) = Value::sanitize_value(epoch, &entry_type, item)
-                .ok_or_else(|| ClarityTypeError::ListTypeMismatch)?;
+                .ok_or(ClarityTypeError::ListTypeMismatch)?;
             self.data.push(item);
         }
 
@@ -1863,7 +1862,12 @@ impl TupleData {
         })
     }
 
-    pub fn shallow_merge(mut base: TupleData, updates: TupleData) -> TupleData {
+    /// Merge `updates` into `base`, rejecting a merged tuple whose value size exceeds
+    /// `MAX_VALUE_SIZE` with [`ClarityTypeError::ValueTooLarge`].
+    pub fn shallow_merge(
+        mut base: TupleData,
+        updates: TupleData,
+    ) -> Result<TupleData, ClarityTypeError> {
         let TupleData {
             data_map,
             mut type_signature,
@@ -1871,8 +1875,8 @@ impl TupleData {
         for (name, value) in data_map.into_iter() {
             base.data_map.insert(name, value);
         }
-        base.type_signature.shallow_merge(&mut type_signature);
-        base
+        base.type_signature.shallow_merge(&mut type_signature)?;
+        Ok(base)
     }
 }
 

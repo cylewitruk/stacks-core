@@ -24,7 +24,7 @@ use stacks_common::types::chainstate::StacksBlockId;
 
 use super::common::{
     DbSnapshotSpec, TableCopySpec, TableCopySpecs, classify_hint, clone_schemas_from_source,
-    copied_rows, with_offline_write_session,
+    copied_rows, marf_err, with_offline_write_session,
 };
 use super::fork_storage::{collect_canonical_leaf_hashes, copy_canonical_fork_storage};
 use crate::burnchains::PoxConstants;
@@ -67,9 +67,9 @@ impl DbSnapshotSpec for IndexDbSnapshotSpec {
 
     fn bind_params(&self, bind: IndexBind) -> Result<Vec<Value>, Error> {
         match bind {
-            IndexBind::MaxRewardCycle => {
-                Ok(vec![Value::Integer(u64_to_sql(self.max_reward_cycle)?)])
-            }
+            IndexBind::MaxRewardCycle => Ok(vec![Value::Integer(
+                u64_to_sql(self.max_reward_cycle).map_err(marf_err)?,
+            )]),
         }
     }
 }

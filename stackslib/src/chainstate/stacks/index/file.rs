@@ -79,6 +79,7 @@ fn pwrite_all(fd: &fs::File, mut buf: &[u8], mut offset: u64) -> io::Result<()> 
 }
 
 use rusqlite::Connection;
+use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 
 use crate::chainstate::stacks::index::blob_layout::{self, BlobHeader};
 use crate::chainstate::stacks::index::inline_value::{self, InlineValue};
@@ -92,7 +93,6 @@ use crate::chainstate::stacks::index::{
     ReadTrieItem, ReadTrieNode,
 };
 use crate::chainstate::stacks::index::{NodePath, TrieLeaf};
-use crate::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 use crate::util_lib::db::sql_vacuum;
 
 /// Reader-thread count for the bulk header fan-out.

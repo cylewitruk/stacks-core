@@ -130,21 +130,20 @@ pub fn append(
 pub fn tuple_merge<'a>(
     mut args: Vec<ValueRef<'a>>,
     exec: &mut ExecutionState,
-    invoke: &InvocationContext,
+    _invoke: &InvocationContext,
 ) -> Result<ValueRef<'a>, VmExecutionError> {
     check_argument_count(2, &args)?;
     if !args
         .iter()
         .any(|value| matches!(value, ValueRef::Packed(_)))
     {
-        return super::tuples::tuple_merge(
-            args.into_iter()
-                .map(ValueRef::into_owned)
-                .collect::<Result<Vec<_>, _>>()?,
-            exec,
-            invoke,
-        )
-        .map(ValueRef::Owned);
+        let mut owned = args
+            .into_iter()
+            .map(ValueRef::into_owned)
+            .collect::<Result<Vec<_>, _>>()?;
+        let update = owned.pop().expect("checked arity");
+        let base = owned.pop().expect("checked arity");
+        return super::tuples::tuple_merge(base, update).map(ValueRef::Owned);
     }
     let update = args.pop().expect("checked arity");
     let base = args.pop().expect("checked arity");

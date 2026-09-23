@@ -4,6 +4,7 @@ members = [
     "stackslib",
     "crates/extent-ptrhash",
     "stacks-common",
+    "stacks-marf",
     "stacks-codec",
     "crates/stacks-transactions",
     "pox-locking",

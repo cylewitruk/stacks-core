@@ -21,7 +21,16 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, params, params_from_iter};
 
 use crate::chainstate::stacks::index::Error;
-use crate::util_lib::db::{sqlite_readonly_uri, sqlite_schema_objects};
+use crate::util_lib::db::{sqlite_readonly_uri, sqlite_schema_objects, Error as db_error};
+
+/// Convert shared SQLite errors to the MARF error reported by snapshot operations.
+pub fn marf_err(error: db_error) -> Error {
+    match error {
+        db_error::SqliteError(sqlite_error) => Error::SQLError(sqlite_error),
+        db_error::NotFoundError => Error::NotFoundError,
+        other => Error::CorruptionError(other.to_string()),
+    }
+}
 
 /// Build a [`DbSnapshotSpec::classify_hint`] string -- `"<fn>() in <file>"`,
 /// optionally with extra prose before the file -- from the spec function itself,
@@ -124,6 +133,7 @@ impl<'a, B> TableCopySpecs<'a, B> {
 
     /// The subset whose schema is cloned but no rows are copied
     /// ([`TableCopySource::SchemaOnly`]).
+    #[cfg(test)]
     pub fn schema_only(&self) -> Vec<&'static str> {
         self.iter()
             .filter(|s| matches!(s.source, TableCopySource::SchemaOnly))

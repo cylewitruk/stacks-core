@@ -716,10 +716,7 @@ impl SharedPackedValue {
         let TypeSignature::TupleType(mut update_schema) = update.logical_type()? else {
             return Err(PackedValueError::BorrowedView("expected tuple"));
         };
-        schema.shallow_merge(&mut update_schema);
-        if epoch.fixes_tuple_merge_size_check() {
-            schema.checked_value_size()?;
-        }
+        schema.shallow_merge(&mut update_schema)?;
         let fields = schema
             .get_type_map()
             .keys()
