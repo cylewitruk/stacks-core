@@ -5104,6 +5104,7 @@ dependencies = [
  "criterion 0.8.2",
  "libc",
  "rapidhash",
+ "serde",
  "stacks-profiler-macros",
  "trybuild",
 ]

@@ -195,15 +195,11 @@ pub fn profile(args: TokenStream, input: TokenStream) -> TokenStream {
     let attr_args = parse_macro_input!(args with Punctuated::<Meta, Comma>::parse_terminated);
     let args_vec: Vec<NestedMeta> = attr_args.into_iter().map(NestedMeta::Meta).collect();
 
-    let args: ProfileArgs<Option<String>, Option<usize>> = match ProfileArgs::from_list(&args_vec) {
+    let args = match ProfileArgs::from_list(&args_vec) {
         Ok(v) => v,
         Err(e) => return TokenStream::from(e.write_errors()),
     };
 
-    let selected: Option<String> = args.name.clone();
-    if !matches!(selected.as_deref(), Some("MARF lookup key" | "MARF lookup hash")) {
-        return input;
-    }
     let input_fn = parse_macro_input!(input as ItemFn);
     if let Some(async_token) = &input_fn.sig.asyncness {
         return syn::Error::new_spanned(
