@@ -1649,7 +1649,8 @@ pub struct TrieStorageTransientData<T: MarfTrieId> {
     cur_block_trie_offset: Option<u64>,
 
     /// Decoded roots and their hashes/patch depths, keyed by immutable committed block ID.
-    root_node_cache: ArrayLru<u32, (TrieNodeType, Option<TrieHash>, usize), 4>,
+    /// Kept off-stack because test and node setup can move several MARFs through nested calls.
+    root_node_cache: Box<ArrayLru<u32, (TrieNodeType, Option<TrieHash>, usize), 4>>,
     /// Whether committed root reads use the small LRU.
     root_node_cache_enabled: bool,
     /// Fully resolved immutable nodes shared across reopens, keyed by block hash and offset.
@@ -1731,7 +1732,7 @@ impl<T: MarfTrieId> Default for TrieStorageTransientData<T> {
             unconfirmed_block_id: None,
             cur_block_trie_offset: None,
             squash_info: None,
-            root_node_cache: ArrayLru::new(),
+            root_node_cache: Box::new(ArrayLru::new()),
             root_node_cache_enabled: true,
             resolved_patch_cache: SharedLru::new(16),
             resolved_patch_node: None,
