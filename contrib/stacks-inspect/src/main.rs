@@ -33,7 +33,7 @@ use stackslib::chainstate::stacks::{
     StacksTransactionSigner, TransactionAnchorMode, TransactionAuth,
     TransactionAuthVerificationMode, TransactionPayload, TransactionVersion,
 };
-use stackslib::config::{Config, ConfigFile};
+use stackslib::config::{Config, ConfigFile, DEFAULT_MAINNET_CONFIG};
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_arch = "arm")))]
 use tikv_jemallocator::Jemalloc;
 
@@ -294,10 +294,11 @@ fn open_nakamoto_chainstate_dbs(
     let chain_state_path = format!("{chainstate_dir}/{dirname}/chainstate/");
     let sort_db_path = format!("{chainstate_dir}/{dirname}/burnchain/sortition/");
 
-    let sort_db = SortitionDB::open(&sort_db_path, true, pox_constants, None)
+    let sort_db = SortitionDB::open(&sort_db_path, true, pox_constants, Some(inspect_marf_opts()))
         .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
 
-    let (chain_state, _) = StacksChainState::open(mainnet, chain_id, &chain_state_path, None)
+    let (chain_state, _) =
+        StacksChainState::open(mainnet, chain_id, &chain_state_path, Some(inspect_marf_opts()))
         .expect("Failed to open stacks chain state");
 
     (sort_db, chain_state)
@@ -352,6 +353,13 @@ fn build_common_opts(cli: &Cli) -> CommonOpts {
 }
 
 #[cfg_attr(test, mutants::skip)]
+/// Use the node's optimized MARF settings for direct inspection commands.
+fn inspect_marf_opts() -> MARFOpenOpts {
+    let mut opts = DEFAULT_MAINNET_CONFIG.node.get_marf_opts();
+    opts.external_blobs = true;
+    opts
+}
+
 fn main() {
     let cli = Cli::parse();
     let common_opts = build_common_opts(&cli);
@@ -572,8 +580,7 @@ fn main() {
             }
 
             let marf_bhh = StacksBlockId::from_hex(&block_id_hash).expect("Bad MARF block hash");
-            let mut marf_opts = MARFOpenOpts::default();
-            marf_opts.external_blobs = true;
+            let marf_opts = inspect_marf_opts();
             let mut marf = MARF::from_path(&marf_path, marf_opts).expect("Failed to open MARF");
             let value_opt = marf.get(&marf_bhh, &key).expect("Failed to read MARF");
 
@@ -610,8 +617,7 @@ fn main() {
             let consensustip = ConsensusHash::from_hex(&consensus_hash).unwrap();
             let itip = StacksBlockHeader::make_index_block_hash(&consensustip, &tip);
 
-            let mut marf_opts = MARFOpenOpts::default();
-            marf_opts.external_blobs = true;
+            let marf_opts = inspect_marf_opts();
             let mut marf = MARF::from_path(&marf_path, marf_opts).unwrap();
             let res = marf.get(&itip, &key).expect("MARF error.");
             match res {
@@ -895,8 +901,13 @@ fn main() {
             let index_block_hash = StacksBlockId::from_hex(&block_hash).unwrap();
             let chain_state_path = format!("{}/mainnet/chainstate/", chain_state_dir);
 
-            let (chainstate, _) =
-                StacksChainState::open(true, CHAIN_ID_MAINNET, &chain_state_path, None).unwrap();
+            let (chainstate, _) = StacksChainState::open(
+                true,
+                CHAIN_ID_MAINNET,
+                &chain_state_path,
+                Some(inspect_marf_opts()),
+            )
+            .unwrap();
 
             let (consensus_hash, block_hash) = chainstate
                 .get_block_header_hashes(&index_block_hash)
@@ -970,12 +981,21 @@ fn main() {
             let sort_db_path = format!("{}/mainnet/burnchain/sortition", working_dir);
             let chain_state_path = format!("{}/mainnet/chainstate/", working_dir);
 
-            let sort_db =
-                SortitionDB::open(&sort_db_path, false, PoxConstants::mainnet_default(), None)
-                    .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
+            let sort_db = SortitionDB::open(
+                &sort_db_path,
+                false,
+                PoxConstants::mainnet_default(),
+                Some(inspect_marf_opts()),
+            )
+            .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
             let chain_id = CHAIN_ID_MAINNET;
-            let (chain_state, _) = StacksChainState::open(true, chain_id, &chain_state_path, None)
-                .expect("Failed to open stacks chain state");
+            let (chain_state, _) = StacksChainState::open(
+                true,
+                chain_id,
+                &chain_state_path,
+                Some(inspect_marf_opts()),
+            )
+            .expect("Failed to open stacks chain state");
             let chain_tip = SortitionDB::get_canonical_burn_chain_tip(sort_db.conn())
                 .expect("Failed to get sortition chain tip");
 
@@ -1002,12 +1022,21 @@ fn main() {
             let sort_db_path = format!("{}/mainnet/burnchain/sortition", working_dir);
             let chain_state_path = format!("{}/mainnet/chainstate/", working_dir);
 
-            let sort_db =
-                SortitionDB::open(&sort_db_path, false, PoxConstants::mainnet_default(), None)
-                    .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
+            let sort_db = SortitionDB::open(
+                &sort_db_path,
+                false,
+                PoxConstants::mainnet_default(),
+                Some(inspect_marf_opts()),
+            )
+            .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
             let chain_id = CHAIN_ID_MAINNET;
-            let (chain_state, _) = StacksChainState::open(true, chain_id, &chain_state_path, None)
-                .expect("Failed to open stacks chain state");
+            let (chain_state, _) = StacksChainState::open(
+                true,
+                chain_id,
+                &chain_state_path,
+                Some(inspect_marf_opts()),
+            )
+            .expect("Failed to open stacks chain state");
             let chain_tip = SortitionDB::get_canonical_burn_chain_tip(sort_db.conn())
                 .expect("Failed to get sortition chain tip");
 
@@ -1207,7 +1236,7 @@ fn main() {
                 &sortition_db_path,
                 false,
                 PoxConstants::mainnet_default(),
-                None,
+                Some(inspect_marf_opts()),
             )
             .unwrap_or_else(|_| panic!("Failed to open {}", sortition_db_path));
             let chain_tip = SortitionDB::get_canonical_sortition_tip(sort_db.conn())
@@ -1300,10 +1329,20 @@ pub fn tip_mine(working_dir: &str, event_log: &str, mine_tip_height: u64, max_tx
     let events_file = event_log;
     let mine_max_txns = max_txns;
 
-    let sort_db = SortitionDB::open(&sort_db_path, false, PoxConstants::mainnet_default(), None)
+    let sort_db = SortitionDB::open(
+        &sort_db_path,
+        false,
+        PoxConstants::mainnet_default(),
+        Some(inspect_marf_opts()),
+    )
         .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
     let chain_id = CHAIN_ID_MAINNET;
-    let mut chain_state = StacksChainState::open(true, chain_id, &chain_state_path, None)
+    let mut chain_state = StacksChainState::open(
+        true,
+        chain_id,
+        &chain_state_path,
+        Some(inspect_marf_opts()),
+    )
         .expect("Failed to open stacks chain state")
         .0;
     let chain_tip = SortitionDB::get_canonical_burn_chain_tip(sort_db.conn())
@@ -1525,13 +1564,19 @@ fn analyze_sortition_mev(
         i += 2;
     }
 
-    let mut sortdb =
-        SortitionDB::open(sortdb_path, true, PoxConstants::mainnet_default(), None).unwrap();
+    let mut sortdb = SortitionDB::open(
+        sortdb_path,
+        true,
+        PoxConstants::mainnet_default(),
+        Some(inspect_marf_opts()),
+    )
+    .unwrap();
     sortdb.dryrun = true;
     let burnchain = Burnchain::new(burnchaindb_path, "bitcoin", "mainnet", None).unwrap();
     let burnchaindb = BurnchainDB::connect(burnchaindb_path, &burnchain, true).unwrap();
     let (mut chainstate, _) =
-        StacksChainState::open(true, 0x00000001, chainstate_path, None).unwrap();
+        StacksChainState::open(true, 0x00000001, chainstate_path, Some(inspect_marf_opts()))
+            .unwrap();
 
     let mut wins_epoch2 = BTreeMap::new();
     let mut wins_epoch3 = BTreeMap::new();

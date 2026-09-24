@@ -334,7 +334,7 @@ pub fn command_validate_block(args: &ValidateBlockArgs, conf: Option<&Config>) {
         conf.is_mainnet(),
         conf.burnchain.chain_id,
         &chain_state_path,
-        None,
+        Some(conf.node.get_marf_opts()),
     )
     .unwrap_or_else(|e| {
         eprintln!("Failed to open chainstate at {chain_state_path}: {e}");
@@ -430,7 +430,7 @@ fn open_validation_dbs(db_path: &str, conf: &Config) -> (StacksChainState, Sorti
         conf.is_mainnet(),
         conf.burnchain.chain_id,
         &chain_state_path,
-        None,
+        Some(conf.node.get_marf_opts()),
     )
     .unwrap_or_else(|e| {
         eprintln!("Failed to open chainstate at {chain_state_path}: {e:?}");
@@ -448,7 +448,7 @@ fn open_validation_dbs(db_path: &str, conf: &Config) -> (StacksChainState, Sorti
         burnchain.pox_constants.clone(),
         None,
         true,
-        None,
+        Some(conf.node.get_marf_opts()),
     )
     .unwrap_or_else(|e| {
         eprintln!("Failed to open sortition DB at {sort_db_path}: {e:?}");
@@ -582,13 +582,18 @@ pub fn command_try_mine(args: &TryMineArgs, conf: Option<&Config>) {
     let chain_state_path = format!("{db_path}/chainstate/");
 
     let burnchain = conf.get_burnchain();
-    let sort_db = SortitionDB::open(&sort_db_path, false, burnchain.pox_constants.clone(), None)
+    let sort_db = SortitionDB::open(
+        &sort_db_path,
+        false,
+        burnchain.pox_constants.clone(),
+        Some(conf.node.get_marf_opts()),
+    )
         .unwrap_or_else(|e| panic!("Failed to open {sort_db_path}: {e}"));
     let (chainstate, _) = StacksChainState::open(
         conf.is_mainnet(),
         conf.burnchain.chain_id,
         &chain_state_path,
-        None,
+        Some(conf.node.get_marf_opts()),
     )
     .unwrap_or_else(|e| panic!("Failed to open stacks chain state: {e}"));
     let chain_tip = SortitionDB::get_canonical_burn_chain_tip(sort_db.conn())
@@ -806,7 +811,7 @@ fn replay_mock_mined_block(db_path: &str, block: AssembledAnchorBlock, conf: Opt
         conf.is_mainnet(),
         conf.burnchain.chain_id,
         &chain_state_path,
-        None,
+        Some(conf.node.get_marf_opts()),
     )
     .unwrap();
 
@@ -821,7 +826,7 @@ fn replay_mock_mined_block(db_path: &str, block: AssembledAnchorBlock, conf: Opt
         burnchain.pox_constants.clone(),
         None,
         true,
-        None,
+        Some(conf.node.get_marf_opts()),
     )
     .unwrap();
     let sort_tx = sortdb.tx_begin_at_tip();
