@@ -1649,8 +1649,8 @@ pub struct TrieStorageTransientData<T: MarfTrieId> {
     cur_block_trie_offset: Option<u64>,
 
     /// Decoded roots and their hashes/patch depths, keyed by immutable committed block ID.
-    /// Kept off-stack because test and node setup can move several MARFs through nested calls.
-    root_node_cache: Box<ArrayLru<u32, (TrieNodeType, Option<TrieHash>, usize), 4>>,
+    /// Allocated on first use so disabled caches cost nothing and MARFs stay small on the stack.
+    root_node_cache: Option<Box<ArrayLru<u32, (TrieNodeType, Option<TrieHash>, usize), 4>>>,
     /// Whether committed root reads use the small LRU.
     root_node_cache_enabled: bool,
     /// Fully resolved immutable nodes shared across reopens, keyed by block hash and offset.
@@ -1732,7 +1732,7 @@ impl<T: MarfTrieId> Default for TrieStorageTransientData<T> {
             unconfirmed_block_id: None,
             cur_block_trie_offset: None,
             squash_info: None,
-            root_node_cache: Box::new(ArrayLru::new()),
+            root_node_cache: None,
             root_node_cache_enabled: true,
             resolved_patch_cache: SharedLru::new(16),
             resolved_patch_node: None,
@@ -1741,6 +1741,13 @@ impl<T: MarfTrieId> Default for TrieStorageTransientData<T> {
 }
 
 impl<T: MarfTrieId> TrieStorageTransientData<T> {
+    /// Invalidate cached committed roots if this view has allocated a cache.
+    fn clear_root_node_cache(&mut self) {
+        if let Some(cache) = self.root_node_cache.as_mut() {
+            cache.clear();
+        }
+    }
+
     /// Construct transient data targeting a specific block, with the given read/write flags.
     /// All stat counters start at zero and caches start empty.
     pub fn new(cur_block: T, cur_block_id: Option<u32>, readonly: bool, unconfirmed: bool) -> Self {
@@ -1786,7 +1793,7 @@ impl<T: MarfTrieId> TrieStorageTransientData<T> {
 
     fn set_squash_info(&mut self, squash_info: Option<SquashInfo>) {
         self.result_cache_control.invalidate();
-        self.root_node_cache.clear();
+        self.clear_root_node_cache();
         self.resolved_patch_cache.clear();
         self.squash_info = squash_info;
     }
@@ -2234,7 +2241,11 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
             && self.data.unconfirmed_block_id != Some(id)
             && clear_ptr == self.root_trieptr()
         {
-            let cached = self.data.root_node_cache.contains_key(&id);
+            let cache = self
+                .data
+                .root_node_cache
+                .get_or_insert_with(|| Box::new(ArrayLru::new()));
+            let cached = cache.contains_key(&id);
             #[cfg(feature = "marf-read-bench-counters")]
             read_bench::update(|c| {
                 if cached {
@@ -2257,13 +2268,9 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
                 )?;
                 let patch_depth = read.patch_depth;
                 let (node, hash) = read.into_owned_node()?;
-                self.data.root_node_cache.put(id, (node, hash, patch_depth));
+                cache.put(id, (node, hash, patch_depth));
             }
-            let (node, hash, patch_depth) = self
-                .data
-                .root_node_cache
-                .get(&id)
-                .expect("root was found or inserted");
+            let (node, hash, patch_depth) = cache.get(&id).expect("root was found or inserted");
             return Ok(ReadTrieNode::from_borrowed(TrieNodeRef::from(node), *hash)
                 .with_patch_depth(*patch_depth)
                 .with_transient_meta(TrieNodeTransientMeta::from_node(node)));
@@ -2597,9 +2604,10 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
     ///  but reusing the TrieFileStorage's existing SQLite Connection (avoiding the overhead of
     ///   `reopen_readonly`).
     pub fn reopen_connection(&self) -> Result<ReopenedTrieStorageConnection<'_, T>, Error> {
-        let mut data = TrieStorageTransientData {
+        let data = TrieStorageTransientData {
             uncommitted_writes: self.data.uncommitted_writes.clone(),
             squash_info: self.data.squash_info.clone(),
+            root_node_cache: self.data.root_node_cache.clone(),
             root_node_cache_enabled: self.data.root_node_cache_enabled,
             resolved_patch_cache: self.data.resolved_patch_cache.clone(),
             result_cache_capacity: self.data.result_cache_capacity,
@@ -2612,9 +2620,6 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
                 self.unconfirmed(),
             )
         };
-        data.root_node_cache
-            .as_mut()
-            .clone_from(self.data.root_node_cache.as_ref());
         // perf note: should we attempt to clone the cache
         let cache = BlockHashCache::new();
         let blobs = self
@@ -2866,9 +2871,10 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
         trace!("Make read-only view of TrieFileStorage: {}", &self.db_path);
 
         // TODO: borrow self.uncommitted_writes; don't copy them
-        let mut data = TrieStorageTransientData {
+        let data = TrieStorageTransientData {
             uncommitted_writes: self.data.uncommitted_writes.clone(),
             squash_info: self.data.squash_info.clone(),
+            root_node_cache: self.data.root_node_cache.clone(),
             root_node_cache_enabled: self.data.root_node_cache_enabled,
             resolved_patch_cache: self.data.resolved_patch_cache.clone(),
             result_cache_capacity: self.data.result_cache_capacity,
@@ -2881,9 +2887,6 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
                 self.unconfirmed(),
             )
         };
-        data.root_node_cache
-            .as_mut()
-            .clone_from(self.data.root_node_cache.as_ref());
 
         build_readonly_storage(
             &self.db_path,
@@ -2937,8 +2940,9 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
             &self.db_path
         );
 
-        let mut data = TrieStorageTransientData {
+        let data = TrieStorageTransientData {
             squash_info: self.data.squash_info.clone(),
+            root_node_cache: self.data.root_node_cache.clone(),
             root_node_cache_enabled: self.data.root_node_cache_enabled,
             resolved_patch_cache: self.data.resolved_patch_cache.clone(),
             result_cache_capacity: self.data.result_cache_capacity,
@@ -2946,9 +2950,6 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
             direct_hash_index: self.data.direct_hash_index.clone(),
             ..TrieStorageTransientData::new(T::sentinel(), None, true, self.unconfirmed())
         };
-        data.root_node_cache
-            .as_mut()
-            .clone_from(self.data.root_node_cache.as_ref());
 
         build_readonly_storage(
             self.db_path,
@@ -3060,7 +3061,7 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
                     if !self.unconfirmed() {
                         return Err(Error::UnconfirmedError);
                     }
-                    self.data.root_node_cache.clear();
+                    self.data.clear_root_node_cache();
                     self.data.resolved_patch_cache.clear();
                     trie_sql::write_trie_blob_to_unconfirmed(&self.db, &bhh, &buffer)?
                 }
@@ -3124,7 +3125,7 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
                 trie_sql::drop_lock(&self.db, bhh)
                     .expect("Corruption: Failed to drop the extended trie lock");
             }
-            self.data.root_node_cache.clear();
+            self.data.clear_root_node_cache();
             self.data.resolved_patch_cache.clear();
             self.data.uncommitted_writes = None;
             self.data.clear_block_id();
@@ -3141,7 +3142,7 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
                 .expect("Corruption: Failed to drop unconfirmed trie");
             trie_sql::drop_lock(&self.db, bhh)
                 .expect("Corruption: Failed to drop the extended trie lock");
-            self.data.root_node_cache.clear();
+            self.data.clear_root_node_cache();
             self.data.resolved_patch_cache.clear();
             self.data.uncommitted_writes = None;
             self.data.clear_block_id();
@@ -3275,7 +3276,7 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
 
         self.data.set_block(T::sentinel(), None);
 
-        self.data.root_node_cache.clear();
+        self.data.clear_root_node_cache();
         self.data.resolved_patch_cache.clear();
         self.data.uncommitted_writes = None;
         self.clear_cached_ancestor_hashes_bytes();
@@ -3579,7 +3580,7 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
     /// Return the number of cached committed roots.
     #[cfg(test)]
     pub fn root_node_cache_len(&self) -> usize {
-        self.data.root_node_cache.len()
+        self.data.root_node_cache.as_ref().map_or(0, |cache| cache.len())
     }
 
     /// Return whether the current committed block has a cached root.
@@ -3587,7 +3588,12 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
     pub fn root_node_cache_has_current_block(&self) -> bool {
         self.data
             .cur_block_id
-            .is_some_and(|id| self.data.root_node_cache.contains_key(&id))
+            .is_some_and(|id| {
+                self.data
+                    .root_node_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.contains_key(&id))
+            })
     }
 
     /// Read the Trie root node's hash from the block table.
