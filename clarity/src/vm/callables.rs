@@ -356,12 +356,13 @@ impl DefinedFunction {
             let ((name, type_sig), value) = arg;
 
             if value.has_packed_schema(type_sig) && !type_requires_callable_cast(type_sig) {
-                let binding = exact_packed_binding(value, type_sig, exec_state.epoch())?;
-                if context
-                    .variables
-                    .insert(name.clone(), binding)
-                    .is_some()
-                {
+                let binding = exact_packed_binding(
+                    value,
+                    type_sig,
+                    exec_state.epoch(),
+                    invoke_ctx.contract_context.get_clarity_version(),
+                )?;
+                if context.variables.insert(name.clone(), binding).is_some() {
                     return Err(RuntimeCheckErrorKind::NameAlreadyUsed(name.to_string()).into());
                 }
                 continue;
@@ -717,7 +718,12 @@ fn exact_packed_binding(
     value: ValueRef<'_>,
     type_sig: &TypeSignature,
     epoch: &StacksEpochId,
+    clarity_version: &ClarityVersion,
 ) -> Result<ValueCow, VmExecutionError> {
+    // Clarity 1 checks argument admission but does not sanitize its type bounds.
+    if *clarity_version < ClarityVersion::Clarity2 {
+        return Ok(value.into_cow());
+    }
     let needs_sanitization = epoch.sanitize_in_function_invocation()
         && matches!(
             type_sig,
@@ -910,15 +916,65 @@ mod test {
         );
         let encoded = PackedValue::encode(PackedValueVersion::V1, &value).unwrap();
         let shared = SharedPackedValue::copy_from(encoded.as_bytes(), &expected, &epoch).unwrap();
-        let binding = exact_packed_binding(ValueRef::from_shared(shared), &expected, &epoch).unwrap();
+        let binding = exact_packed_binding(
+            ValueRef::from_shared(shared),
+            &expected,
+            &epoch,
+            &ClarityVersion::Clarity2,
+        )
+        .unwrap();
         let legacy = Value::sanitize_value(&epoch, &expected, value).unwrap().0;
 
-        assert_eq!(binding.as_value_ref().size().unwrap(), legacy.size().unwrap());
+        assert_eq!(
+            binding.as_value_ref().size().unwrap(),
+            legacy.size().unwrap()
+        );
         assert_eq!(
             binding.as_value_ref().type_signature().unwrap(),
             TypeSignature::type_of(&legacy).unwrap()
         );
         assert!(matches!(binding, ValueCow::Packed(_)));
+    }
+
+    #[test]
+    fn exact_packed_list_argument_preserves_clarity1_bound() {
+        use crate::vm::types::codec::packed::{PackedValue, PackedValueVersion, SharedPackedValue};
+
+        let epoch = StacksEpochId::Epoch41;
+        let value =
+            Value::cons_list(vec![Value::UInt(1), Value::UInt(2), Value::UInt(3)], &epoch).unwrap();
+        let expected = TypeSignature::SequenceType(SequenceSubtype::ListType(
+            ListTypeData::new_list(TypeSignature::UIntType, 1000).unwrap(),
+        ));
+        let encoded = PackedValue::encode(PackedValueVersion::V1, &value).unwrap();
+        let shared = SharedPackedValue::copy_from(encoded.as_bytes(), &expected, &epoch).unwrap();
+
+        let clarity1 = exact_packed_binding(
+            ValueRef::from_shared(shared.clone()),
+            &expected,
+            &epoch,
+            &ClarityVersion::Clarity1,
+        )
+        .unwrap();
+        assert_eq!(
+            clarity1.as_value_ref().size().unwrap(),
+            expected.size().unwrap()
+        );
+        assert!(matches!(clarity1, ValueCow::Packed(_)));
+
+        let clarity2 = exact_packed_binding(
+            ValueRef::from_shared(shared),
+            &expected,
+            &epoch,
+            &ClarityVersion::Clarity2,
+        )
+        .unwrap();
+        let sanitized = Value::sanitize_value(&epoch, &expected, value).unwrap().0;
+        assert_eq!(
+            clarity2.as_value_ref().size().unwrap(),
+            sanitized.size().unwrap()
+        );
+        assert!(matches!(clarity2, ValueCow::Packed(_)));
     }
 
     #[test]
