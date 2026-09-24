@@ -36,7 +36,7 @@ use crate::vm::types::{
     CallableData, ListData, ListTypeData, OptionalData, PrincipalData, ResponseData, SequenceData,
     SequenceSubtype, TraitIdentifier, TupleData, TypeSignature,
 };
-use crate::vm::{LocalContext, Value, ValueRef, eval};
+use crate::vm::{LocalContext, Value, ValueCow, ValueRef, eval};
 
 type Native205CostInputFn = &'static dyn Fn(&[Value]) -> Result<u64, VmExecutionError>;
 
@@ -356,9 +356,10 @@ impl DefinedFunction {
             let ((name, type_sig), value) = arg;
 
             if value.has_packed_schema(type_sig) && !type_requires_callable_cast(type_sig) {
+                let binding = exact_packed_binding(value, type_sig, exec_state.epoch())?;
                 if context
                     .variables
-                    .insert(name.clone(), value.into_cow())
+                    .insert(name.clone(), binding)
                     .is_some()
                 {
                     return Err(RuntimeCheckErrorKind::NameAlreadyUsed(name.to_string()).into());
@@ -711,6 +712,39 @@ impl CallableType {
     }
 }
 
+/// Bind an exact-schema packed argument with the epoch's runtime sanitization semantics.
+fn exact_packed_binding(
+    value: ValueRef<'_>,
+    type_sig: &TypeSignature,
+    epoch: &StacksEpochId,
+) -> Result<ValueCow, VmExecutionError> {
+    let needs_sanitization = epoch.sanitize_in_function_invocation()
+        && matches!(
+            type_sig,
+            TypeSignature::TupleType(_)
+                | TypeSignature::SequenceType(SequenceSubtype::ListType(_))
+                | TypeSignature::OptionalType(_)
+                | TypeSignature::ResponseType(_)
+        );
+    if !needs_sanitization {
+        return Ok(value.into_cow());
+    }
+
+    // The declared schema can be wider than the value shape used by size-based costs.
+    let source = value.into_shared(epoch)?;
+    let sanitized = source
+        .clone()
+        .sanitize(epoch, type_sig)
+        .ok_or_else(|| {
+            RuntimeCheckErrorKind::TypeValueError(
+                Box::new(type_sig.clone()),
+                source.materialized_infallible().to_error_string(),
+            )
+        })?
+        .0;
+    Ok(ValueRef::from_shared(sanitized).into_cow())
+}
+
 // Implicitly cast principals to traits and traits to other traits as needed,
 // recursing into compound types. This function does not check for legality of
 // these casts, as that is done in the type-checker. Note: depth of recursion
@@ -850,6 +884,42 @@ mod test {
     use crate::vm::types::{
         QualifiedContractIdentifier, StandardPrincipalData, TupleTypeSignature,
     };
+
+    #[test]
+    fn exact_packed_tuple_argument_matches_legacy_sanitized_cost_size() {
+        use crate::vm::types::codec::packed::{PackedValue, PackedValueVersion, SharedPackedValue};
+        use crate::vm::types::signatures::{BufferLength, StringSubtype};
+
+        let epoch = StacksEpochId::Epoch41;
+        let name = ClarityName::from_literal("mime-type");
+        let value = Value::Tuple(
+            TupleData::from_data(vec![(
+                name.clone(),
+                Value::string_ascii_from_bytes(b"text/html".to_vec()).unwrap(),
+            )])
+            .unwrap(),
+        );
+        let expected = TypeSignature::TupleType(
+            TupleTypeSignature::try_from(vec![(
+                name,
+                TypeSignature::SequenceType(SequenceSubtype::StringType(StringSubtype::ASCII(
+                    BufferLength::try_from(64u32).unwrap(),
+                ))),
+            )])
+            .unwrap(),
+        );
+        let encoded = PackedValue::encode(PackedValueVersion::V1, &value).unwrap();
+        let shared = SharedPackedValue::copy_from(encoded.as_bytes(), &expected, &epoch).unwrap();
+        let binding = exact_packed_binding(ValueRef::from_shared(shared), &expected, &epoch).unwrap();
+        let legacy = Value::sanitize_value(&epoch, &expected, value).unwrap().0;
+
+        assert_eq!(binding.as_value_ref().size().unwrap(), legacy.size().unwrap());
+        assert_eq!(
+            binding.as_value_ref().type_signature().unwrap(),
+            TypeSignature::type_of(&legacy).unwrap()
+        );
+        assert!(matches!(binding, ValueCow::Packed(_)));
+    }
 
     #[test]
     fn test_implicit_cast() {
