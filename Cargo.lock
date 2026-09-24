@@ -5408,6 +5408,7 @@ dependencies = [
  "clap",
  "clarity 0.0.1",
  "clarity-cli",
+ "extent-ptrhash",
  "libstackerdb 0.0.1",
  "mutants",
  "regex",
@@ -5415,7 +5416,11 @@ dependencies = [
  "serde_json",
  "slog",
  "stacks-common 4.0.3",
+ "stacks-trie-format-v2",
+ "stacks-trie-format-v3",
+ "stacks-trie-format-v4",
  "stackslib 0.0.1",
+ "tempfile",
  "tikv-jemallocator",
 ]
 
@@ -5581,6 +5586,45 @@ dependencies = [
  "proptest",
  "stacks-codec",
  "stacks-common 4.0.3",
+]
+
+[[package]]
+name = "stacks-trie-format-v2"
+version = "0.1.0"
+dependencies = [
+ "clarity 0.0.1",
+ "memmap2",
+ "rusqlite",
+ "sha2 0.10.9",
+ "stacks-common 4.0.3",
+ "stackslib 0.0.1",
+ "tempfile",
+]
+
+[[package]]
+name = "stacks-trie-format-v3"
+version = "0.1.0"
+dependencies = [
+ "clarity 0.0.1",
+ "memmap2",
+ "rusqlite",
+ "sha2 0.10.9",
+ "stacks-common 4.0.3",
+ "stackslib 0.0.1",
+ "tempfile",
+]
+
+[[package]]
+name = "stacks-trie-format-v4"
+version = "0.1.0"
+dependencies = [
+ "clarity 0.0.1",
+ "memmap2",
+ "rusqlite",
+ "sha2 0.10.9",
+ "stacks-common 4.0.3",
+ "stackslib 0.0.1",
+ "tempfile",
 ]
 
 [[package]]

@@ -1,0 +1,15 @@
+[package]
+name = "stacks-trie-format-v4"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+blockstack_lib = { package = "stackslib", path = "../../stackslib" }
+clarity = { path = "../../clarity", features = ["rusqlite"] }
+stacks-common = { path = "../../stacks-common" }
+rusqlite = { workspace = true }
+memmap2 = "0.9"
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

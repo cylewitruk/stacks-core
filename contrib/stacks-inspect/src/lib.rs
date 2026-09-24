@@ -14,9 +14,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub mod cli;
+mod storage_prepare;
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::Path;
 use std::time::Instant;
 use std::{fs, io, process};
 
@@ -323,6 +325,10 @@ pub fn command_validate_block(args: &ValidateBlockArgs, conf: Option<&Config>) {
     });
 
     let conf = conf.unwrap_or(&DEFAULT_MAINNET_CONFIG);
+    storage_prepare::prepare_for_validation(Path::new(db_path)).unwrap_or_else(|e| {
+        eprintln!("Failed to prepare optimized chainstate at {db_path}: {e}");
+        process::exit(1);
+    });
     let chain_state_path = format!("{db_path}/chainstate/");
     let (chainstate, _) = StacksChainState::open(
         conf.is_mainnet(),

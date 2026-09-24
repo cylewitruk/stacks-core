@@ -140,6 +140,16 @@ validate-block <DATABASE_PATH> [--early-exit] [--ignore-costs] [MODE]
       naka-index-range [START] [END] Validate Nakamoto blocks by index (omit args to show count)
 ```
 
+On this optimized branch, `validate-block` first prepares the chainstate at
+`DATABASE_PATH/chainstate`. A legacy Clarity database is converted to the
+extent-backed side store, then to the published V4 trie format. Missing
+direct-addressed MARF hash indexes and the Clarity PtrHash base are built
+before validation opens the chainstate. Each conversion uses a resumable
+sibling directory and only replaces the active Clarity directory after its
+output is verified. Preparation needs substantial free space and an offline,
+writable chainstate copy; a failed step stops validation rather than falling
+back to legacy storage.
+
 ### Chain State Commands
 
 Chain state queries and replay.
