@@ -2597,10 +2597,9 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
     ///  but reusing the TrieFileStorage's existing SQLite Connection (avoiding the overhead of
     ///   `reopen_readonly`).
     pub fn reopen_connection(&self) -> Result<ReopenedTrieStorageConnection<'_, T>, Error> {
-        let data = TrieStorageTransientData {
+        let mut data = TrieStorageTransientData {
             uncommitted_writes: self.data.uncommitted_writes.clone(),
             squash_info: self.data.squash_info.clone(),
-            root_node_cache: self.data.root_node_cache.clone(),
             root_node_cache_enabled: self.data.root_node_cache_enabled,
             resolved_patch_cache: self.data.resolved_patch_cache.clone(),
             result_cache_capacity: self.data.result_cache_capacity,
@@ -2613,6 +2612,9 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
                 self.unconfirmed(),
             )
         };
+        data.root_node_cache
+            .as_mut()
+            .clone_from(self.data.root_node_cache.as_ref());
         // perf note: should we attempt to clone the cache
         let cache = BlockHashCache::new();
         let blobs = self
@@ -2864,10 +2866,9 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
         trace!("Make read-only view of TrieFileStorage: {}", &self.db_path);
 
         // TODO: borrow self.uncommitted_writes; don't copy them
-        let data = TrieStorageTransientData {
+        let mut data = TrieStorageTransientData {
             uncommitted_writes: self.data.uncommitted_writes.clone(),
             squash_info: self.data.squash_info.clone(),
-            root_node_cache: self.data.root_node_cache.clone(),
             root_node_cache_enabled: self.data.root_node_cache_enabled,
             resolved_patch_cache: self.data.resolved_patch_cache.clone(),
             result_cache_capacity: self.data.result_cache_capacity,
@@ -2880,6 +2881,9 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
                 self.unconfirmed(),
             )
         };
+        data.root_node_cache
+            .as_mut()
+            .clone_from(self.data.root_node_cache.as_ref());
 
         build_readonly_storage(
             &self.db_path,
@@ -2933,9 +2937,8 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
             &self.db_path
         );
 
-        let data = TrieStorageTransientData {
+        let mut data = TrieStorageTransientData {
             squash_info: self.data.squash_info.clone(),
-            root_node_cache: self.data.root_node_cache.clone(),
             root_node_cache_enabled: self.data.root_node_cache_enabled,
             resolved_patch_cache: self.data.resolved_patch_cache.clone(),
             result_cache_capacity: self.data.result_cache_capacity,
@@ -2943,6 +2946,9 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
             direct_hash_index: self.data.direct_hash_index.clone(),
             ..TrieStorageTransientData::new(T::sentinel(), None, true, self.unconfirmed())
         };
+        data.root_node_cache
+            .as_mut()
+            .clone_from(self.data.root_node_cache.as_ref());
 
         build_readonly_storage(
             self.db_path,
