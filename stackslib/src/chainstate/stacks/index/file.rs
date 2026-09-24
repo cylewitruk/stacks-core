@@ -1321,7 +1321,7 @@ impl TrieFile {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 mod testing {
     use rusqlite::params;
 
