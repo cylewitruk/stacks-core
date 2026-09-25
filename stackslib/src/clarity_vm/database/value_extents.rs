@@ -463,7 +463,7 @@ impl ValueExtentStore {
                 "extent generation disagrees with database marker",
             ));
         }
-        store.ptrhash = PtrHashBase::registered(db, &store.store_id, store.published_len)
+        store.ptrhash = PtrHashBase::registered(db, db_path, &store.store_id, store.published_len)
             .map_err(|error| storage_error(&error.to_string()))?;
         let enabled = writable && store.ptrhash.is_none();
         #[cfg(feature = "dedup-io-diagnostics")]

@@ -4,7 +4,7 @@
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::collections::HashMap;
 
@@ -103,13 +103,27 @@ fn fingerprint(key: &[u8; 40]) -> [u8; 4] {
 
 impl Base {
     /// Load only an explicitly activated, generation-matched immutable snapshot.
-    pub fn registered(db: &Connection, store_id: &[u8; 16], file_length: u64) -> Result<Option<Arc<Self>>> {
+    pub fn registered(db: &Connection, db_path: &Path, store_id: &[u8; 16], file_length: u64) -> Result<Option<Arc<Self>>> {
         let exists: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='clarity_ptrhash_base' AND type='table')", [], |r| r.get(0))?;
         if !exists { return Ok(None); }
         let (path, expected): (String, String) = db.query_row("SELECT path,manifest_sha256 FROM clarity_ptrhash_base WHERE singleton=1", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
         type Registry = HashMap<(PathBuf, String), Weak<Base>>;
         static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
-        let key = (PathBuf::from(path), expected);
+        let registered_path = PathBuf::from(path);
+        let resolved_path = if registered_path.is_absolute() {
+            registered_path
+        } else {
+            if registered_path.components().count() != 1
+                || !matches!(registered_path.components().next(), Some(Component::Normal(_)))
+            {
+                return Err(invalid("PtrHash relative path must be a sibling directory name"));
+            }
+            fs::canonicalize(db_path)?
+                .parent()
+                .ok_or_else(|| invalid("PtrHash database has no parent directory"))?
+                .join(registered_path)
+        };
+        let key = (resolved_path, expected);
         let mut registry = REGISTRY.get_or_init(Mutex::default).lock().map_err(|_| invalid("PtrHash registry poisoned"))?;
         registry.retain(|_, v| v.strong_count() != 0);
         let base = if let Some(base) = registry.get(&key).and_then(Weak::upgrade) { base } else {
@@ -272,8 +286,20 @@ pub fn build_and_activate(db_path: &Path, output: &Path) -> Result<()> {
     write_new(&partial.join("manifest.json"), &bytes)?; File::open(&partial)?.sync_all()?;
     fs::rename(&partial, output)?; File::open(output.parent().unwrap_or(Path::new(".")))?.sync_all()?;
     let path = fs::canonicalize(output)?;
+    let db_parent = fs::canonicalize(db_path)?
+        .parent()
+        .ok_or_else(|| invalid("PtrHash database has no parent directory"))?
+        .to_path_buf();
+    let registered_path = if path.parent() == Some(db_parent.as_path()) {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| invalid("non-UTF8 sibling index directory"))?
+            .to_owned()
+    } else {
+        path.to_str().ok_or_else(|| invalid("non-UTF8 index path"))?.to_owned()
+    };
     tx.execute_batch("CREATE TABLE clarity_extent_delta(hash BLOB PRIMARY KEY CHECK(length(hash)=40),offset INTEGER NOT NULL CHECK(offset>=48),length INTEGER NOT NULL CHECK(length>=88)) WITHOUT ROWID; CREATE TABLE clarity_ptrhash_base(singleton INTEGER PRIMARY KEY CHECK(singleton=1),path TEXT NOT NULL,manifest_sha256 TEXT NOT NULL);")?;
-    tx.execute("INSERT INTO clarity_ptrhash_base VALUES(1,?1,?2)", params![path.to_str().ok_or_else(|| invalid("non-UTF8 index path"))?, digest(&bytes)])?;
+    tx.execute("INSERT INTO clarity_ptrhash_base VALUES(1,?1,?2)", params![registered_path, digest(&bytes)])?;
     tx.commit()?;
     eprintln!("PTRHASH_BUILD complete keys={} seconds={:.3}",manifest.count,start.elapsed().as_secs_f64());
     Ok(())
@@ -309,14 +335,44 @@ mod tests {
         let (dir,path,rows) = fixture(); let index=dir.path().join("base");
         build_and_activate(&path,&index).unwrap();
         let db=Connection::open(&path).unwrap();
-        let base=Base::registered(&db,&[7;16],u64::MAX).unwrap().unwrap();
-        let second=Base::registered(&db,&[7;16],u64::MAX).unwrap().unwrap();
+        let base=Base::registered(&db,&path,&[7;16],u64::MAX).unwrap().unwrap();
+        let second=Base::registered(&db,&path,&[7;16],u64::MAX).unwrap().unwrap();
         assert!(Arc::ptr_eq(&base,&second));
         for (key,location) in rows { assert_eq!(base.candidate(&key).unwrap(),Some(location)); }
         assert!(base.candidate(&[255;40]).unwrap().is_none());
-        assert!(Base::registered(&db,&[8;16],u64::MAX).is_err());
-        assert!(Base::registered(&db,&[7;16],48).is_err());
+        assert!(Base::registered(&db,&path,&[8;16],u64::MAX).is_err());
+        assert!(Base::registered(&db,&path,&[7;16],48).is_err());
         assert!(build_and_activate(&path,&dir.path().join("second")).is_err());
+    }
+
+    /// A sibling registration opens after moving the whole database directory.
+    #[test]
+    fn sibling_generation_moves_with_database() {
+        let (dir, path, rows) = fixture();
+        build_and_activate(&path, &dir.path().join("base")).unwrap();
+        let db = Connection::open(&path).unwrap();
+        let registered: String = db.query_row(
+            "SELECT path FROM clarity_ptrhash_base WHERE singleton=1",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(registered, "base");
+        drop(db);
+
+        let destination = tempfile::tempdir().unwrap();
+        let moved = destination.path().join("moved");
+        fs::rename(dir.path(), &moved).unwrap();
+        let moved_db = moved.join("index.sqlite");
+        let db = Connection::open(&moved_db).unwrap();
+        let base = Base::registered(&db, &moved_db, &[7; 16], u64::MAX).unwrap().unwrap();
+        let (key, location) = rows[0];
+        assert_eq!(base.candidate(&key).unwrap(), Some(location));
+
+        // Previously published absolute registrations still open.
+        db.execute("UPDATE clarity_ptrhash_base SET path=?1", [moved.join("base").to_str().unwrap()]).unwrap();
+        assert!(Base::registered(&db, &moved_db, &[7; 16], u64::MAX).unwrap().is_some());
+        db.execute("UPDATE clarity_ptrhash_base SET path='../base'", []).unwrap();
+        assert!(Base::registered(&db, &moved_db, &[7; 16], u64::MAX).is_err());
     }
 
     /// Incomplete publication and corrupt metadata never become an active base.
@@ -325,11 +381,11 @@ mod tests {
         let (dir,path,_) = fixture(); let index=dir.path().join("base");
         fs::create_dir(index.with_extension("building")).unwrap();
         assert!(build_and_activate(&path,&index).is_err());
-        let db=Connection::open(&path).unwrap(); assert!(Base::registered(&db,&[7;16],u64::MAX).unwrap().is_none());
+        let db=Connection::open(&path).unwrap(); assert!(Base::registered(&db,&path,&[7;16],u64::MAX).unwrap().is_none());
         fs::remove_dir(index.with_extension("building")).unwrap();
         build_and_activate(&path,&index).unwrap();
         fs::write(index.join("manifest.json"),b"{}").unwrap();
-        assert!(Base::registered(&db,&[7;16],u64::MAX).is_err());
+        assert!(Base::registered(&db,&path,&[7;16],u64::MAX).is_err());
     }
 
     /// Size and function checks reject a damaged published generation on first open.
@@ -339,7 +395,7 @@ mod tests {
             let (dir,path,rows)=fixture(); let index=dir.path().join("base"); build_and_activate(&path,&index).unwrap();
             let shard=rows[0].0[0];
             fs::write(index.join(format!("{shard:02x}.{}",if function {"mphf"} else {"slots"})),b"bad").unwrap();
-            assert!(Base::registered(&Connection::open(path).unwrap(),&[7;16],u64::MAX).is_err());
+            assert!(Base::registered(&Connection::open(&path).unwrap(),&path,&[7;16],u64::MAX).is_err());
         }
     }
 }
