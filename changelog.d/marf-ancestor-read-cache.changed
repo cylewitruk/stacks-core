@@ -1,0 +1,1 @@
+Preserve the mutable trie result cache during deferred sealing and reuse the known current height when resolving ancestors.

@@ -16,9 +16,9 @@
 
 use stacks_common::types::chainstate::TrieHash;
 
+use crate::chainstate::stacks::index::MARFValue;
 use crate::chainstate::stacks::index::marf::MARFOpenOpts;
 use crate::chainstate::stacks::index::test::{make_test_insert_data, opts};
-use crate::chainstate::stacks::index::MARFValue;
 
 mod utils {
     use std::fs;
@@ -26,9 +26,10 @@ mod utils {
 
     use stacks_common::types::chainstate::{BlockHeaderHash, TrieHash};
 
-    use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MARF};
+    use crate::chainstate::stacks::index::marf::{MARF, MARFOpenOpts};
     use crate::chainstate::stacks::index::storage::{TrieFileStorage, TrieHashCalculationMode};
-    use crate::chainstate::stacks::index::test::merkle_test_marf;
+    use crate::chainstate::stacks::index::test::marf::MarfTestExt;
+    use crate::chainstate::stacks::index::test::verify_marf_merkle_proof;
     use crate::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue, TrieLeaf};
 
     /// Runs a MARF test using string keys.
@@ -52,8 +53,8 @@ mod utils {
                 if batch_size > 0 {
                     for chunk in block_data.chunks(batch_size) {
                         let keys: Vec<_> = chunk.iter().map(|(k, _)| k.clone()).collect();
-                        let values = chunk.iter().map(|(_, v)| v.clone()).collect();
-                        marf.insert_batch(&keys, values).unwrap();
+                        let values = chunk.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>();
+                        marf.insert_batch(&keys, &values).unwrap();
                     }
                 } else {
                     for (key, value) in block_data.iter() {
@@ -122,10 +123,11 @@ mod utils {
                 TrieHashCalculationMode::All => "all",
             };
             let compress_str = if marf_opts.compress { "com" } else { "unc" };
+            let mmap_str = if marf_opts.mmap { "mmap" } else { "nommap" };
 
             let test_dir = format!(
-                "/tmp/stacks-marf-tests/{}-{}-{}-{}",
-                test_name, hash_str, compress_str, batch_size
+                "/tmp/stacks-marf-tests/{}-{}-{}-{}-{}",
+                test_name, hash_str, compress_str, mmap_str, batch_size
             );
 
             if fs::metadata(&test_dir).is_ok() {
@@ -154,15 +156,15 @@ mod utils {
 
             let proof_block_data = &data[i / 2];
             test_debug!("Prove block {}", i / 2);
-
+            let mut root_to_block = None;
             for (key, value) in proof_block_data.iter() {
-                merkle_test_marf(
-                    &mut marf.borrow_storage_backend(),
+                root_to_block = Some(verify_marf_merkle_proof(
+                    &mut marf,
                     &block_header,
                     path_fn(key).as_bytes(),
                     value.as_bytes(),
-                    None,
-                );
+                    root_to_block.take(),
+                ));
             }
         }
 
@@ -171,13 +173,7 @@ mod utils {
             test_debug!("Read block {}", i);
             for (key, value) in block_data.iter() {
                 let start = SystemTime::now();
-                let leaf = MARF::get_path(
-                    &mut marf.borrow_storage_backend(),
-                    &last_block_header,
-                    &path_fn(key),
-                )
-                .unwrap()
-                .unwrap();
+                let leaf = marf.expect_path(&last_block_header, &path_fn(key));
 
                 total_read_time += start.elapsed().unwrap().as_nanos();
                 assert_eq!(leaf.data, TrieLeaf::from_value(&[], value.clone()).data);
@@ -203,12 +199,34 @@ mod utils {
 #[case::deferred_batch_64(&opts::OPTS_DEF_EXT, 64)]
 #[case::deferred_batch_67(&opts::OPTS_DEF_EXT, 67)]
 #[case::deferred_batch_128(&opts::OPTS_DEF_EXT, 128)]
+#[case::immediate_mmap_batch_0(&opts::OPTS_IMM_EXT_MMAP, 0)]
+#[case::immediate_mmap_batch_128(&opts::OPTS_IMM_EXT_MMAP, 128)]
+#[case::deferred_mmap_batch_0(&opts::OPTS_DEF_EXT_MMAP, 0)]
+#[case::deferred_mmap_batch_128(&opts::OPTS_DEF_EXT_MMAP, 128)]
 fn test_marf_128_128(#[case] marf_opts: &MARFOpenOpts, #[case] batch_size: usize) {
     let test_data = make_test_insert_data(128, 128);
     let root_hash =
         utils::run_test_with_string_keys(function_name_no_ns!(), &test_data, marf_opts, batch_size);
     assert_eq!(
         "a19887150b55ced50245a7c29b037e037dd99234ab9dda4a12c9c48fc698b47d",
+        root_hash.to_hex()
+    );
+}
+
+/// Tests MARF behavior using 15.500 inserts across 10 blocks.
+///
+/// The batch size is intentionally set above 10.000 to force batched insertion
+/// and exercise the `eta` batching logic.
+/// For all configurations, the resulting root hash must remain stable.
+#[rstest]
+#[case::immediate_batch_15500(&opts::OPTS_IMM_EXT, 15500)]
+#[case::immediate_mmap_batch_15500(&opts::OPTS_IMM_EXT_MMAP, 15500)]
+fn test_marf_15500_10(#[case] marf_opts: &MARFOpenOpts, #[case] batch_size: usize) {
+    let test_data = make_test_insert_data(15500, 10);
+    let root_hash =
+        utils::run_test_with_string_keys(function_name_no_ns!(), &test_data, marf_opts, batch_size);
+    assert_eq!(
+        "d579b5f6ac46ee7ac40376cf88dd4b1fef93e1963ccf82bd7c8b0aeb08d52bf9",
         root_hash.to_hex()
     );
 }
@@ -222,6 +240,8 @@ fn test_marf_128_128(#[case] marf_opts: &MARFOpenOpts, #[case] batch_size: usize
 #[case::immediate(&opts::OPTS_IMM_EXT)]
 #[case::immediate_compress(&opts::OPTS_IMM_EXT_COMP)]
 #[case::deferred_compress(&opts::OPTS_DEF_EXT_COMP)]
+#[case::immediate_mmap(&opts::OPTS_IMM_EXT_MMAP)]
+#[case::immediate_compress_mmap(&opts::OPTS_IMM_EXT_COMP_MMAP)]
 fn test_marf_compress_1_256(#[case] marf_opts: &MARFOpenOpts) {
     let test_data = make_test_insert_data(1, 256);
     let root_hash =
@@ -241,6 +261,8 @@ fn test_marf_compress_1_256(#[case] marf_opts: &MARFOpenOpts) {
 #[case::immediate(&opts::OPTS_IMM_EXT)]
 #[case::immediate_compress(&opts::OPTS_IMM_EXT_COMP)]
 #[case::deferred_compress(&opts::OPTS_DEF_EXT_COMP)]
+#[case::immediate_mmap(&opts::OPTS_IMM_EXT_MMAP)]
+#[case::immediate_compress_mmap(&opts::OPTS_IMM_EXT_COMP_MMAP)]
 fn test_marf_compressed_2048_1(#[case] marf_opts: &MARFOpenOpts) {
     let test_data = make_test_insert_data(2048, 1);
     let root_hash =
@@ -260,6 +282,8 @@ fn test_marf_compressed_2048_1(#[case] marf_opts: &MARFOpenOpts) {
 #[case::immediate_batch_8(&opts::OPTS_IMM_EXT, 8)]
 #[case::immediate_compress_batch_8(&opts::OPTS_IMM_EXT_COMP, 8)]
 #[case::immediate_compress_batch_5(&opts::OPTS_IMM_EXT_COMP, 5)]
+#[case::immediate_mmap_batch_8(&opts::OPTS_IMM_EXT_MMAP, 8)]
+#[case::immediate_compress_mmap_batch_5(&opts::OPTS_IMM_EXT_COMP_MMAP, 5)]
 fn test_marf_compress_8_256(#[case] marf_opts: &MARFOpenOpts, #[case] batch_size: usize) {
     let test_data = make_test_insert_data(8, 256);
     let root_hash =
@@ -279,6 +303,8 @@ fn test_marf_compress_8_256(#[case] marf_opts: &MARFOpenOpts, #[case] batch_size
 #[rstest]
 #[case::immediate_compress(&opts::OPTS_IMM_EXT_COMP)]
 #[case::deferred_compress(&opts::OPTS_DEF_EXT_COMP)]
+#[case::immediate_compress_mmap(&opts::OPTS_IMM_EXT_COMP_MMAP)]
+#[case::deferred_compress_mmap(&opts::OPTS_DEF_EXT_COMP_MMAP)]
 fn test_marf_patch_expansion(#[case] marf_opts: &MARFOpenOpts) {
     let test_data: Vec<_> = (0u8..=255u8)
         .map(|i| {

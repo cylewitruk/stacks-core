@@ -80,6 +80,10 @@ mod types;
 
 pub mod print;
 
+/// Optional replay writeback timing and work counters.
+pub mod diagnostics;
+pub mod state_cost;
+
 use state::*;
 pub use types::*;
 

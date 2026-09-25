@@ -1,0 +1,1 @@
+Overlap Clarity extent-index reads with one lazy, bounded read-ahead worker while preserving authoritative transaction lookups and MARF insertion order.

@@ -14,9 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp;
+use std::{cmp, mem};
 
-use clarity_types::types::RetainValuesError;
 use stacks_common::bounded_format;
 use stacks_common::types::StacksEpochId;
 
@@ -30,8 +29,14 @@ use crate::vm::errors::{
 use crate::vm::representations::SymbolicExpression;
 use crate::vm::types::TypeSignature::BoolType;
 use crate::vm::types::signatures::ListTypeData;
-use crate::vm::types::{ListData, SequenceData, TypeSignature, Value};
-use crate::vm::{LocalContext, apply_evaluated, eval, lookup_function};
+use crate::vm::types::{
+    ASCIIData, BuffData, CharType, ListData, SequenceData, SequenceSubtype, StringSubtype,
+    TypeSignature, UTF8Data, Value,
+};
+use crate::vm::{
+    LocalContext, PackedValueCow, ValueCow, ValueRef, apply_evaluated_refs, eval, lookup_function,
+    packed_vm_error,
+};
 
 pub fn list_cons(
     args: &[SymbolicExpression],
@@ -58,6 +63,168 @@ pub fn list_cons(
     Ok(value)
 }
 
+/// Evaluate a sequence expression while retaining packed storage behind one stable owner.
+fn eval_sequence_cow(
+    expression: &SymbolicExpression,
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<(ValueCow, usize, TypeSignature), VmExecutionError> {
+    let sequence = eval(expression, exec_state, invoke_ctx, context)?;
+    sequence.charge_clone_cost(exec_state)?;
+    let sequence_type = sequence.type_signature()?;
+    let Some(length) = sequence.sequence_len()? else {
+        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "Expected sequence: {sequence_type}"
+        ))
+        .into());
+    };
+    Ok((sequence.into_cow(), length, sequence_type))
+}
+
+/// Forward sequence cursor; UTF-8 keeps a byte offset instead of rescanning prefixes.
+struct SequenceCursor<'a> {
+    /// Owner retained by the caller for all projected elements.
+    sequence: &'a ValueCow,
+    /// Next logical element index.
+    index: usize,
+    /// Next byte boundary in packed UTF-8 text.
+    utf8_offset: usize,
+}
+
+impl<'a> SequenceCursor<'a> {
+    /// Start at the first element without decoding the sequence.
+    fn new(sequence: &'a ValueCow) -> Self {
+        Self {
+            sequence,
+            index: 0,
+            utf8_offset: 0,
+        }
+    }
+
+    /// Select the next element, preserving shared compound children.
+    fn next(&mut self) -> Result<ValueRef<'a>, VmExecutionError> {
+        if let ValueCow::Packed(packed) = self.sequence {
+            if packed.segmented_sequence_len().is_none()
+                && matches!(
+                    packed.expected(),
+                    TypeSignature::SequenceType(SequenceSubtype::StringType(StringSubtype::UTF8(
+                        _
+                    )))
+                )
+            {
+                let bytes = packed.as_view().as_sequence_bytes().expect("UTF-8 type");
+                let remaining = bytes
+                    .get(self.utf8_offset..)
+                    .filter(|bytes| !bytes.is_empty())
+                    .ok_or_else(|| {
+                        VmInternalError::Expect("UTF-8 cursor exceeded sequence length".into())
+                    })?;
+                // Admitted UTF-8: locate the following leading byte, inspecting only this scalar.
+                let width = remaining
+                    .iter()
+                    .skip(1)
+                    .position(|byte| byte & 0xc0 != 0x80)
+                    .map_or(remaining.len(), |offset| offset + 1);
+                let end = self.utf8_offset + width;
+                let value = Value::string_utf8_from_bytes(bytes[self.utf8_offset..end].to_vec())?;
+                self.utf8_offset = end;
+                self.index += 1;
+                return Ok(ValueRef::Owned(value));
+            }
+        }
+        let element = self
+            .sequence
+            .as_value_ref()
+            .sequence_element_ref(self.index)?
+            .ok_or_else(|| {
+                RuntimeCheckErrorKind::Unreachable(
+                    "sequence element index is shorter than its reported length".into(),
+                )
+            })?;
+        self.index += 1;
+        Ok(element)
+    }
+}
+
+/// Rebuild a filtered sequence while retaining its original maximum type bound.
+fn filtered_sequence(
+    sequence_type: TypeSignature,
+    values: Vec<Value>,
+) -> Result<Value, VmExecutionError> {
+    let TypeSignature::SequenceType(sequence_type) = sequence_type else {
+        return Err(VmInternalError::Expect("filtered value lost its sequence type".into()).into());
+    };
+
+    let value = match sequence_type {
+        SequenceSubtype::BufferType(_) => {
+            let mut data = Vec::with_capacity(values.len());
+            for value in values {
+                let Value::Sequence(SequenceData::Buffer(element)) = value else {
+                    return Err(VmInternalError::Expect(
+                        "buffer projection produced a non-buffer element".into(),
+                    )
+                    .into());
+                };
+                let [byte] = element.data.as_slice() else {
+                    return Err(VmInternalError::Expect(
+                        "buffer projection produced a non-unit element".into(),
+                    )
+                    .into());
+                };
+                data.push(*byte);
+            }
+            Value::Sequence(SequenceData::Buffer(BuffData { data }))
+        }
+        SequenceSubtype::StringType(StringSubtype::ASCII(_)) => {
+            let mut data = Vec::with_capacity(values.len());
+            for value in values {
+                let Value::Sequence(SequenceData::String(CharType::ASCII(element))) = value else {
+                    return Err(VmInternalError::Expect(
+                        "ASCII projection produced a non-ASCII element".into(),
+                    )
+                    .into());
+                };
+                let [byte] = element.data.as_slice() else {
+                    return Err(VmInternalError::Expect(
+                        "ASCII projection produced a non-unit element".into(),
+                    )
+                    .into());
+                };
+                data.push(*byte);
+            }
+            Value::Sequence(SequenceData::String(CharType::ASCII(ASCIIData { data })))
+        }
+        SequenceSubtype::StringType(StringSubtype::UTF8(_)) => {
+            let mut data = Vec::with_capacity(values.len());
+            for value in values {
+                let Value::Sequence(SequenceData::String(CharType::UTF8(mut element))) = value
+                else {
+                    return Err(VmInternalError::Expect(
+                        "UTF-8 projection produced a non-UTF-8 element".into(),
+                    )
+                    .into());
+                };
+                let [character] = element.data.as_mut_slice() else {
+                    return Err(VmInternalError::Expect(
+                        "UTF-8 projection produced a non-unit element".into(),
+                    )
+                    .into());
+                };
+                data.push(mem::take(character));
+            }
+            Value::Sequence(SequenceData::String(CharType::UTF8(UTF8Data { data })))
+        }
+        SequenceSubtype::ListType(type_signature) => {
+            Value::Sequence(SequenceData::List(ListData {
+                data: values,
+                type_signature,
+            }))
+        }
+    };
+    Ok(value)
+}
+
 /// Implements the Clarity `filter` function: `(filter func sequence)`.
 ///
 /// Applies a boolean predicate `func` to each element of `sequence`, returning a new
@@ -65,12 +232,12 @@ pub fn list_cons(
 /// The predicate must return a `bool`; a type error is raised otherwise.
 ///
 /// `args[0]` is the function name (atom) and `args[1]` is the sequence expression.
-pub fn special_filter(
+pub fn special_filter_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_argument_count(2, args)?;
 
     runtime_cost(ClarityCostFunction::Filter, exec_state, 0)?;
@@ -79,51 +246,67 @@ pub fn special_filter(
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
 
-    let mut sequence =
-        eval(&args[1], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
+    let (sequence, sequence_len, sequence_type) =
+        eval_sequence_cow(&args[1], exec_state, invoke_ctx, context)?;
     let function = lookup_function(function_name, exec_state, invoke_ctx)?;
 
-    match sequence {
-        Value::Sequence(sequence_data) => {
-            sequence = Value::Sequence(
-                sequence_data
-                    .try_retain(&mut |value: Value| -> Result<bool, VmExecutionError> {
-                        let filter_eval = apply_evaluated(
-                            &function,
-                            vec![value],
-                            exec_state,
-                            invoke_ctx,
-                            context,
-                        )?;
-                        if let Value::Bool(include) = filter_eval {
-                            Ok(include)
-                        } else {
-                            Err(RuntimeCheckErrorKind::TypeValueError(
-                                Box::new(BoolType),
-                                filter_eval.to_error_string(),
-                            )
-                            .into())
-                        }
-                    })
-                    .map_err(|e| match e {
-                        RetainValuesError::Internal(err) => {
-                            VmExecutionError::Internal(VmInternalError::Expect(format!(
-                                "Internal error occurred while filtering sequence value: {err}"
-                            )))
-                        }
-                        RetainValuesError::Predicate(vm_err) => vm_err,
-                    })?,
-            );
+    let projected = matches!(
+        (&sequence, &sequence_type),
+        (
+            ValueCow::Packed(_),
+            TypeSignature::SequenceType(SequenceSubtype::ListType(_))
+        )
+    );
+    let mut retained = Vec::with_capacity(if projected { 0 } else { sequence_len });
+    let mut indices = Vec::new();
+    let mut cursor = SequenceCursor::new(&sequence);
+    for index in 0..sequence_len {
+        let element = cursor.next()?;
+        let element = element.into_cow();
+        let filter_eval = apply_evaluated_refs(
+            &function,
+            vec![element.as_value_ref()],
+            exec_state,
+            invoke_ctx,
+            context,
+        )?;
+        match filter_eval.as_bool()? {
+            Some(true) => {
+                if projected {
+                    indices.push(index as u32);
+                } else {
+                    retained.push(element.as_value_ref().into_owned()?);
+                }
+            }
+            Some(false) => {}
+            _ => {
+                return Err(RuntimeCheckErrorKind::TypeValueError(
+                    Box::new(BoolType),
+                    filter_eval.as_ref().to_error_string(),
+                )
+                .into());
+            }
         }
-        _ => {
-            return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
-                "Expected sequence: {}",
-                TypeSignature::type_of(&sequence)?
-            ))
-            .into());
-        }
-    };
-    Ok(sequence)
+    }
+    if projected {
+        let ValueCow::Packed(source) = sequence else {
+            unreachable!("classified packed list");
+        };
+        return Ok(ValueRef::Packed(PackedValueCow::stored(
+            source.filtered_list(indices).map_err(packed_vm_error)?,
+        )));
+    }
+    filtered_sequence(sequence_type, retained).map(ValueRef::Owned)
+}
+
+/// Owned compatibility entry point for callers requiring a materialized filtered result.
+pub fn special_filter(
+    args: &[SymbolicExpression],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_filter_ref(args, exec_state, invoke_ctx, context)?.into_owned()
 }
 
 /// Implements the Clarity `fold` function: `(fold func sequence initial)`.
@@ -134,12 +317,12 @@ pub fn special_filter(
 ///
 /// `args[0]` is the function name (atom), `args[1]` is the sequence expression,
 /// and `args[2]` is the initial accumulator value.
-pub fn special_fold(
+pub fn special_fold_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_argument_count(3, args)?;
 
     runtime_cost(ClarityCostFunction::Fold, exec_state, 0)?;
@@ -149,23 +332,14 @@ pub fn special_fold(
         .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
 
     let function = lookup_function(function_name, exec_state, invoke_ctx)?;
-    let sequence = eval(&args[1], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
-    let initial = eval(&args[2], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
-
-    let Value::Sequence(seq) = sequence else {
-        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
-            "Expected sequence: {}",
-            TypeSignature::type_of(&sequence)?
-        ))
-        .into());
-    };
+    let (sequence, sequence_len, _) = eval_sequence_cow(&args[1], exec_state, invoke_ctx, context)?;
+    let initial = eval(&args[2], exec_state, invoke_ctx, context)?.into_static(exec_state)?;
 
     let mut acc = initial;
-    for element_result in seq {
-        let element = element_result.map_err(|_| {
-            VmInternalError::Expect("ERROR: Invalid sequence data successfully constructed".into())
-        })?;
-        acc = apply_evaluated(
+    let mut cursor = SequenceCursor::new(&sequence);
+    for _ in 0..sequence_len {
+        let element = cursor.next()?;
+        acc = apply_evaluated_refs(
             &function,
             vec![element, acc],
             exec_state,
@@ -174,6 +348,16 @@ pub fn special_fold(
         )?;
     }
     Ok(acc)
+}
+
+/// Owned compatibility entry point for callers outside reference dispatch.
+pub fn special_fold(
+    args: &[SymbolicExpression],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_fold_ref(args, exec_state, invoke_ctx, context)?.into_owned()
 }
 
 /// Implements the Clarity `map` function: `(map func sequence-0 ... sequence-n)`.
@@ -192,16 +376,16 @@ pub fn special_fold(
 ///   off-by-one in the shortest-sequence bound)
 /// - [`special_map_v400`]: from the fix onward (iterates exactly the length of
 ///   the shortest input sequence)
-pub fn special_map(
+pub fn special_map_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     if exec_state.epoch().fixes_map_off_by_one() {
-        special_map_v400(args, exec_state, invoke_ctx, context)
+        special_map_v400_ref(args, exec_state, invoke_ctx, context)
     } else {
-        special_map_v200(args, exec_state, invoke_ctx, context)
+        special_map_v200_ref(args, exec_state, invoke_ctx, context)
     }
 }
 
@@ -212,12 +396,12 @@ pub fn special_map(
 /// sequence bound (`apply_index > min_args_len` instead of `>=`), which is
 /// preserved here for consensus compatibility. The fixed behavior lives in
 /// [`special_map_v400`] and is gated to Epoch 4.0+.
-pub fn special_map_v200(
+pub fn special_map_v200_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_arguments_at_least(2, args)?;
 
     runtime_cost(ClarityCostFunction::Map, exec_state, args.len())?;
@@ -230,26 +414,14 @@ pub fn special_map_v200(
     // Let's consider a function f (f a b c ...)
     // We will first re-arrange our sequences [a0, a1, ...] [b0, b1, ...] [c0, c1, ...] ...
     // To get something like: [a0, b0, c0, ...] [a1, b1, c1, ...]
-    let mut mapped_func_args: Vec<Vec<Value>> = vec![];
+    let mut mapped_func_args: Vec<Vec<ValueRef<'static>>> = vec![];
     let mut min_args_len = usize::MAX;
     for map_arg in args[1..].iter() {
-        let sequence =
-            eval(map_arg, exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
-        let Value::Sequence(seq) = sequence else {
-            return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
-                "Expected sequence: {}",
-                TypeSignature::type_of(&sequence)?
-            ))
-            .into());
-        };
-        let seq_len = seq.len();
+        let (sequence, seq_len, _) = eval_sequence_cow(map_arg, exec_state, invoke_ctx, context)?;
         min_args_len = min_args_len.min(seq_len);
-        for (apply_index, element_result) in seq.into_iter().enumerate() {
-            let value = element_result.map_err(|_| {
-                VmInternalError::Expect(
-                    "ERROR: Invalid sequence data successfully constructed".into(),
-                )
-            })?;
+        let mut cursor = SequenceCursor::new(&sequence);
+        for apply_index in 0..seq_len {
+            let value = cursor.next()?.into_evaluated()?;
             if apply_index > min_args_len {
                 break;
             }
@@ -273,11 +445,11 @@ pub fn special_map_v200(
         } else {
             previous_len = Some(arguments.len());
         }
-        let res = apply_evaluated(&function, arguments, exec_state, invoke_ctx, context)?;
+        let res = apply_evaluated_refs(&function, arguments, exec_state, invoke_ctx, context)?;
         mapped_results.push(res);
     }
 
-    let value = Value::cons_list(mapped_results, exec_state.epoch())?;
+    let value = ValueRef::list_from(mapped_results, exec_state.epoch())?;
     Ok(value)
 }
 
@@ -287,12 +459,12 @@ pub fn special_map_v200(
 /// applies the function exactly `min_args_len` times — the length of the
 /// shortest input sequence — pulling one element from each iterator per call.
 /// This corrects the off-by-one in [`special_map_v200`].
-pub fn special_map_v400(
+pub fn special_map_v400_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_arguments_at_least(2, args)?;
 
     runtime_cost(ClarityCostFunction::Map, exec_state, args.len())?;
@@ -303,47 +475,28 @@ pub fn special_map_v400(
     let function = lookup_function(function_name, exec_state, invoke_ctx)?;
 
     // Evaluate each sequence argument into an iterator and record its length.
-    let mut args_iterators = Vec::with_capacity(args.len() - 1);
+    let mut sequences = Vec::with_capacity(args.len() - 1);
     let mut min_args_len = usize::MAX;
     for map_arg in args[1..].iter() {
-        let sequence =
-            eval(map_arg, exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
-        let Value::Sequence(seq) = sequence else {
-            return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
-                "Expected sequence: {}",
-                TypeSignature::type_of(&sequence)?
-            ))
-            .into());
-        };
-        let args_iter = seq.into_iter();
-        min_args_len = min_args_len.min(args_iter.len());
-        args_iterators.push(args_iter);
+        let (sequence, length, _) = eval_sequence_cow(map_arg, exec_state, invoke_ctx, context)?;
+        min_args_len = min_args_len.min(length);
+        sequences.push(sequence);
     }
+
+    let mut cursors: Vec<_> = sequences.iter().map(SequenceCursor::new).collect();
 
     // Apply the function element-wise, stopping at the shortest sequence.
     let mut mapped_results = Vec::with_capacity(min_args_len);
     for _ in 0..min_args_len {
-        let mut call_args = Vec::with_capacity(args_iterators.len());
-        for iter in args_iterators.iter_mut() {
-            let value = iter
-                .next()
-                .ok_or_else(|| {
-                    RuntimeCheckErrorKind::Unreachable(
-                        "iterator can't be shorter than min len".into(),
-                    )
-                })?
-                .map_err(|_| {
-                    VmInternalError::Expect(
-                        "ERROR: Invalid sequence data successfully constructed".into(),
-                    )
-                })?;
-            call_args.push(value);
+        let mut call_args = Vec::with_capacity(sequences.len());
+        for cursor in &mut cursors {
+            call_args.push(cursor.next()?);
         }
-        let res = apply_evaluated(&function, call_args, exec_state, invoke_ctx, context)?;
+        let res = apply_evaluated_refs(&function, call_args, exec_state, invoke_ctx, context)?;
         mapped_results.push(res);
     }
 
-    let value = Value::cons_list(mapped_results, exec_state.epoch())?;
+    let value = ValueRef::list_from(mapped_results, exec_state.epoch())?;
     Ok(value)
 }
 
@@ -364,7 +517,7 @@ pub fn special_append(
                 type_signature,
             } = list;
             let (entry_type, size) = type_signature.destruct();
-            let element_type = TypeSignature::type_of(element.as_ref())?;
+            let element_type = element.type_signature()?;
             runtime_cost(
                 ClarityCostFunction::Append,
                 exec_state,
@@ -617,43 +770,54 @@ pub fn special_concat_v400(
     Ok(result)
 }
 
-pub fn special_as_max_len(
+pub fn special_as_max_len_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_argument_count(2, args)?;
 
-    let mut sequence =
-        eval(&args[0], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
+    let sequence = eval(&args[0], exec_state, invoke_ctx, context)?;
+    sequence.charge_clone_cost(exec_state)?;
 
     runtime_cost(ClarityCostFunction::AsMaxLen, exec_state, 0)?;
 
     if let Some(Value::UInt(expected_len)) = args[1].match_literal_value() {
-        let sequence_len = match sequence {
-            Value::Sequence(ref sequence_data) => sequence_data.len() as u128,
-            _ => {
-                return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
-                    "Expected sequence: {}",
-                    TypeSignature::type_of(&sequence)?
-                ))
-                .into());
-            }
+        let Some(sequence_len) = sequence.sequence_len()? else {
+            return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+                "Expected sequence: {}",
+                sequence.type_signature()?
+            ))
+            .into());
         };
+        let sequence_len = sequence_len as u128;
         if sequence_len > *expected_len {
-            Ok(Value::none())
+            Ok(ValueRef::Owned(Value::none()))
         } else {
+            if let ValueRef::Packed(value) = sequence {
+                let mut value = value.into_shared();
+                if matches!(
+                    value.expected(),
+                    TypeSignature::SequenceType(SequenceSubtype::ListType(_))
+                ) {
+                    value = value
+                        .with_list_bound(*expected_len as u32)
+                        .map_err(crate::vm::composite_vm_error)?;
+                }
+                return ValueRef::from_shared(value).into_optional();
+            }
+            let mut sequence = sequence.into_owned()?;
             if let Value::Sequence(SequenceData::List(ref mut list)) = sequence {
                 list.type_signature.reduce_max_len(*expected_len as u32);
             }
-            Ok(Value::some(sequence)?)
+            Ok(ValueRef::Owned(Value::some(sequence)?))
         }
     } else {
         let actual_len = eval(&args[1], exec_state, invoke_ctx, context)?;
         Err(RuntimeCheckErrorKind::TypeError(
             Box::new(TypeSignature::UIntType),
-            Box::new(TypeSignature::type_of(actual_len.as_ref())?),
+            Box::new(actual_len.type_signature()?),
         )
         .into())
     }
@@ -670,6 +834,20 @@ pub fn native_len(sequence: Value) -> Result<Value, VmExecutionError> {
     }
 }
 
+/// Return a sequence length without materializing packed storage.
+pub fn native_len_ref(sequence: ValueRef<'_>) -> Result<ValueRef<'_>, VmExecutionError> {
+    sequence
+        .sequence_len()?
+        .map(|len| ValueRef::Owned(Value::UInt(len as u128)))
+        .ok_or_else(|| {
+            RuntimeCheckErrorKind::Unreachable(bounded_format!(
+                "Expected sequence: {}",
+                sequence.as_ref()
+            ))
+            .into()
+        })
+}
+
 pub fn native_index_of(sequence: Value, to_find: Value) -> Result<Value, VmExecutionError> {
     if let Value::Sequence(sequence_data) = sequence {
         match sequence_data.contains(to_find)? {
@@ -683,6 +861,75 @@ pub fn native_index_of(sequence: Value, to_find: Value) -> Result<Value, VmExecu
         ))
         .into())
     }
+}
+
+/// Search a sequence without materializing its packed container.
+pub fn native_index_of_ref<'value>(
+    sequence: ValueRef<'value>,
+    to_find: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    let sequence_type = sequence.type_signature()?;
+    let Some(length) = sequence.sequence_len()? else {
+        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "Expected sequence: {sequence_type}"
+        ))
+        .into());
+    };
+    let TypeSignature::SequenceType(sequence_type) = sequence_type else {
+        unreachable!("sequence_len accepted a non-sequence type")
+    };
+    let expected = match sequence_type {
+        SequenceSubtype::ListType(_) => None,
+        SequenceSubtype::BufferType(_) => Some(TypeSignature::BUFFER_MIN),
+        SequenceSubtype::StringType(StringSubtype::ASCII(_)) => {
+            Some(TypeSignature::STRING_ASCII_MIN)
+        }
+        SequenceSubtype::StringType(StringSubtype::UTF8(_)) => Some(TypeSignature::STRING_UTF8_MIN),
+    };
+    let unit_compatible = if let Some(expected) = expected {
+        let actual = to_find.type_signature()?;
+        if mem::discriminant(&actual) != mem::discriminant(&expected) {
+            return Err(RuntimeCheckErrorKind::TypeValueError(
+                Box::new(expected),
+                to_find.as_ref().to_error_string(),
+            )
+            .into());
+        }
+        // The sequence subtype, not its maximum length, determines needle compatibility.
+        let same_kind = match (&expected, &actual) {
+            (
+                TypeSignature::SequenceType(SequenceSubtype::BufferType(_)),
+                TypeSignature::SequenceType(SequenceSubtype::BufferType(_)),
+            ) => true,
+            (
+                TypeSignature::SequenceType(SequenceSubtype::StringType(a)),
+                TypeSignature::SequenceType(SequenceSubtype::StringType(b)),
+            ) => mem::discriminant(a) == mem::discriminant(b),
+            _ => false,
+        };
+        if !same_kind {
+            return Err(RuntimeCheckErrorKind::TypeValueError(
+                Box::new(expected),
+                to_find.as_ref().to_error_string(),
+            )
+            .into());
+        }
+        to_find.sequence_len()? == Some(1)
+    } else {
+        true
+    };
+    if !unit_compatible {
+        return Ok(ValueRef::Owned(Value::none()));
+    }
+
+    let sequence = sequence.into_cow();
+    let mut cursor = SequenceCursor::new(&sequence);
+    for index in 0..length {
+        if cursor.next()?.value_eq(&to_find)? {
+            return Ok(ValueRef::Owned(Value::some(Value::UInt(index as u128))?));
+        }
+    }
+    Ok(ValueRef::Owned(Value::none()))
 }
 
 pub fn native_element_at(sequence: Value, index: Value) -> Result<Value, VmExecutionError> {
@@ -719,49 +966,110 @@ pub fn native_element_at(sequence: Value, index: Value) -> Result<Value, VmExecu
     }
 }
 
+/// Retain a selected packed child behind an optional wrapper without copying its payload.
+pub fn native_element_at_ref<'value>(
+    sequence: ValueRef<'value>,
+    index: ValueRef<'value>,
+) -> Result<ValueRef<'value>, VmExecutionError> {
+    let Some(index) = index.as_uint()? else {
+        return Err(RuntimeCheckErrorKind::TypeValueError(
+            Box::new(TypeSignature::UIntType),
+            index.as_ref().to_error_string(),
+        )
+        .into());
+    };
+    let Ok(index) = usize::try_from(index) else {
+        return Ok(ValueRef::Owned(Value::none()));
+    };
+    match sequence.sequence_element_ref(index)? {
+        Some(value) => value.into_optional(),
+        None => Ok(ValueRef::Owned(Value::none())),
+    }
+}
+
+/// Retain a packed range, materializing only when legacy child sanitization requires it.
+fn slice_sequence(
+    sequence: ValueRef<'_>,
+    epoch: &StacksEpochId,
+    left: usize,
+    right: usize,
+) -> Result<ValueRef<'static>, VmExecutionError> {
+    if let ValueRef::Packed(packed) = sequence {
+        if let Some(projected) = packed
+            .sliced_sequence(left, right)
+            .map_err(packed_vm_error)?
+        {
+            return Ok(ValueRef::Packed(PackedValueCow::stored(projected)));
+        }
+        // Only heterogeneous list ranges can require the legacy sanitization boundary.
+        let owner = ValueCow::Packed(packed.into_shared());
+        let mut cursor = SequenceCursor::new(&owner);
+        cursor.index = left;
+        let values = (left..right)
+            .map(|_| cursor.next()?.into_owned())
+            .collect::<Result<Vec<_>, VmExecutionError>>()?;
+        return Ok(ValueRef::Owned(Value::cons_list(values, epoch)?));
+    }
+
+    let Value::Sequence(sequence) = sequence.into_owned()? else {
+        return Err(VmInternalError::Expect("slice requires a sequence".into()).into());
+    };
+    sequence
+        .slice(epoch, left, right)
+        .map(ValueRef::Owned)
+        .map_err(VmExecutionError::from)
+}
+
 /// Executes the Clarity2 function `slice?`.
-pub fn special_slice(
+pub fn special_slice_ref(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
     context: &LocalContext,
-) -> Result<Value, VmExecutionError> {
+) -> Result<ValueRef<'static>, VmExecutionError> {
     check_argument_count(3, args)?;
 
-    let seq = eval(&args[0], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
+    let seq = eval(&args[0], exec_state, invoke_ctx, context)?;
+    seq.charge_clone_cost(exec_state)?;
     let left_position = eval(&args[1], exec_state, invoke_ctx, context)?;
     let right_position = eval(&args[2], exec_state, invoke_ctx, context)?;
 
-    let sliced_seq_res: Result<Value, VmExecutionError> = (|| {
-        match (seq, left_position.as_ref(), right_position.as_ref()) {
-            (Value::Sequence(seq), Value::UInt(left_position), Value::UInt(right_position)) => {
-                let (left_position, right_position) = match (
-                    u32::try_from(*left_position),
-                    u32::try_from(*right_position),
-                ) {
-                    (Ok(left_position), Ok(right_position)) => (left_position, right_position),
-                    _ => return Ok(Value::none()),
-                };
+    let sliced_seq_res: Result<ValueRef<'static>, VmExecutionError> = (|| {
+        match (
+            seq.sequence_len()?,
+            left_position.as_uint()?,
+            right_position.as_uint()?,
+        ) {
+            (Some(length), Some(left_position), Some(right_position)) => {
+                let (left_position, right_position) =
+                    match (u32::try_from(left_position), u32::try_from(right_position)) {
+                        (Ok(left_position), Ok(right_position)) => (left_position, right_position),
+                        _ => return Ok(ValueRef::Owned(Value::none())),
+                    };
 
                 // Perform bound checks. Not necessary to check if positions are less than 0 since the vars are unsigned.
-                if left_position as usize >= seq.len() || right_position as usize > seq.len() {
-                    return Ok(Value::none());
+                if left_position as usize >= length || right_position as usize > length {
+                    return Ok(ValueRef::Owned(Value::none()));
                 }
                 if right_position < left_position {
-                    return Ok(Value::none());
+                    return Ok(ValueRef::Owned(Value::none()));
                 }
 
+                let TypeSignature::SequenceType(sequence_type) = seq.type_signature()? else {
+                    unreachable!("checked sequence");
+                };
                 runtime_cost(
                     ClarityCostFunction::Slice,
                     exec_state,
-                    (right_position - left_position) * seq.element_size()?,
+                    (right_position - left_position) * sequence_type.unit_type().size()?,
                 )?;
-                let seq_value = seq.slice(
+                let seq_value = slice_sequence(
+                    seq,
                     exec_state.epoch(),
                     left_position as usize,
                     right_position as usize,
                 )?;
-                Ok(Value::some(seq_value)?)
+                seq_value.into_optional()
             }
             _ => Err(RuntimeCheckErrorKind::Unreachable("Bad type construction".into()).into()),
         }
@@ -776,6 +1084,16 @@ pub fn special_slice(
     }
 }
 
+/// Owned compatibility entry point for callers requiring a materialized slice.
+pub fn special_slice(
+    args: &[SymbolicExpression],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_slice_ref(args, exec_state, invoke_ctx, context)?.into_owned()
+}
+
 pub fn special_replace_at(
     args: &[SymbolicExpression],
     exec_state: &mut ExecutionState,
@@ -785,7 +1103,7 @@ pub fn special_replace_at(
     check_argument_count(3, args)?;
 
     let seq = eval(&args[0], exec_state, invoke_ctx, context)?;
-    let seq_type = TypeSignature::type_of(seq.as_ref())?;
+    let seq_type = seq.type_signature()?;
 
     // runtime is the cost to copy over one element into its place
     runtime_cost(ClarityCostFunction::ReplaceAt, exec_state, seq_type.size()?)?;
@@ -837,4 +1155,44 @@ pub fn special_replace_at(
     }
     let new_element = new_element.clone_with_cost(exec_state)?;
     Ok(data.replace_at(exec_state.epoch(), index, new_element)?)
+}
+
+/// Materialize the shared result for legacy direct callers.
+pub fn special_map(
+    args: &[SymbolicExpression],
+    exec: &mut ExecutionState,
+    invoke: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_map_ref(args, exec, invoke, context)?.into_owned()
+}
+
+/// Materialize the shared result for legacy direct callers.
+pub fn special_map_v200(
+    args: &[SymbolicExpression],
+    exec: &mut ExecutionState,
+    invoke: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_map_v200_ref(args, exec, invoke, context)?.into_owned()
+}
+
+/// Materialize the shared result for legacy direct callers.
+pub fn special_map_v400(
+    args: &[SymbolicExpression],
+    exec: &mut ExecutionState,
+    invoke: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_map_v400_ref(args, exec, invoke, context)?.into_owned()
+}
+
+/// Materialize the shared bound-restricted result for legacy direct callers.
+pub fn special_as_max_len(
+    args: &[SymbolicExpression],
+    exec: &mut ExecutionState,
+    invoke: &InvocationContext,
+    context: &LocalContext,
+) -> Result<Value, VmExecutionError> {
+    special_as_max_len_ref(args, exec, invoke, context)?.into_owned()
 }

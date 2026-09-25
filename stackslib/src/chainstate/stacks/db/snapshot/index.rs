@@ -13,20 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Index-database copying for chainstate snapshots.
+
 use std::collections::HashSet;
 use std::time::Instant;
 
 use rusqlite::types::Value;
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use stacks_common::types::chainstate::StacksBlockId;
 
 use super::common::{
-    classify_hint, clone_schemas_from_source, copied_rows, marf_err, with_offline_write_session,
-    DbSnapshotSpec, TableCopySpec, TableCopySpecs, MARF_INFRA_TABLES,
+    DbSnapshotSpec, TableCopySpec, TableCopySpecs, classify_hint, clone_schemas_from_source,
+    copied_rows, marf_err, with_offline_write_session,
 };
 use super::fork_storage::{collect_canonical_leaf_hashes, copy_canonical_fork_storage};
 use crate::burnchains::PoxConstants;
-use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue};
+use crate::chainstate::stacks::index::{Error, MARF_SQLITE_TABLES, MARFValue, trie_sql};
 use crate::util_lib::db::{sqlite_open, u64_to_sql};
 
 /// The index snapshot's `?N` bind: the `signer_stats` reward-cycle bound.
@@ -38,7 +40,7 @@ pub enum IndexBind {
 
 /// The index (`index.sqlite`) side-table snapshot spec. `max_reward_cycle` feeds
 /// the `signer_stats` `?N` bind only -- the table-name set is independent of it.
-/// The MARF infra tables ([`MARF_INFRA_TABLES`]) are created by the squash
+/// The MARF infra tables ([`MARF_SQLITE_TABLES`]) are created by the squash
 /// engine, so they're recognized by the guard but not row-copied.
 struct IndexDbSnapshotSpec {
     max_reward_cycle: u64,
@@ -52,7 +54,7 @@ impl DbSnapshotSpec for IndexDbSnapshotSpec {
     }
 
     fn extra_recognized_tables() -> Vec<&'static str> {
-        MARF_INFRA_TABLES.to_vec()
+        MARF_SQLITE_TABLES.to_vec()
     }
 
     fn db_label() -> &'static str {

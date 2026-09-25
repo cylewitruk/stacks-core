@@ -1,3 +1,5 @@
+//! Chainstate-backed Clarity database implementations.
+
 use std::ops::{Deref, DerefMut};
 
 use clarity::types::chainstate::TrieHash;
@@ -8,35 +10,38 @@ use clarity::vm::database::sqlite::{
     sqlite_insert_metadata,
 };
 use clarity::vm::database::{
-    BurnStateDB, ClarityBackingStore, ClarityDatabase, HeadersDB, SpecialCaseHandler,
-    SqliteConnection, NULL_BURN_STATE_DB, NULL_HEADER_DB,
+    BurnStateDB, ClarityBackingStore, ClarityDatabase, HeadersDB, NULL_BURN_STATE_DB,
+    NULL_HEADER_DB, SpecialCaseHandler, SqliteConnection,
 };
 use clarity::vm::errors::{RuntimeError, VmExecutionError};
 use clarity::vm::types::{QualifiedContractIdentifier, TupleData};
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, params};
+use stacks_common::types::Address;
 use stacks_common::types::chainstate::{
     BlockHeaderHash, BurnchainHeaderHash, ConsensusHash, SortitionId, StacksAddress, StacksBlockId,
     TenureBlockId, VRFSeed,
 };
-use stacks_common::types::Address;
 use stacks_common::util::vrf::VRFProof;
 
 use crate::chainstate::burn::db::sortdb::{
-    get_ancestor_sort_id, SortitionDB, SortitionHandle, SortitionHandleConn, SortitionHandleTx,
+    SortitionDB, SortitionHandle, SortitionHandleConn, SortitionHandleTx, get_ancestor_sort_id,
 };
-use crate::chainstate::nakamoto::{keys as nakamoto_keys, StacksDBIndexed};
+use crate::chainstate::nakamoto::{StacksDBIndexed, keys as nakamoto_keys};
+use crate::chainstate::stacks::Error as ChainstateError;
 use crate::chainstate::stacks::boot::PoxStartCycleInfo;
 use crate::chainstate::stacks::db::accounts::MinerReward;
 use crate::chainstate::stacks::db::{ChainstateTx, StacksChainState, StacksDBConn, StacksDBTx};
-use crate::chainstate::stacks::index::marf::{MarfConnection, MARF};
 use crate::chainstate::stacks::index::ClarityMarfTrieId;
-use crate::chainstate::stacks::Error as ChainstateError;
-use crate::clarity_vm::special::handle_contract_call_special_cases;
+use crate::chainstate::stacks::index::marf::{MARF, MarfConnection};
+use crate::clarity_vm::special::handle_contract_call_special_cases_ref;
 use crate::core::{StacksEpoch, StacksEpochId};
 use crate::util_lib::db::{DBConn, Error as DBError, FromColumn, FromRow};
 
+pub mod binary_value_store;
 pub mod ephemeral;
 pub mod marf;
+pub mod value_extents;
+pub mod value_extents_migration;
 
 pub trait GetTenureStartId {
     fn get_tenure_block_id(
@@ -1323,7 +1328,7 @@ impl ClarityBackingStore for MemoryBackingStore {
     }
 
     fn get_cc_special_cases_handler(&self) -> Option<SpecialCaseHandler> {
-        Some(&handle_contract_call_special_cases)
+        Some(&handle_contract_call_special_cases_ref)
     }
 
     fn put_all_data(&mut self, items: Vec<(String, String)>) -> Result<(), VmExecutionError> {

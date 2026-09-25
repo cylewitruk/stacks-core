@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Nested rollback buffering for Clarity data and metadata writes.
+
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -22,7 +24,10 @@ use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 use stacks_common::util::hash::Sha512Trunc256Sum;
 
 use super::clarity_store::SpecialCaseHandler;
-use super::{ClarityBackingStore, ClarityDeserializable};
+use super::{
+    ClarityBackingStore, ClarityDeserializable, DataStoreEntry, DataStoreValue, StoredValue,
+    StoredValueResult, TypedValueData, TypedValueResult,
+};
 use crate::vm::Value;
 use crate::vm::database::clarity_store::{ContractCommitment, make_contract_hash_key};
 use crate::vm::errors::{VmExecutionError, VmInternalError};
@@ -70,7 +75,7 @@ where
 }
 
 #[cfg(feature = "rollback_value_check")]
-fn rollback_value_check(value: &String, check: &RollbackValueCheck) {
+fn rollback_value_check(value: &str, check: &RollbackValueCheck) {
     assert_eq!(value, check)
 }
 #[cfg(feature = "rollback_value_check")]
@@ -108,6 +113,36 @@ pub struct ValueResult {
     pub serialized_byte_len: u64,
 }
 
+/// One pending data write with an atomic canonical/typed representation.
+///
+/// Boxing keeps canonical-only entries compact while preventing typed values from being separated
+/// from the canonical strings and lengths derived from them.
+#[derive(Debug)]
+enum PendingDataValue {
+    /// Canonical text for a backing store without typed physical encoding.
+    Canonical(String),
+    /// Canonical and admitted representations for a typed backing store.
+    Typed(Box<TypedValueData>),
+}
+
+impl PendingDataValue {
+    /// Borrow the canonical string used by rollback checks and pending reads.
+    fn canonical(&self) -> &str {
+        match self {
+            Self::Canonical(canonical) => canonical,
+            Self::Typed(typed) => typed.canonical(),
+        }
+    }
+
+    /// Consume this pending value for the backing-store commit boundary.
+    fn into_data_store_value(self) -> DataStoreValue {
+        match self {
+            Self::Canonical(canonical) => DataStoreValue::Canonical(canonical),
+            Self::Typed(typed) => DataStoreValue::Typed(*typed),
+        }
+    }
+}
+
 pub struct RollbackContext {
     edits: Vec<(String, RollbackValueCheck)>,
     metadata_edits: Vec<((QualifiedContractIdentifier, String), RollbackValueCheck)>,
@@ -119,7 +154,7 @@ pub struct RollbackWrapper<'a> {
     // lookup_map is a history of edits for a given key.
     //   in order of least-recent to most-recent at the tail.
     //   this allows ~ O(1) lookups, and ~ O(1) commits, roll-backs (amortized by # of PUTs).
-    lookup_map: HashMap<String, Vec<String>>,
+    lookup_map: HashMap<String, Vec<PendingDataValue>>,
     metadata_lookup_map: HashMap<(QualifiedContractIdentifier, String), Vec<String>>,
     // stack keeps track of the most recent rollback context, which tells us which
     //   edits were performed by which context. at the moment, each context's edit history
@@ -137,7 +172,7 @@ pub struct RollbackWrapper<'a> {
 //   a real mess of lifetime parameters in the database/context
 //   and eval code.
 pub struct RollbackWrapperPersistedLog {
-    lookup_map: HashMap<String, Vec<String>>,
+    lookup_map: HashMap<String, Vec<PendingDataValue>>,
     metadata_lookup_map: HashMap<(QualifiedContractIdentifier, String), Vec<String>>,
     stack: Vec<RollbackContext>,
 }
@@ -202,6 +237,54 @@ where
     Ok(popped_value)
 }
 
+/// Pop one pending data write while keeping its canonical and typed forms atomic.
+fn rollback_data_lookup_map(
+    key: &str,
+    value: &RollbackValueCheck,
+    lookup_map: &mut HashMap<String, Vec<PendingDataValue>>,
+) -> Result<PendingDataValue, VmInternalError> {
+    let (popped_value, remove_edit_deque) = {
+        let key_edit_history = lookup_map.get_mut(key).ok_or_else(|| {
+            VmInternalError::Expect(
+                "ERROR: Clarity VM had data edit log entry, but not data lookup entry".into(),
+            )
+        })?;
+        let popped_value = key_edit_history.pop().ok_or_else(|| {
+            VmInternalError::Expect("ERROR: expected value in data edit history".into())
+        })?;
+        rollback_value_check(popped_value.canonical(), value);
+        (popped_value, key_edit_history.is_empty())
+    };
+    if remove_edit_deque {
+        lookup_map.remove(key);
+    }
+    Ok(popped_value)
+}
+
+/// Drain rollback histories into the ordered entries committed to the backing store.
+fn rollback_data_pre_bottom_commit(
+    edits: Vec<(String, RollbackValueCheck)>,
+    lookup_map: &mut HashMap<String, Vec<PendingDataValue>>,
+) -> Result<Vec<DataStoreEntry>, VmInternalError> {
+    for edit_history in lookup_map.values_mut() {
+        edit_history.reverse();
+    }
+
+    let output = edits
+        .into_iter()
+        .map(|(key, check)| {
+            let pending = rollback_data_lookup_map(&key, &check, lookup_map)?;
+            Ok(DataStoreEntry {
+                key,
+                value: pending.into_data_store_value(),
+            })
+        })
+        .collect::<Result<_, VmInternalError>>()?;
+
+    assert!(lookup_map.is_empty());
+    Ok(output)
+}
+
 impl<'a> RollbackWrapper<'a> {
     pub fn new(store: &'a mut dyn ClarityBackingStore) -> RollbackWrapper<'a> {
         RollbackWrapper {
@@ -249,7 +332,7 @@ impl<'a> RollbackWrapper<'a> {
         last_item.metadata_edits.reverse();
 
         for (key, value) in last_item.edits.drain(..) {
-            rollback_lookup_map(&key, &value, &mut self.lookup_map)?;
+            rollback_data_lookup_map(&key, &value, &mut self.lookup_map)?;
         }
 
         for (key, value) in last_item.metadata_edits.drain(..) {
@@ -264,6 +347,8 @@ impl<'a> RollbackWrapper<'a> {
     }
 
     pub fn commit(&mut self) -> Result<(), VmInternalError> {
+        let _writeback_diagnostic = stacks_profiler::diagnostic_span!("VM: Rollback commit");
+        let stores_typed_values = self.store.stores_typed_values();
         let mut last_item = self.stack.pop().ok_or_else(|| {
             VmInternalError::Expect("ERROR: Clarity VM attempted to commit past the stack.".into())
         })?;
@@ -279,14 +364,25 @@ impl<'a> RollbackWrapper<'a> {
             }
         } else {
             // stack is empty, committing to the backing store
-            let all_edits =
-                rollback_check_pre_bottom_commit(last_item.edits, &mut self.lookup_map)?;
+            let all_edits = rollback_data_pre_bottom_commit(last_item.edits, &mut self.lookup_map)?;
             if !all_edits.is_empty() {
-                self.store.put_all_data(all_edits).map_err(|e| {
-                    VmInternalError::Expect(format!(
-                        "ERROR: Failed to commit data to sql store: {e:?}"
-                    ))
-                })?;
+                if stores_typed_values {
+                    self.store.put_all_data_entries(all_edits).map_err(|e| {
+                        VmInternalError::Expect(format!(
+                            "ERROR: Failed to commit data to sql store: {e:?}"
+                        ))
+                    })?;
+                } else {
+                    let all_edits = all_edits
+                        .into_iter()
+                        .map(|entry| (entry.key, entry.value.into_canonical()))
+                        .collect();
+                    self.store.put_all_data(all_edits).map_err(|e| {
+                        VmInternalError::Expect(format!(
+                            "ERROR: Failed to commit data to sql store: {e:?}"
+                        ))
+                    })?;
+                }
             }
 
             let metadata_edits = rollback_check_pre_bottom_commit(
@@ -306,20 +402,24 @@ impl<'a> RollbackWrapper<'a> {
     }
 }
 
-fn inner_put_data<T>(
-    lookup_map: &mut HashMap<T, Vec<String>>,
-    edits: &mut Vec<(T, RollbackValueCheck)>,
-    key: T,
-    value: String,
-) where
-    T: Eq + Hash + Clone,
-{
+/// Append one canonical/typed write pair to the current rollback history.
+fn inner_put_data(
+    lookup_map: &mut HashMap<String, Vec<PendingDataValue>>,
+    edits: &mut Vec<(String, RollbackValueCheck)>,
+    key: String,
+    value: PendingDataValue,
+) {
     let key_edit_deque = lookup_map.entry(key.clone()).or_default();
-    rollback_edits_push(edits, key, &value);
+    rollback_edits_push(edits, key.clone(), value.canonical());
     key_edit_deque.push(value);
 }
 
 impl RollbackWrapper<'_> {
+    /// Whether the backing store consumes typed write metadata.
+    pub fn stores_typed_values(&self) -> bool {
+        self.store.stores_typed_values()
+    }
+
     pub fn put_data(&mut self, key: &str, value: &str) -> Result<(), VmExecutionError> {
         let current = self.stack.last_mut().ok_or_else(|| {
             VmInternalError::Expect("ERROR: Clarity VM attempted PUT on non-nested context.".into())
@@ -329,7 +429,25 @@ impl RollbackWrapper<'_> {
             &mut self.lookup_map,
             &mut current.edits,
             key.to_string(),
-            value.to_string(),
+            PendingDataValue::Canonical(value.to_string()),
+        );
+        Ok(())
+    }
+
+    /// Buffer an admitted Clarity value and its inseparable canonical representation.
+    pub fn put_typed_value(
+        &mut self,
+        key: &str,
+        typed: TypedValueData,
+    ) -> Result<(), VmExecutionError> {
+        let current = self.stack.last_mut().ok_or_else(|| {
+            VmInternalError::Expect("ERROR: Clarity VM attempted PUT on non-nested context.".into())
+        })?;
+        inner_put_data(
+            &mut self.lookup_map,
+            &mut current.edits,
+            key.to_owned(),
+            PendingDataValue::Typed(Box::new(typed)),
         );
         Ok(())
     }
@@ -400,7 +518,7 @@ impl RollbackWrapper<'_> {
             && let Some(pending_value) = self.lookup_map.get(key).and_then(|x| x.last())
         {
             // if there's pending data and we're querying pending data, return here
-            return Some(T::deserialize(pending_value)).transpose();
+            return Some(T::deserialize(pending_value.canonical())).transpose();
         }
         // otherwise, lookup from store
         self.store
@@ -431,6 +549,9 @@ impl RollbackWrapper<'_> {
         expected: &TypeSignature,
         epoch: &StacksEpochId,
     ) -> Result<ValueResult, SerializationError> {
+        let _decode = stacks_profiler::diagnostic_span!("Value: Canonical decode");
+        stacks_profiler::diagnostics::count("canonical_decodes", 1);
+        stacks_profiler::diagnostics::count("canonical_decode_bytes", value_hex.len() as u64 / 2);
         let serialized_byte_len = value_hex.len() as u64 / 2;
         let value = Value::try_deserialize_hex_at_epoch(value_hex, expected, epoch)?;
 
@@ -457,17 +578,62 @@ impl RollbackWrapper<'_> {
         if self.query_pending_data
             && let Some(x) = self.lookup_map.get(key).and_then(|x| x.last())
         {
-            return Ok(Some(Self::deserialize_value(x, expected, epoch)?));
+            // Reapply the requested schema so declared bounds and callable metadata are restored
+            // exactly as they are for a committed read.
+            return Ok(Some(Self::deserialize_value(
+                x.canonical(),
+                expected,
+                epoch,
+            )?));
         }
-        let stored_data = self.store.get_data(key).map_err(|_| {
+        let stored_data = self
+            .store
+            .get_typed_value(key, expected, epoch)
+            .map_err(|error| {
+                SerializationError::DeserializationFailure(format!(
+                    "ERROR: Clarity backing store failure for key {key}: {error}"
+                ))
+            })?;
+        Ok(stored_data.map(
+            |TypedValueResult {
+                 value,
+                 serialized_byte_len,
+             }| ValueResult {
+                value,
+                serialized_byte_len,
+            },
+        ))
+    }
+
+    /// Get a Clarity value while preserving shared packed storage when possible.
+    pub fn get_stored_value(
+        &mut self,
+        key: &str,
+        expected: &TypeSignature,
+        epoch: &StacksEpochId,
+    ) -> Result<Option<StoredValueResult>, SerializationError> {
+        self.stack.last().ok_or_else(|| {
             SerializationError::DeserializationFailure(
-                "ERROR: Clarity backing store failure".into(),
+                "ERROR: Clarity VM attempted GET on non-nested context.".into(),
             )
         })?;
-        match stored_data {
-            Some(x) => Ok(Some(Self::deserialize_value(&x, expected, epoch)?)),
-            None => Ok(None),
+
+        if self.query_pending_data
+            && let Some(value) = self.lookup_map.get(key).and_then(|values| values.last())
+        {
+            let value = Self::deserialize_value(value.canonical(), expected, epoch)?;
+            return Ok(Some(StoredValueResult {
+                value: StoredValue::Owned(value.value),
+                serialized_byte_len: value.serialized_byte_len,
+            }));
         }
+        self.store
+            .get_stored_value(key, expected, epoch)
+            .map_err(|error| {
+                SerializationError::DeserializationFailure(format!(
+                    "ERROR: Clarity backing store failure for key {key}: {error}"
+                ))
+            })
     }
 
     /// This is the height we are currently constructing. It comes from the MARF.
@@ -514,13 +680,12 @@ impl RollbackWrapper<'_> {
         })?;
 
         let metadata_key = (contract.clone(), key.to_string());
-
-        inner_put_data(
-            &mut self.metadata_lookup_map,
-            &mut current.metadata_edits,
-            metadata_key,
-            value.to_string(),
-        );
+        let edit_deque = self
+            .metadata_lookup_map
+            .entry(metadata_key.clone())
+            .or_default();
+        rollback_edits_push(&mut current.metadata_edits, metadata_key, value);
+        edit_deque.push(value.to_owned());
         Ok(())
     }
 
@@ -621,5 +786,81 @@ impl RollbackWrapper<'_> {
             let metadata_key = (contract.clone(), (*key).to_string());
             self.metadata_lookup_map.contains_key(&metadata_key)
         })
+    }
+}
+
+#[cfg(test)]
+mod typed_write_tests {
+    use std::assert_matches;
+
+    use super::*;
+
+    fn typed_uint(value: u128) -> TypedValueData {
+        TypedValueData::prepare(Value::UInt(value)).unwrap()
+    }
+
+    #[test]
+    fn prepared_typed_value_binds_canonical_and_length() {
+        let typed = typed_uint(42);
+        let consensus = typed.value().serialize_to_vec().unwrap();
+        assert_eq!(
+            typed.canonical(),
+            stacks_common::util::hash::to_hex(&consensus)
+        );
+        assert_eq!(typed.consensus_byte_len(), consensus.len() as u32);
+    }
+
+    #[test]
+    fn bottom_commit_keeps_typed_metadata_aligned_with_repeated_keys() {
+        let key = "vm::contract::0::entry".to_owned();
+        let typed = typed_uint(1);
+        let typed_canonical = typed.canonical().to_owned();
+        let mut lookup_map = HashMap::from([(
+            key.clone(),
+            vec![
+                PendingDataValue::Typed(Box::new(typed)),
+                PendingDataValue::Canonical("03".into()),
+            ],
+        )]);
+        let mut edits = Vec::new();
+        rollback_edits_push(&mut edits, key.clone(), &typed_canonical);
+        rollback_edits_push(&mut edits, key, "03");
+
+        let entries = rollback_data_pre_bottom_commit(edits, &mut lookup_map).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_matches!(
+            &entries[0].value,
+            DataStoreValue::Typed(typed) if typed.value() == &Value::UInt(1)
+        );
+        assert_matches!(&entries[1].value, DataStoreValue::Canonical(value) if value == "03");
+        assert!(lookup_map.is_empty());
+    }
+
+    #[test]
+    fn rollback_removes_canonical_and_typed_pending_data_atomically() {
+        let key = "vm::contract::0::entry".to_owned();
+        let typed = typed_uint(1);
+        let canonical = typed.canonical().to_owned();
+        let mut lookup_map =
+            HashMap::from([(key.clone(), vec![PendingDataValue::Typed(Box::new(typed))])]);
+
+        let mut edits = Vec::new();
+        rollback_edits_push(&mut edits, key.clone(), &canonical);
+        let (_, check) = edits.pop().unwrap();
+        let pending = rollback_data_lookup_map(&key, &check, &mut lookup_map).unwrap();
+        assert_eq!(pending.canonical(), canonical);
+        assert_matches!(
+            pending,
+            PendingDataValue::Typed(typed) if typed.value() == &Value::UInt(1)
+        );
+        assert!(lookup_map.is_empty());
+    }
+
+    #[test]
+    fn pending_entry_keeps_typed_metadata_out_of_line() {
+        assert_eq!(
+            std::mem::size_of::<PendingDataValue>(),
+            std::mem::size_of::<String>()
+        );
     }
 }

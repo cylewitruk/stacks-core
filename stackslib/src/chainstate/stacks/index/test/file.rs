@@ -20,6 +20,7 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::*;
 use crate::chainstate::stacks::index::file::*;
+use crate::chainstate::stacks::index::test::marf::MarfTestExt as _;
 use crate::chainstate::stacks::index::*;
 use crate::util_lib::db::*;
 
@@ -47,7 +48,8 @@ fn setup_db(test_name: &str) -> Connection {
 #[test]
 fn test_load_store_trie_blob() {
     let mut db = setup_db("test_load_store_trie_blob");
-    let mut blobs = TrieFile::from_db_path(&db_path("test_load_store_trie_blob"), false).unwrap();
+    let mut blobs =
+        TrieFile::from_db_path(&db_path("test_load_store_trie_blob"), false, false).unwrap();
     trie_sql::migrate_tables_if_needed::<BlockHeaderHash>(&mut db).unwrap();
 
     blobs
@@ -160,7 +162,7 @@ fn test_migrate_existing_trie_blobs() {
 
     // verify that the new blob structure is well-formed
     let blob_root_header_map = {
-        let mut blobs = TrieFile::from_db_path(test_file, false).unwrap();
+        let blobs = TrieFile::from_db_path(test_file, false, false).unwrap();
         let blob_root_header_map = blobs
             .read_all_block_hashes_and_roots::<BlockHeaderHash>(marf.sqlite_conn())
             .unwrap();
@@ -173,22 +175,159 @@ fn test_migrate_existing_trie_blobs() {
     }
 
     // verify that we can read everything from the blobs
-    for (i, block_data) in data.iter().enumerate() {
+    for block_data in data.iter() {
         for (key, value) in block_data.iter() {
             let path = TrieHash::from_key(key);
             let marf_leaf = TrieLeaf::from_value(&[], value.clone());
 
-            let leaf = MARF::get_path(
-                &mut marf.borrow_storage_backend(),
-                &last_block_header,
-                &path,
-            )
-            .unwrap()
-            .unwrap();
+            let leaf = marf.expect_path(&last_block_header, &path);
 
-            assert_eq!(leaf.data.to_vec(), marf_leaf.data.to_vec());
+            assert_eq!(
+                leaf.data.as_ref().expect("resolved test leaf").to_vec(),
+                marf_leaf
+                    .data
+                    .as_ref()
+                    .expect("resolved test leaf")
+                    .to_vec()
+            );
         }
     }
+}
+
+fn make_test_marf_with_single_block(
+    test_file: &str,
+    external_blobs: bool,
+) -> (MARF<BlockHeaderHash>, BlockHeaderHash) {
+    let marf_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, external_blobs);
+    let f = TrieFileStorage::open(test_file, marf_opts).unwrap();
+    let mut marf = MARF::from_storage(f);
+
+    let block_header = BlockHeaderHash([0x11; 32]);
+    marf.begin(&BlockHeaderHash::sentinel(), &block_header)
+        .unwrap();
+    marf.insert_raw(
+        TrieHash::from_key("stable-node-seam"),
+        TrieLeaf::from_value(&[], MARFValue::from_value("stable-node-seam-value")),
+    )
+    .unwrap();
+    marf.commit().unwrap();
+
+    (marf, block_header)
+}
+
+fn assert_reopened_root_stable_node_bytes(
+    marf: &mut MARF<BlockHeaderHash>,
+    block_header: &BlockHeaderHash,
+) {
+    let mut reopened = marf.reopen_connection().unwrap();
+    let (root_ptr, expected_hash) = {
+        let mut conn = reopened.connection();
+        conn.open_block(block_header).unwrap();
+        let root_ptr = conn.root_trieptr();
+        let expected_hash = conn.read_node_hash(&root_ptr).unwrap();
+        (root_ptr, expected_hash)
+    };
+
+    let decoded_node = {
+        let mut conn = reopened.connection();
+        conn.open_block(block_header).unwrap();
+        let mut scratch = MarfReadState::new();
+        conn.read_node_with_state(&root_ptr, &mut scratch)
+            .unwrap()
+            .into_owned_node()
+            .unwrap()
+            .0
+    };
+    let decoded_ref = TrieNodeRef::from(&decoded_node);
+
+    {
+        let mut scratch = MarfReadState::new();
+        let stable_node = reopened.read_node(&root_ptr, &mut scratch).unwrap();
+        assert_eq!(stable_node.node_type(), Some(TrieNodeID::Node256));
+        assert_eq!(stable_node.hash, Some(expected_hash));
+        assert_eq!(stable_node.is_leaf().unwrap(), decoded_ref.is_leaf());
+        assert_eq!(stable_node.path_bytes().unwrap(), decoded_ref.path_bytes());
+        assert_eq!(stable_node.ptrs().unwrap(), decoded_ref.ptrs());
+        assert_eq!(stable_node.walk(0x11).unwrap(), decoded_ref.walk(0x11));
+        assert_eq!(stable_node.walk(0xaa).unwrap(), decoded_ref.walk(0xaa));
+        assert_eq!(
+            stable_node.as_leaf().unwrap().map(|leaf| leaf
+                .data
+                .as_ref()
+                .expect("resolved test leaf")
+                .to_vec()),
+            decoded_ref.as_leaf().map(|leaf| leaf
+                .data
+                .as_ref()
+                .expect("resolved test leaf")
+                .to_vec())
+        );
+        assert_eq!(
+            stable_node.as_node_ref().unwrap().0.ptrs(),
+            decoded_ref.ptrs()
+        );
+        assert_eq!(stable_node.into_owned_node().unwrap().0, decoded_node);
+    }
+
+    // Verify that a second read_node call returns consistent results (per-node path).
+    {
+        let mut scratch = MarfReadState::new();
+        let node = reopened.read_node(&root_ptr, &mut scratch).unwrap();
+        assert_eq!(node.node_type(), Some(TrieNodeID::Node256));
+        assert_eq!(node.hash, Some(expected_hash));
+        assert_eq!(node.into_owned_node().unwrap().0, decoded_node);
+    }
+
+    let path = TrieHash::from_key("stable-node-seam");
+    let expected_value = MARFValue::from_value("stable-node-seam-value");
+
+    let reopened_value = reopened.get(block_header, "stable-node-seam").unwrap();
+    assert_eq!(reopened_value, Some(expected_value.clone()));
+
+    let reopened_value_from_hash = reopened.get_from_hash(block_header, &path).unwrap();
+    assert_eq!(reopened_value_from_hash, Some(expected_value.clone()));
+
+    let proof_entry = reopened
+        .get_with_proof(block_header, "stable-node-seam")
+        .unwrap()
+        .expect("expected reopened proof for stable-node-seam");
+    assert_eq!(proof_entry.0, expected_value);
+    assert!(!proof_entry.1 .0.is_empty());
+
+    let proof_entry_from_hash = reopened
+        .get_with_proof_from_hash(block_header, &path)
+        .unwrap()
+        .expect("expected reopened proof from hash for stable-node-seam");
+    assert_eq!(proof_entry_from_hash.0, expected_value);
+    assert!(!proof_entry_from_hash.1 .0.is_empty());
+}
+
+#[test]
+fn test_reopened_connection_stable_blob_seam_sqlite_backed() {
+    let test_file = "/tmp/test_reopened_connection_stable_blob_seam_sqlite_backed.sqlite";
+    if fs::metadata(test_file).is_ok() {
+        fs::remove_file(test_file).unwrap();
+    }
+
+    let (mut marf, block_header) = make_test_marf_with_single_block(test_file, false);
+    assert_reopened_root_stable_node_bytes(&mut marf, &block_header);
+}
+
+#[test]
+fn test_reopened_connection_stable_blob_seam_external_backed() {
+    let test_file = "/tmp/test_reopened_connection_stable_blob_seam_external_backed.sqlite";
+    let test_blobs_file =
+        "/tmp/test_reopened_connection_stable_blob_seam_external_backed.sqlite.blobs";
+    if fs::metadata(test_file).is_ok() {
+        fs::remove_file(test_file).unwrap();
+    }
+    if fs::metadata(test_blobs_file).is_ok() {
+        fs::remove_file(test_blobs_file).unwrap();
+    }
+
+    let (mut marf, block_header) = make_test_marf_with_single_block(test_file, true);
+    assert!(fs::metadata(test_blobs_file).is_ok());
+    assert_reopened_root_stable_node_bytes(&mut marf, &block_header);
 }
 
 #[test]
@@ -287,7 +426,7 @@ fn test_bulk_read_blob_headers_sorted_matches_sequential() {
     marf.with_conn(|conn| {
         let mut entries =
             trie_sql::bulk_read_block_entries::<StacksBlockId>(conn.sqlite_conn()).unwrap();
-        conn.warm_trie_offsets_from_entries(&entries);
+        conn.warm_trie_offsets_from_entries(&entries).unwrap();
         entries.sort_unstable_by_key(|e| (e.external_offset, e.block_id));
         assert!(entries.len() >= 67);
 

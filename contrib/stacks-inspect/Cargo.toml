@@ -5,6 +5,10 @@ edition = "2024"
 
 [dependencies]
 stackslib = { package = "stackslib", path = "../../stackslib", default-features = false }
+stacks-trie-format-v2 = { path = "../stacks-trie-format-v2" }
+stacks-trie-format-v3 = { path = "../stacks-trie-format-v3" }
+stacks-trie-format-v4 = { path = "../stacks-trie-format-v4" }
+extent-ptrhash = { path = "../../crates/extent-ptrhash" }
 clarity = { path = "../../clarity", default-features = false }
 clarity-cli = { path = "../clarity-cli", default-features = false }
 libstackerdb = { path = "../../libstackerdb", default-features = false }
@@ -20,3 +24,4 @@ tikv-jemallocator = { workspace = true }
 
 [dev-dependencies]
 mutants = "0.0.3"
+tempfile = { workspace = true }

@@ -10,6 +10,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
 stacks-profiler-macros.workspace = true
 libc.workspace = true
 rapidhash.workspace = true

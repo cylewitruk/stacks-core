@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::*;
+use crate::chainstate::stacks::index::test::marf::MarfTestExt;
 use crate::chainstate::stacks::index::*;
 
 #[test]
@@ -41,14 +42,14 @@ fn verifier_catches_stale_proof() {
     m.begin(&block_0, &block_1).unwrap();
     let r = m.insert(&k1, MARFValue::from_value(&old_v));
     m.seal().unwrap();
-    let (_, root_hash_1) = Trie::read_root(&mut m.borrow_storage_backend()).unwrap();
+    let (_, root_hash_1) = read_root(&mut m.borrow_storage_backend()).unwrap();
     m.commit().unwrap();
 
     // Block #2
     m.begin(&block_1, &block_2).unwrap();
     let r = m.insert(&k1, MARFValue::from_value(&new_v));
     m.seal().unwrap();
-    let (_, root_hash_2) = Trie::read_root(&mut m.borrow_storage_backend()).unwrap();
+    let (_, root_hash_2) = read_root(&mut m.borrow_storage_backend()).unwrap();
     m.commit().unwrap();
 
     let old_value = m.get(&block_1, &k1);
@@ -57,36 +58,34 @@ fn verifier_catches_stale_proof() {
     let new_value = m.get(&block_2, &k1).unwrap().unwrap();
     test_debug!("NEW: {:?}", new_value);
 
-    let path = TrieHash::from_key(&k1);
+    let k1_path = TrieHash::from_key(&k1);
+    let old_v_value = MARFValue::from_value(&old_v);
+    let new_v_value = MARFValue::from_value(&new_v);
 
-    merkle_test_marf_key_value(&mut m.borrow_storage_backend(), &block_2, &k1, &new_v, None);
+    m.verify_marf_entry_proof(&k1_path, &new_v_value, &block_2, None);
 
     let root_to_block = m
         .borrow_storage_backend()
         .read_root_to_block_table()
         .unwrap();
 
-    // create a proof from the current block to the old value.
-    // It should succeed
-    let proof_2 =
-        TrieMerkleProof::from_entry(&mut m.borrow_storage_backend(), &k1, &old_v, &block_2)
-            .unwrap();
+    // Create a proof from the current block to the old value. This should succeed.
+    let proof_2 = m
+        .prove_raw_entry(&block_2, &k1, &MARFValue::from_value(&old_v))
+        .expect("should be able to create proof for old value from block 2");
 
-    // the verifier should not allow a proof from k1 to old_v from block_2
-    let triepath_2 = TrieHash::from_key(&k1);
-    let marf_value_2 = MARFValue::from_value(&old_v);
-    assert!(!proof_2.verify(&triepath_2, &marf_value_2, &root_hash_2, &root_to_block));
+    // The verifier should not allow a proof from k1 to old_v from block_2
+    assert!(!proof_2.verify(&k1_path, &old_v_value, &root_hash_2, &root_to_block));
 
-    // create a proof from the previous block to the old value.
-    // It should succeed
-    let proof_1 =
-        TrieMerkleProof::from_entry(&mut m.borrow_storage_backend(), &k1, &old_v, &block_1)
-            .unwrap();
+    // Create a proof from the previous block to the old value. This should succeed.
+    let proof_1 = m
+        .prove_raw_entry(&block_1, &k1, &old_v_value)
+        .expect("should be able to create proof for old value from block 1");
 
-    // the verifier should allow a proof from k1 to old_v from block_1
+    // The verifier should allow a proof from k1 to old_v from block_1
     let triepath_1 = TrieHash::from_key(&k1);
     let marf_value_1 = MARFValue::from_value(&old_v);
-    assert!(proof_1.verify(&triepath_1, &marf_value_1, &root_hash_1, &root_to_block));
+    assert!(proof_1.verify(&k1_path, &old_v_value, &root_hash_1, &root_to_block));
 }
 
 #[test]
@@ -116,45 +115,44 @@ fn ncc_verifier_catches_stale_proof() {
     m.begin(&block_0, &block_1).unwrap();
     let r = m.insert(&k1, MARFValue::from_value(&new_v));
     m.seal().unwrap();
-    let (_, root_hash_1) = Trie::read_root(&mut m.borrow_storage_backend()).unwrap();
+    let (_, root_hash_1) = read_root(&mut m.borrow_storage_backend()).unwrap();
     m.commit().unwrap();
 
     // Block #2
     m.begin(&block_1, &block_2).unwrap();
     let r = m.insert(&k1, MARFValue::from_value(&old_v));
     m.seal().unwrap();
-    let (_, root_hash_2) = Trie::read_root(&mut m.borrow_storage_backend()).unwrap();
+    let (_, root_hash_2) = read_root(&mut m.borrow_storage_backend()).unwrap();
     m.commit().unwrap();
 
     // Block #3
     m.begin(&block_2, &block_3).unwrap();
     let r = m.insert(&k1, MARFValue::from_value(&new_new_v));
     m.seal().unwrap();
-    let (_, root_hash_3) = Trie::read_root(&mut m.borrow_storage_backend()).unwrap();
+    let (_, root_hash_3) = read_root(&mut m.borrow_storage_backend()).unwrap();
     m.commit().unwrap();
 
     // Block #4
     m.begin(&block_3, &block_4).unwrap();
     let r = m.insert(&k1, MARFValue::from_value(&new_v));
     m.seal().unwrap();
-    let (_, root_hash_4) = Trie::read_root(&mut m.borrow_storage_backend()).unwrap();
+    let (_, root_hash_4) = read_root(&mut m.borrow_storage_backend()).unwrap();
     m.commit().unwrap();
 
     // Block #5
     m.begin(&block_4, &block_5).unwrap();
     let r = m.insert(&k1, MARFValue::from_value(&another_v));
     m.seal().unwrap();
-    let (_, root_hash_5) = Trie::read_root(&mut m.borrow_storage_backend()).unwrap();
+    let (_, root_hash_5) = read_root(&mut m.borrow_storage_backend()).unwrap();
     m.commit().unwrap();
 
-    merkle_test_marf_key_value(
-        &mut m.borrow_storage_backend(),
-        &block_5,
-        &k1,
-        &another_v,
-        None,
-    );
-    merkle_test_marf_key_value(&mut m.borrow_storage_backend(), &block_2, &k1, &old_v, None);
+    let k1_path = TrieHash::from_key(&k1);
+    let old_v_value = MARFValue::from_value(&old_v);
+    let another_v_value = MARFValue::from_value(&another_v);
+
+    m.verify_marf_entry_proof(&k1_path, &old_v_value, &block_2, None);
+    m.verify_marf_entry_proof(&k1_path, &another_v_value, &block_5, None);
+    m.verify_marf_entry_proof(&k1_path, &old_v_value, &block_2, None);
 
     let root_to_block = {
         m.borrow_storage_backend()
@@ -163,9 +161,12 @@ fn ncc_verifier_catches_stale_proof() {
     };
 
     // prove for latest k/v pair succeeds
-    let proof_5 =
-        TrieMerkleProof::from_entry(&mut m.borrow_storage_backend(), &k1, &another_v, &block_5)
-            .unwrap();
+    let proof_5 = m
+        .prove_raw_entry(&block_5, &k1, &another_v_value)
+        .expect("should be able to create proof for another_v from block 5");
+    // let proof_5 =
+    //     TrieMerkleProof::from_entry_ephemeral(&mut m.borrow_storage_backend(), &k1, &another_v, &block_5)
+    //         .unwrap();
 
     let triepath_4 = TrieHash::from_key(&k1);
     let marf_value_4 = MARFValue::from_value(&another_v);
@@ -180,9 +181,12 @@ fn ncc_verifier_catches_stale_proof() {
 
     // prepare a proof for the wrong root hash i.e. block2 instead of block5.
     // Should fail
-    let proof_5 =
-        TrieMerkleProof::from_entry(&mut m.borrow_storage_backend(), &k1, &old_v, &block_2)
-            .unwrap();
+    let proof_5 = m
+        .prove_raw_entry(&block_2, &k1, &old_v_value)
+        .expect("should be able to create proof for old_v from block 2");
+    // let proof_5 =
+    //     TrieMerkleProof::from_entry_ephemeral(&mut m.borrow_storage_backend(), &k1, &old_v, &block_2)
+    //         .unwrap();
 
     let triepath_4 = TrieHash::from_key(&k1);
     let marf_value_4 = MARFValue::from_value(&old_v);

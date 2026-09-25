@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to the versioning scheme outlined in the [README.md](README.md).
 
+## [Unreleased]
+
+### Added
+
+* Experimental fork-aware ancestry links in the optional direct-hash index, retaining legacy index compatibility and committed MARF mappings.
+* Experimental versioned compact raw leaves with exact zero-tail value encoding and demand-driven leaf hashing.
+
 ## [4.0.3]
 
 ### Added

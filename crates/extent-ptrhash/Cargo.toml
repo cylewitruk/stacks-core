@@ -1,0 +1,22 @@
+[package]
+name = "extent-ptrhash"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+
+[features]
+diagnostics = ["dep:stacks-profiler", "dep:libc"]
+
+[dependencies]
+stacks-profiler = { workspace = true, optional = true }
+libc = { version = "0.2", optional = true }
+ptr_hash = { version = "=2.1.1", default-features = false, features = ["epserde"] }
+epserde = "0.13"
+memmap2 = "0.9"
+rusqlite.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
