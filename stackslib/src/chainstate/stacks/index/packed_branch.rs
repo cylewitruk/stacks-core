@@ -14,10 +14,11 @@ use std::io::Write;
 use super::bits;
 use super::mapped_node;
 use super::node::{
-    clear_ctrl_bits, is_backptr, TrieNode, TrieNode16, TrieNode256, TrieNode4, TrieNode48,
-    TrieNodeID, TrieNodeType, TriePtr,
+    TrieNode, TrieNode4, TrieNode16, TrieNode48, TrieNode256, TrieNodeID, TrieNodeType, TriePtr,
+    clear_ctrl_bits, is_backptr,
 };
 use super::record::NodeRecordFormat;
+use super::v41_branch;
 use super::{Error, NodePath};
 
 /// Checked metadata and mmap-backed pointer columns for one branch.
@@ -596,13 +597,28 @@ pub enum BranchView<'a> {
     Directory(mapped_node::MappedBranch<'a>),
     /// TypeFirstV4 fixed-width pointer columns.
     Packed(PackedBranch<'a>),
+    /// CompactMetadata compact columns over otherwise V4-compatible trie blobs.
+    CompactMetadata(v41_branch::BranchView<'a>),
 }
 
 impl<'a> BranchView<'a> {
     /// Select the database's explicitly versioned branch codec.
     pub fn parse(format: NodeRecordFormat, id: TrieNodeID, bytes: &'a [u8]) -> Result<Self, Error> {
         match format {
-            NodeRecordFormat::TypeFirstV4 => PackedBranch::parse(id, bytes).map(Self::Packed),
+            NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41 => {
+                let path = mapped_node::path_prefix(bytes)?;
+                if bytes
+                    .get(1 + path.len())
+                    .is_some_and(|widths| widths & 0x80 != 0)
+                {
+                    if format != NodeRecordFormat::TypeFirstV41 {
+                        return Err(invalid("V4.1 branch in V4 trie"));
+                    }
+                    v41_branch::BranchView::parse_prefix(id, bytes).map(Self::CompactMetadata)
+                } else {
+                    PackedBranch::parse(id, bytes).map(Self::Packed)
+                }
+            }
             NodeRecordFormat::Legacy => Err(invalid("Legacy branch has no type-first view")),
             _ => mapped_node::MappedBranch::parse(id, bytes).map(Self::Directory),
         }
@@ -613,6 +629,7 @@ impl<'a> BranchView<'a> {
         match self {
             Self::Directory(v) => v.child(edge),
             Self::Packed(v) => v.child(edge),
+            Self::CompactMetadata(v) => v.child(edge),
         }
     }
 
@@ -621,6 +638,7 @@ impl<'a> BranchView<'a> {
         match self {
             Self::Directory(v) => v.byte_len(),
             Self::Packed(v) => v.byte_len(),
+            Self::CompactMetadata(v) => v.byte_len(),
         }
     }
 
@@ -629,6 +647,7 @@ impl<'a> BranchView<'a> {
         match self {
             Self::Directory(v) => v.to_owned_node(),
             Self::Packed(v) => v.to_owned_node(),
+            Self::CompactMetadata(v) => v.to_owned_node(),
         }
     }
 }
@@ -659,6 +678,7 @@ mod record_tests {
                 NodeRecordFormat::TypeFirstV2,
                 NodeRecordFormat::TypeFirstV3,
                 NodeRecordFormat::TypeFirstV4,
+                NodeRecordFormat::TypeFirstV41,
             ] {
                 let mut bytes = vec![];
                 format

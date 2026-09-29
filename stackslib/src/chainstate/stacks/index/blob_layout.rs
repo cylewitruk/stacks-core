@@ -27,7 +27,7 @@
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use stacks_common::types::chainstate::{
-    TrieHash, BLOCK_HEADER_HASH_ENCODED_SIZE, TRIEHASH_ENCODED_SIZE,
+    BLOCK_HEADER_HASH_ENCODED_SIZE, TRIEHASH_ENCODED_SIZE, TrieHash,
 };
 
 use super::node::TrieNodeID;
@@ -91,9 +91,11 @@ impl NodeRecordFormat {
     pub const fn reader_prefix_len(self) -> usize {
         match self {
             Self::Legacy => READER_PREFIX_LEN,
-            Self::TypeFirstV1 | Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4 => {
-                MAX_READER_PREFIX_LEN
-            }
+            Self::TypeFirstV1
+            | Self::TypeFirstV2
+            | Self::TypeFirstV3
+            | Self::TypeFirstV4
+            | Self::TypeFirstV41 => MAX_READER_PREFIX_LEN,
         }
     }
 
@@ -110,6 +112,7 @@ impl NodeRecordFormat {
             Self::TypeFirstV2 => *b"MRF\x02",
             Self::TypeFirstV3 => *b"MRF\x03",
             Self::TypeFirstV4 => *b"MRF\x04",
+            Self::TypeFirstV41 => *b"MRF\x29",
         })?;
         Ok(())
     }

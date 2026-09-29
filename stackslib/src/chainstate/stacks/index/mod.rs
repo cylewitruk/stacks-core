@@ -25,7 +25,7 @@ use sha2::{Digest, Sha512_256 as TrieHasher};
 #[cfg(test)]
 use stacks_common::types::chainstate::BlockHeaderHash;
 use stacks_common::types::chainstate::{
-    BurnchainHeaderHash, SortitionId, StacksBlockId, TrieHash, TRIEHASH_ENCODED_SIZE,
+    BurnchainHeaderHash, SortitionId, StacksBlockId, TRIEHASH_ENCODED_SIZE, TrieHash,
 };
 
 use self::packed_branch::BranchView;
@@ -49,9 +49,9 @@ mod mapped_file;
 mod raw_leaf;
 pub use self::mapped_file::FileMapping;
 pub mod mapped_node;
-pub mod packed_branch;
 pub mod marf;
 pub mod node;
+pub mod packed_branch;
 pub mod proofs;
 pub mod record;
 pub mod result_cache;
@@ -60,14 +60,15 @@ pub mod squash;
 pub mod storage;
 pub mod trie;
 pub mod trie_sql;
+pub mod v41_branch;
 pub mod value_relocation;
 
 #[cfg(test)]
 pub mod test;
 
 use crate::chainstate::stacks::index::node::{
-    clear_backptr, is_backptr, CursorError, ParkedNodeHandle, TrieCursor, TrieLeafRef, TrieNodeID,
-    TrieNodePatch, TrieNodeRef, TrieNodeTransientMeta, TrieNodeType, TriePtr,
+    CursorError, ParkedNodeHandle, TrieCursor, TrieLeafRef, TrieNodeID, TrieNodePatch, TrieNodeRef,
+    TrieNodeTransientMeta, TrieNodeType, TriePtr, clear_backptr, is_backptr,
 };
 
 #[derive(Debug)]

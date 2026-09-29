@@ -1,7 +1,7 @@
 //! Physical-only pointer packing; existing raw, inline and extent leaves are unchanged.
 use std::path::Path;
 
-use crate::relocation::BlobRelocation;
+use crate::relocation::{BlobRelocation, RelocationPlan, rewrite_plan_format};
 use blockstack_lib::chainstate::stacks::index::node::TrieNodeID;
 use blockstack_lib::chainstate::stacks::index::packed_branch::PackedBranch;
 use blockstack_lib::chainstate::stacks::index::record::NodeRecordFormat;
@@ -13,6 +13,36 @@ pub const SOURCE_FORMAT: NodeRecordFormat = NodeRecordFormat::TypeFirstV3;
 pub const DESTINATION_FORMAT: NodeRecordFormat = NodeRecordFormat::TypeFirstV4;
 /// Bind exact planning, inherited leaves and finalized ancestor lookup semantics.
 pub const BINDING: &str = "packed-pointers-v4-exact-ancestors-plan-1";
+
+/// Bind the frozen V4 planning semantics to source identity checks.
+pub fn binding() -> String {
+    BINDING.to_owned()
+}
+
+/// Plan one V3 trie with exact V4 pointer widths and resolved ancestors.
+pub fn plan_blob(
+    bytes: &[u8],
+    resolve: impl FnMut(u32, u64) -> Result<u64, Error>,
+) -> Result<BlobRelocation, Error> {
+    BlobRelocation::plan_packed(bytes, SOURCE_FORMAT, resolve)
+}
+
+/// Rewrite one planned trie without changing its leaves or logical commitments.
+pub fn rewrite_blob(
+    plan: &impl RelocationPlan,
+    bytes: &[u8],
+    resolve: impl FnMut(u32, u64) -> Result<u64, Error>,
+    codec: &Codec,
+) -> Result<Vec<u8>, Error> {
+    rewrite_plan_format(
+        plan,
+        bytes,
+        SOURCE_FORMAT,
+        DESTINATION_FORMAT,
+        resolve,
+        |leaf| codec.transform(leaf, &mut Counts::default()),
+    )
+}
 
 /// Physical record counts, not unique or live value counts.
 #[derive(Default)]

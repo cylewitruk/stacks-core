@@ -8,17 +8,18 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
 use stacks_common::codec::StacksMessageCodec;
-use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
+use stacks_common::types::chainstate::{TRIEHASH_ENCODED_SIZE, TrieHash};
 
 use super::bits;
 use super::inline_value::{self, InlineValue};
 use super::mapped_node;
 use super::node::{
-    clear_ctrl_bits, logical_node_id, TrieNode, TrieNode16, TrieNode256, TrieNode4, TrieNode48,
-    TrieNodeID, TrieNodePatch, TrieNodeType,
+    TrieNode, TrieNode4, TrieNode16, TrieNode48, TrieNode256, TrieNodeID, TrieNodePatch,
+    TrieNodeType, clear_ctrl_bits, logical_node_id,
 };
 use super::packed_branch::{self, BranchView};
 use super::trie_sql::SQL_MARF_TYPE_FIRST_SCHEMA_VERSION;
+use super::v41_branch;
 use super::{Error, NodeDecodeScratch, TrieLeaf, ValueExtent, ValueExtentResolver};
 
 /// Disk layout selected explicitly by the database format metadata.
@@ -35,6 +36,8 @@ pub enum NodeRecordFormat {
     TypeFirstV3,
     /// Inline leaves with directly addressed packed branch-pointer columns.
     TypeFirstV4,
+    /// CompactMetadataly compacted V4 branch columns with an explicit incompatible format tag.
+    TypeFirstV41,
 }
 
 /// Physical record layout and shared source for explicitly requested leaf commitments.
@@ -156,6 +159,7 @@ impl NodeRecordFormat {
             Self::TypeFirstV2 => 2,
             Self::TypeFirstV3 => 3,
             Self::TypeFirstV4 => 4,
+            Self::TypeFirstV41 => 41,
         }
     }
 
@@ -177,7 +181,7 @@ impl NodeRecordFormat {
         if physical == TrieNodeID::RawLeaf
             && !matches!(
                 self,
-                Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4
+                Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
             )
         {
             return Err(Error::CorruptionError(
@@ -185,7 +189,10 @@ impl NodeRecordFormat {
             ));
         }
         if physical == TrieNodeID::InlineLeaf
-            && !matches!(self, Self::TypeFirstV3 | Self::TypeFirstV4)
+            && !matches!(
+                self,
+                Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
+            )
         {
             return Err(Error::CorruptionError(
                 "Unsupported inline-leaf encoding".into(),
@@ -217,6 +224,7 @@ impl NodeRecordFormat {
             2 => Ok(Self::TypeFirstV2),
             3 => Ok(Self::TypeFirstV3),
             4 => Ok(Self::TypeFirstV4),
+            41 => Ok(Self::TypeFirstV41),
             _ => Err(Error::CorruptionError(
                 "Unsupported MARF record format version".into(),
             )),
@@ -312,14 +320,16 @@ impl NodeRecordFormat {
         {
             return Ok(1
                 + TRIEHASH_ENCODED_SIZE
-                + if self == Self::TypeFirstV4 {
+                + if matches!(self, Self::TypeFirstV4 | Self::TypeFirstV41) {
                     packed_branch::max_payload_len(id)?
                 } else {
                     mapped_node::max_payload_len(id)?
                 });
         }
-        if matches!(self, Self::TypeFirstV3 | Self::TypeFirstV4)
-            && clear_ctrl_bits(logical_node_id(expected_id)) == TrieNodeID::Leaf as u8
+        if matches!(
+            self,
+            Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
+        ) && clear_ctrl_bits(logical_node_id(expected_id)) == TrieNodeID::Leaf as u8
         {
             return Ok(1 + 33 + inline_value::LENGTH_BYTES + inline_value::MAX_BYTES);
         }
@@ -338,7 +348,7 @@ impl NodeRecordFormat {
                 }
                 if matches!(
                     self,
-                    Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4
+                    Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
                 ) {
                     return 2
                         + leaf.path.len()
@@ -349,10 +359,10 @@ impl NodeRecordFormat {
         if self.is_type_first() && !node.is_leaf() {
             return 1
                 + TRIEHASH_ENCODED_SIZE
-                + if self == Self::TypeFirstV4 {
-                    packed_branch::payload_len(node)
-                } else {
-                    mapped_node::payload_len(node)
+                + match self {
+                    Self::TypeFirstV4 => packed_branch::payload_len(node),
+                    Self::TypeFirstV41 => v41_branch::payload_len(node),
+                    _ => mapped_node::payload_len(node),
                 };
         }
         TRIEHASH_ENCODED_SIZE
@@ -373,7 +383,11 @@ impl NodeRecordFormat {
     ) -> Result<(), Error> {
         if let TrieNodeType::Leaf(leaf) = node {
             if let Some(inline) = &leaf.inline {
-                if !matches!(self, Self::TypeFirstV3 | Self::TypeFirstV4) || leaf.extent.is_some() {
+                if !matches!(
+                    self,
+                    Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
+                ) || leaf.extent.is_some()
+                {
                     return Err(Error::CorruptionError(
                         "Invalid inline leaf format or conflicting locator".into(),
                     ));
@@ -392,7 +406,7 @@ impl NodeRecordFormat {
                 }
                 if matches!(
                     self,
-                    Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4
+                    Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
                 ) {
                     writer.write_all(&[TrieNodeID::RawLeaf as u8])?;
                     return super::raw_leaf::write(leaf, writer);
@@ -401,10 +415,10 @@ impl NodeRecordFormat {
             if !node.is_leaf() {
                 writer.write_all(&[node.id()])?;
                 writer.write_all(hash.as_ref())?;
-                return if self == Self::TypeFirstV4 {
-                    packed_branch::write_payload(writer, node)
-                } else {
-                    mapped_node::write_payload(writer, node)
+                return match self {
+                    Self::TypeFirstV4 => packed_branch::write_payload(writer, node),
+                    Self::TypeFirstV41 => v41_branch::write_payload(writer, node),
+                    _ => mapped_node::write_payload(writer, node),
                 };
             }
             let mut writer = HashAfterMarker {
@@ -571,8 +585,8 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
-    use crate::chainstate::stacks::index::node::TriePtr;
     use crate::chainstate::stacks::index::MARFValue;
+    use crate::chainstate::stacks::index::node::TriePtr;
 
     /// Branch payloads and logical encodings survive both envelope layouts and compression modes.
     #[test]
@@ -830,10 +844,12 @@ mod inline_tests {
                 );
                 assert_eq!(cursor.stream_position().unwrap() as usize, bytes.len());
                 for end in 0..bytes.len() {
-                    assert!(format
-                        .parse(&bytes[..end])
-                        .and_then(|record| record.decode_node(1))
-                        .is_err());
+                    assert!(
+                        format
+                            .parse(&bytes[..end])
+                            .and_then(|record| record.decode_node(1))
+                            .is_err()
+                    );
                 }
                 for old in [
                     NodeRecordFormat::Legacy,

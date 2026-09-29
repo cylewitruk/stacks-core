@@ -5419,6 +5419,7 @@ dependencies = [
  "stacks-trie-format-v2",
  "stacks-trie-format-v3",
  "stacks-trie-format-v4",
+ "stacks-trie-format-v41",
  "stackslib 0.0.1",
  "tempfile",
  "tikv-jemallocator",
@@ -5616,6 +5617,19 @@ dependencies = [
 
 [[package]]
 name = "stacks-trie-format-v4"
+version = "0.1.0"
+dependencies = [
+ "clarity 0.0.1",
+ "memmap2",
+ "rusqlite",
+ "sha2 0.10.9",
+ "stacks-common 4.0.3",
+ "stackslib 0.0.1",
+ "tempfile",
+]
+
+[[package]]
+name = "stacks-trie-format-v41"
 version = "0.1.0"
 dependencies = [
  "clarity 0.0.1",

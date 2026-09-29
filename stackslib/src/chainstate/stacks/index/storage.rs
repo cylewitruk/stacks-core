@@ -27,7 +27,7 @@ use std::{fmt, fs, io, mem};
 use rusqlite::{Connection, OpenFlags, Transaction};
 use sha2::Digest;
 use stacks_common::codec::StacksMessageCodec;
-use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
+use stacks_common::types::chainstate::{TRIEHASH_ENCODED_SIZE, TrieHash};
 use stacks_common::util::hash::to_hex;
 
 use crate::chainstate::stacks::index::bits::{
@@ -39,24 +39,24 @@ use crate::chainstate::stacks::index::direct_hash_index::{DirectHashGuard, Direc
 use crate::chainstate::stacks::index::file::{MappedTrieItem, TrieFile, TrieFileNodeHashReader};
 use crate::chainstate::stacks::index::marf::MARFOpenOpts;
 use crate::chainstate::stacks::index::node::{
-    is_backptr, set_backptr, TrieCowPtr, TrieNode, TrieNodeID, TrieNodePatch, TrieNodeRef,
-    TrieNodeTransientMeta, TrieNodeType, TriePtr,
+    TrieCowPtr, TrieNode, TrieNodeID, TrieNodePatch, TrieNodeRef, TrieNodeTransientMeta,
+    TrieNodeType, TriePtr, is_backptr, set_backptr,
 };
-use crate::chainstate::stacks::index::packed_branch;
 use crate::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
 use crate::chainstate::stacks::index::result_cache::{
-    ResultCache, ResultCacheControl, ResultCacheGuard, DEFAULT_RESULT_CACHE_CAPACITY,
+    DEFAULT_RESULT_CACHE_CAPACITY, ResultCache, ResultCacheControl, ResultCacheGuard,
 };
 use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::trie::Trie;
 use crate::chainstate::stacks::index::{
-    bits, trie_sql, BlockMap, ClarityMarfTrieId, Error, MARFValue, MarfDataEntry, MarfTrieId,
+    BlockMap, ClarityMarfTrieId, Error, MARFValue, MAX_PATCH_DEPTH, MarfDataEntry, MarfTrieId,
     NodePatching, NodePath, PatchChainEntry, ReadTrieItem, ReadTrieItemKind, ReadTrieNode,
-    TrieHasher, TrieLeaf, TrieReadStorage, ValueExtentResolver, MAX_PATCH_DEPTH,
+    TrieHasher, TrieLeaf, TrieReadStorage, ValueExtentResolver, bits, trie_sql,
 };
+use crate::chainstate::stacks::index::{packed_branch, v41_branch};
 use crate::util_lib::db::{
-    sql_pragma, sqlite_open, tx_begin_immediate, Error as db_error, SQLITE_MARF_PAGE_SIZE,
-    SQLITE_MMAP_SIZE,
+    Error as db_error, SQLITE_MARF_PAGE_SIZE, SQLITE_MMAP_SIZE, sql_pragma, sqlite_open,
+    tx_begin_immediate,
 };
 
 /// A trait for reading the hash of a node into a given Write impl, given the pointer to a node in
@@ -466,6 +466,7 @@ impl DumpPtr {
 
 /// Compute a V4 root reservation by monotone refinement in actual write order.
 fn packed_root_reservation<'a>(
+    format: NodeRecordFormat,
     data: &[(TrieNodeType, TrieHash)],
     count: usize,
     entry: impl Fn(usize) -> (u32, Option<&'a TrieNodePatch>),
@@ -488,6 +489,8 @@ fn packed_root_reservation<'a>(
             .ok_or_else(|| Error::CorruptionError("Invalid packed dump node".into()))?;
         Ok(if node.is_leaf() {
             NodeRecordFormat::TypeFirstV4.node_len(node, true)
+        } else if format == NodeRecordFormat::TypeFirstV41 {
+            1 + TRIEHASH_ENCODED_SIZE + v41_branch::payload_len_with_targets(node, resolve)?
         } else {
             1 + TRIEHASH_ENCODED_SIZE + packed_branch::payload_len_with_targets(node, resolve)?
         } as u64)
@@ -884,8 +887,11 @@ impl<T: MarfTrieId> TrieRAM<T> {
         // When some child offsets fit in u32, the root's actual size is
         // smaller than the reserved space, leaving a small dead gap (at most
         // 4 * n_inline_children bytes) between the root and the first descendant.
-        let root_reserved_size = if format == NodeRecordFormat::TypeFirstV4 {
-            packed_root_reservation(&self.data, write_order.len(), |index| {
+        let root_reserved_size = if matches!(
+            format,
+            NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41
+        ) {
+            packed_root_reservation(format, &self.data, write_order.len(), |index| {
                 (write_order[index], None)
             })?
         } else {
@@ -938,7 +944,10 @@ impl<T: MarfTrieId> TrieRAM<T> {
         format.write_node(f, &entry.0, entry.1, false)?;
         let root_written = f.stream_position()? - header_size;
         if root_written > root_reserved_size
-            || (format == NodeRecordFormat::TypeFirstV4 && root_written != root_reserved_size)
+            || (matches!(
+                format,
+                NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41
+            ) && root_written != root_reserved_size)
         {
             return Err(Error::CorruptionError(
                 "Root does not fit planned reservation".into(),
@@ -972,8 +981,7 @@ impl<T: MarfTrieId> TrieRAM<T> {
 
             trace!(
                 "Make patch from old node from block {:?} to new node {:?}",
-                &old_node,
-                node
+                &old_node, node
             );
             Ok(TrieNodePatch::try_from_noderef(
                 *base_ptr.ptr(),
@@ -1088,8 +1096,12 @@ impl<T: MarfTrieId> TrieRAM<T> {
                 }
             }
         }
-        let packed_reservation = if format == NodeRecordFormat::TypeFirstV4 {
+        let packed_reservation = if matches!(
+            format,
+            NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41
+        ) {
             Some(packed_root_reservation(
+                format,
                 &self.data,
                 write_order.len(),
                 |index| (write_order[index].ptr(), write_order[index].patch()),
@@ -1195,7 +1207,10 @@ impl<T: MarfTrieId> TrieRAM<T> {
             .checked_sub(header_size)
             .ok_or(Error::OverflowError)?;
         if root_written > root_reserved_size
-            || (format == NodeRecordFormat::TypeFirstV4 && root_written != root_reserved_size)
+            || (matches!(
+                format,
+                NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41
+            ) && root_written != root_reserved_size)
         {
             return Err(Error::CorruptionError(
                 "Compressed root does not fit planned reservation".into(),
@@ -2122,7 +2137,7 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'_, T,
         let id = match self.get_block_id_caching(&base) {
             Ok(id) => id,
             Err(Error::NotFoundError | Error::SQLError(rusqlite::Error::QueryReturnedNoRows)) => {
-                return Ok(None)
+                return Ok(None);
             }
             Err(error) => return Err(error),
         };
@@ -3580,20 +3595,21 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
     /// Return the number of cached committed roots.
     #[cfg(test)]
     pub fn root_node_cache_len(&self) -> usize {
-        self.data.root_node_cache.as_ref().map_or(0, |cache| cache.len())
+        self.data
+            .root_node_cache
+            .as_ref()
+            .map_or(0, |cache| cache.len())
     }
 
     /// Return whether the current committed block has a cached root.
     #[cfg(test)]
     pub fn root_node_cache_has_current_block(&self) -> bool {
-        self.data
-            .cur_block_id
-            .is_some_and(|id| {
-                self.data
-                    .root_node_cache
-                    .as_ref()
-                    .is_some_and(|cache| cache.contains_key(&id))
-            })
+        self.data.cur_block_id.is_some_and(|id| {
+            self.data
+                .root_node_cache
+                .as_ref()
+                .is_some_and(|cache| cache.contains_key(&id))
+        })
     }
 
     /// Read the Trie root node's hash from the block table.
@@ -3811,8 +3827,7 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
                 // hash of empty string
                 trace!(
                     "inner_write_children_hashes for ptrs {:?}: {:?} empty",
-                    &ptrs,
-                    &ptr
+                    &ptrs, &ptr
                 );
                 w.write_all(TrieHash::EMPTY.as_bytes())?;
             } else if !is_backptr(ptr.id()) {
@@ -3836,9 +3851,7 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
                 let block_hash = map.get_block_hash_caching(ptr.back_block())?;
                 trace!(
                     "inner_write_children_hashes for ptrs {:?}: {:?} back block {:?}",
-                    &ptrs,
-                    &ptr,
-                    &block_hash
+                    &ptrs, &ptr, &block_hash
                 );
                 w.write_all(block_hash.as_bytes())?;
             }
@@ -3913,10 +3926,7 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
 
         trace!(
             "write_nodetype({:?}): at {}: {:?} {:?}",
-            &self.data.cur_block,
-            node_array_ptr,
-            &hash,
-            node
+            &self.data.cur_block, node_array_ptr, &hash, node
         );
 
         self.data.write_count += 1;
@@ -4148,8 +4158,8 @@ pub mod testing {
 #[cfg(test)]
 mod sealing_hash_tests {
     use super::*;
-    use crate::chainstate::stacks::index::node::{TrieNode16, TrieNode256, TrieNode4, TrieNode48};
     use crate::chainstate::stacks::BlockHeaderHash;
+    use crate::chainstate::stacks::index::node::{TrieNode4, TrieNode16, TrieNode48, TrieNode256};
 
     /// Resolved-hash encoding must preserve every consensus byte for every branch size.
     #[test]

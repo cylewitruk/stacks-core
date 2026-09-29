@@ -42,6 +42,7 @@ pub fn prepare_for_validation(database_root: &Path) -> Result<()> {
         NodeRecordFormat::TypeFirstV2,
         NodeRecordFormat::TypeFirstV3,
         NodeRecordFormat::TypeFirstV4,
+        NodeRecordFormat::TypeFirstV41,
     ] {
         if format(&clarity.join("marf.sqlite"))?.version() >= target.version() {
             let scratch = vm.join(format!("clarity.plan-v{}", target.version()));
@@ -52,7 +53,7 @@ pub fn prepare_for_validation(database_root: &Path) -> Result<()> {
         }
         prepare_format(&vm, &clarity, target)?;
     }
-    verify_clarity(&clarity.join("marf.sqlite"), NodeRecordFormat::TypeFirstV4)?;
+    verify_clarity(&clarity.join("marf.sqlite"), NodeRecordFormat::TypeFirstV41)?;
 
     ensure_direct_hash_index(&vm.join("index.sqlite"))?;
     ensure_direct_hash_index(&clarity.join("marf.sqlite"))?;
@@ -123,6 +124,7 @@ fn prepare_format(vm: &Path, clarity: &Path, target: NodeRecordFormat) -> Result
         NodeRecordFormat::TypeFirstV2 => 2,
         NodeRecordFormat::TypeFirstV3 => 3,
         NodeRecordFormat::TypeFirstV4 => 4,
+        NodeRecordFormat::TypeFirstV41 => 41,
         _ => return Err("unsupported target trie format".into()),
     };
     let source = clarity.join("marf.sqlite");
@@ -160,6 +162,15 @@ fn prepare_format(vm: &Path, clarity: &Path, target: NodeRecordFormat) -> Result
                 stacks_trie_format_v4::plan(&config)?;
                 stacks_trie_format_v4::rewrite(&config, &destination)?;
             }
+            NodeRecordFormat::TypeFirstV41 => {
+                let config = stacks_trie_format_v41::Config {
+                    source_db: source.clone(),
+                    source_blobs: clarity.join("marf.sqlite.blobs"),
+                    scratch: scratch.clone(),
+                };
+                stacks_trie_format_v41::plan(&config)?;
+                stacks_trie_format_v41::rewrite(&config, &destination)?;
+            }
             _ => unreachable!(),
         }
     }
@@ -193,7 +204,8 @@ fn promote(vm: &Path, clarity: &Path, destination: &Path, target: NodeRecordForm
 
 /// Recover the narrow two-rename publication window after a crash.
 fn recover_directory_cutover(vm: &Path, clarity: &Path) -> Result<()> {
-    let previous: Vec<PathBuf> = (1..=4)
+    let previous: Vec<PathBuf> = [1, 2, 3, 4, 41]
+        .into_iter()
         .map(|version| vm.join(format!("clarity.previous-v{version}")))
         .filter(|path| path.exists())
         .collect();
@@ -365,7 +377,7 @@ mod tests {
         prepare_for_validation(temporary.path()).unwrap();
         assert_eq!(
             format(&clarity_path).unwrap(),
-            NodeRecordFormat::TypeFirstV4
+            NodeRecordFormat::TypeFirstV41
         );
         let mut reopen_opts = MARFOpenOpts::default().with_mmap(true);
         reopen_opts.external_blobs = true;
@@ -391,7 +403,7 @@ mod tests {
     fn restores_previous_directory_after_interrupted_cutover() {
         let temporary = tempfile::tempdir().unwrap();
         let vm = temporary.path();
-        let previous = vm.join("clarity.previous-v2");
+        let previous = vm.join("clarity.previous-v41");
         fs::create_dir(&previous).unwrap();
         fs::write(previous.join("marker"), b"old generation").unwrap();
         let clarity = vm.join("clarity");
@@ -405,7 +417,7 @@ mod tests {
     fn restores_previous_directory_after_invalid_candidate() {
         let temporary = tempfile::tempdir().unwrap();
         let vm = temporary.path();
-        let previous = vm.join("clarity.previous-v2");
+        let previous = vm.join("clarity.previous-v41");
         fs::create_dir(&previous).unwrap();
         fs::write(previous.join("marker"), b"old generation").unwrap();
         let clarity = vm.join("clarity");

@@ -14,14 +14,14 @@ use stacks_common::util::hash::to_hex;
 
 use crate::ancestor_cache::AncestorCache;
 use crate::ordered_pipeline::{self, Limits};
-use crate::relocation::{BlobRelocation, RelocationPlan, rewrite_plan_format};
+use crate::relocation::RelocationPlan;
 use crate::relocation_index::RelocationIndex;
 use blockstack_lib::chainstate::stacks::index::Error as MarfError;
 
 /// Error type for offline conversion and filesystem failures.
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 /// Stable conversion binding; change whenever planning semantics change.
-use crate::codec::{BINDING as CODEC, Codec, Counts, DESTINATION_FORMAT, SOURCE_FORMAT};
+use crate::codec::{self, Codec, Counts, DESTINATION_FORMAT, SOURCE_FORMAT};
 /// One bounded publication batch.
 const BATCH: u64 = 256;
 
@@ -112,7 +112,7 @@ fn identity(config: &Config) -> Result<String> {
     }
     paths.sort();
     paths.dedup();
-    let mut text = CODEC.to_string();
+    let mut text = codec::binding();
     for path in paths {
         let metadata = path.metadata()?;
         text.push_str(&format!(
@@ -248,6 +248,7 @@ fn plan_with_event(config: &Config, event: &mut dyn FnMut(u64) -> Result<()>) ->
     let expected: u64 = original.query_row("SELECT (SELECT count(*) FROM marf_data WHERE length(data)>0 OR external_length>0)+(SELECT count(*) FROM mined_blocks WHERE length(data)>0)", [], |r| r.get(0))?;
     let mut count: u64 = db.query_row("SELECT count(*) FROM migration.plans", [], |r| r.get(0))?;
     let input = File::open(&config.source_blobs)?;
+    let codec = Codec::open(&config.source_db)?;
     let mut ancestors = AncestorCache::rebuild(&config.scratch.join("ancestor-cache.tmp"), &db)?;
     let start = Instant::now();
     let mut last = start;
@@ -283,21 +284,20 @@ fn plan_with_event(config: &Config, event: &mut dyn FnMut(u64) -> Result<()>) ->
         },
         |(id, external, bytes, digest)| {
             let mut publish = || -> Result<()> {
-                let plan = BlobRelocation::plan_packed(&bytes, SOURCE_FORMAT, |block, offset| {
+                let plan = codec::plan_blob(&bytes, |block, offset| {
                     ancestors
                         .resolve(block, offset)
                         .map_err(MarfError::CorruptionError)
                 })?;
-                let rewritten = plan.rewrite_format(
+                let rewritten = codec::rewrite_blob(
+                    &plan,
                     &bytes,
-                    SOURCE_FORMAT,
-                    DESTINATION_FORMAT,
                     |block, offset| {
                         ancestors
                             .resolve(block, offset)
                             .map_err(MarfError::CorruptionError)
                     },
-                    |_| Ok(()),
+                    &codec,
                 )?;
                 let counts = Counts::inspect(&rewritten, &plan)?;
                 let source_length = bytes.len() as u64;
@@ -635,18 +635,16 @@ fn rewrite_with_event(
                         return Err("source trie changed since planning".into());
                     }
                     let plan = index.plan(id)?;
-                    let rewritten = rewrite_plan_format(
+                    let rewritten = codec::rewrite_blob(
                         &plan,
                         &bytes,
-                        SOURCE_FORMAT,
-                        DESTINATION_FORMAT,
                         |block, old| {
                             index
                                 .plan(i64::from(block))
                                 .map_err(MarfError::CorruptionError)?
                                 .resolve(old)
                         },
-                        |leaf| codec.transform(leaf, &mut Counts::default()),
+                        &codec,
                     )?;
                     if bytes.get(..32) != rewritten.get(..32)
                         || bytes.get(37..69) != rewritten.get(37..69)
@@ -819,7 +817,12 @@ mod tests {
             tx.begin(&parent, &block(height)).unwrap();
             let mut leaves = Vec::new();
             let mut keys = Vec::new();
-            for n in 0..8usize {
+            let keys_per_block = if DESTINATION_FORMAT == NodeRecordFormat::TypeFirstV41 {
+                64
+            } else {
+                8
+            };
+            for n in 0..keys_per_block {
                 let mut raw = [0; 40];
                 let width = [0, 4, 32, 40][n % 4];
                 raw[..width].fill((height as u8).wrapping_add(n as u8));

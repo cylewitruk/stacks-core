@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tempfile::tempdir;
 
@@ -69,7 +69,9 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
                     let mut leaf = TrieLeaf::from_value(&[], MARFValue::from_value("value"));
                     if matches!(
                         format,
-                        NodeRecordFormat::TypeFirstV3 | NodeRecordFormat::TypeFirstV4
+                        NodeRecordFormat::TypeFirstV3
+                            | NodeRecordFormat::TypeFirstV4
+                            | NodeRecordFormat::TypeFirstV41
                     ) {
                         leaf.inline = Some(InlineValue::from_parts(b"value", &[]).unwrap());
                     } else {
@@ -107,7 +109,9 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
                     .unwrap();
                 if matches!(
                     format,
-                    NodeRecordFormat::TypeFirstV3 | NodeRecordFormat::TypeFirstV4
+                    NodeRecordFormat::TypeFirstV3
+                        | NodeRecordFormat::TypeFirstV4
+                        | NodeRecordFormat::TypeFirstV41
                 ) {
                     assert_eq!(leaf.inline.as_ref().unwrap().record(), b"value");
                     assert_eq!(leaf.extent, None);
@@ -177,6 +181,7 @@ fn compact_raw_roots_and_proofs_match_legacy() {
                 NodeRecordFormat::TypeFirstV2,
                 NodeRecordFormat::TypeFirstV3,
                 NodeRecordFormat::TypeFirstV4,
+                NodeRecordFormat::TypeFirstV41,
             ] {
                 let directory = tempdir().unwrap();
                 let path = directory.path().join("marf.sqlite");
@@ -200,7 +205,7 @@ fn compact_raw_roots_and_proofs_match_legacy() {
                     let id = StacksBlockId([block; 32]);
                     let mut tx = marf.begin_tx().unwrap();
                     tx.begin(&parent, &id).unwrap();
-                    for n in 0..32 {
+                    for n in 0..96 {
                         let mut value = [0; 40];
                         let width = [0, 4, 32, 40][n % 4];
                         value[..width].fill(block.wrapping_add(n as u8));
@@ -219,7 +224,10 @@ fn compact_raw_roots_and_proofs_match_legacy() {
                             Ok(value) => value.unwrap(),
                             Err(error) => {
                                 let saved = directory.into_path();
-                                panic!("{format:?} mmap={mmap} compression={compression} block={block} key={n}: {error:?}; saved {}", saved.display());
+                                panic!(
+                                    "{format:?} mmap={mmap} compression={compression} block={block} key={n}: {error:?}; saved {}",
+                                    saved.display()
+                                );
                             }
                         };
                         proofs.push((value, proof.to_hex()));
@@ -259,9 +267,11 @@ fn compact_raw_metadata_guards() {
     NodeRecordFormat::TypeFirstV1
         .write_trie_header(&mut header, &StacksBlockId::sentinel())
         .unwrap();
-    assert!(NodeRecordFormat::TypeFirstV2
-        .validate_trie_header(&header)
-        .is_err());
+    assert!(
+        NodeRecordFormat::TypeFirstV2
+            .validate_trie_header(&header)
+            .is_err()
+    );
     db.execute("UPDATE marf_record_format SET version=999", [])
         .unwrap();
     assert!(NodeRecordFormat::from_database(db).is_err());
@@ -309,4 +319,37 @@ fn inline_metadata_and_header_guards() {
 fn packed_columns_reads_and_unconfirmed_reopens() {
     compact_leaf_reopens(false, NodeRecordFormat::TypeFirstV4);
     compact_leaf_reopens(true, NodeRecordFormat::TypeFirstV4);
+}
+
+/// Compact metadata retains inline values, proofs and unconfirmed reopens on every backend.
+#[test]
+fn compact_node256_reads_and_unconfirmed_reopens() {
+    compact_leaf_reopens(false, NodeRecordFormat::TypeFirstV41);
+    compact_leaf_reopens(true, NodeRecordFormat::TypeFirstV41);
+}
+
+/// Published V4.1 storage cannot be opened through an earlier physical format.
+#[test]
+fn compact_node256_metadata_and_header_guards() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("guard.sqlite");
+    let marf =
+        MARF::<StacksBlockId>::from_path(path.to_str().unwrap(), MARFOpenOpts::default()).unwrap();
+    let db = marf.sqlite_conn();
+    let latest = NodeRecordFormat::TypeFirstV41;
+    latest.publish(db).unwrap();
+    assert_eq!(NodeRecordFormat::from_database(db).unwrap(), latest);
+    let mut header = Vec::new();
+    latest
+        .write_trie_header(&mut header, &StacksBlockId::sentinel())
+        .unwrap();
+    for old in [
+        NodeRecordFormat::TypeFirstV1,
+        NodeRecordFormat::TypeFirstV2,
+        NodeRecordFormat::TypeFirstV3,
+        NodeRecordFormat::TypeFirstV4,
+    ] {
+        assert!(old.publish(db).is_err());
+        assert!(old.validate_trie_header(&header).is_err());
+    }
 }
