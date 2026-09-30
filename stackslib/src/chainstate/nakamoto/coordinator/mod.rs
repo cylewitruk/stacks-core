@@ -23,7 +23,7 @@ use stacks_common::types::chainstate::{
 };
 use stacks_common::types::StacksEpochId;
 
-use crate::burnchains::db::{BurnchainBlockData, BurnchainDB, BurnchainHeaderReader};
+use crate::burnchains::db::{BurnchainBlockData, BurnchainDB};
 use crate::burnchains::{self, Burnchain};
 use crate::chainstate::burn::db::sortdb::{
     get_ancestor_sort_id, SortitionDB, SortitionHandle, SortitionHandleConn,
@@ -48,9 +48,6 @@ use crate::cost_estimates::{CostEstimator, FeeEstimator};
 use crate::monitoring::increment_stx_blocks_processed_counter;
 use crate::net::Error as NetError;
 use crate::util_lib::db::Error as DBError;
-
-#[cfg(any(test, feature = "testing"))]
-pub static TEST_COORDINATOR_STALL: std::sync::Mutex<Option<bool>> = std::sync::Mutex::new(None);
 
 #[cfg(test)]
 pub mod tests;
@@ -220,7 +217,7 @@ impl<T: BlockEventDispatcher> OnChainRewardSetProvider<'_, T> {
         //  Non participation is fatal.
         if reward_set
             .rewarded_addresses()
-            .map_or(false, |addrs| addrs.is_empty())
+            .is_some_and(|addrs| addrs.is_empty())
         {
             // no one is stacking (V0 with empty rewarded_addresses)
             err_or_debug!(debug_log, "No PoX participation");
@@ -356,6 +353,61 @@ pub fn get_nakamoto_reward_cycle_info<U: RewardSetProvider>(
     return Ok(Some(rc_info));
 }
 
+/// Load the reward set that was active when a Nakamoto tenure was elected.
+///
+/// `tenure_snapshot` must be the snapshot of the sortition that elected the tenure (the
+/// sortition whose consensus hash the tenure's blocks carry), not the burnchain tip: a tenure
+/// extended across a reward-cycle boundary is still signed by the reward set that was active
+/// at its election. Load errors are folded into `ChainstateError` as block acceptance has
+/// historically classified them.
+pub fn load_nakamoto_reward_set_for_tenure<U: RewardSetProvider>(
+    tenure_snapshot: &BlockSnapshot,
+    burnchain: &Burnchain,
+    chain_state: &mut StacksChainState,
+    stacks_tip: &StacksBlockId,
+    sort_db: &SortitionDB,
+    provider: &U,
+) -> Result<Option<RewardSet>, ChainstateError> {
+    let reward_cycle = burnchain
+        .block_height_to_reward_cycle(tenure_snapshot.block_height)
+        .ok_or_else(|| {
+            ChainstateError::Expects(format!(
+                "Nakamoto tenure election at burn height {} has no reward cycle",
+                tenure_snapshot.block_height
+            ))
+        })?;
+
+    let Some((reward_cycle_info, _)) = load_nakamoto_reward_set(
+        reward_cycle,
+        &tenure_snapshot.sortition_id,
+        burnchain,
+        chain_state,
+        stacks_tip,
+        sort_db,
+        provider,
+    )
+    .map_err(|e| match e {
+        Error::ChainstateError(e) => e,
+        Error::DBError(DBError::NotFoundError) => ChainstateError::PoxNoRewardCycle,
+        Error::DBError(e) => ChainstateError::DBError(e),
+        e => {
+            error!(
+                "Failed to load reward set for tenure election at burn height {}: {e:?}",
+                tenure_snapshot.block_height
+            );
+            ChainstateError::PoxNoRewardCycle
+        }
+    })?
+    else {
+        return Ok(None);
+    };
+    let reward_set = reward_cycle_info
+        .known_selected_anchor_block_owned()
+        .ok_or_else(|| ChainstateError::NoRegisteredSigners(reward_cycle))?;
+
+    Ok(Some(reward_set))
+}
+
 /// Helper to get the Nakamoto reward set for a given reward cycle, identified by `reward_cycle`.
 ///
 /// In all but the first Nakamoto reward cycle, this will load up the stored reward set from the
@@ -479,14 +531,7 @@ pub fn load_nakamoto_reward_set<U: RewardSetProvider>(
     let Some(anchor_block_header) = prepare_phase_sortitions
         .into_iter()
         .find_map(|sn| {
-            let shadow_tenure = match chain_state.nakamoto_blocks_db().is_shadow_tenure(&sn.consensus_hash) {
-                Ok(x) => x,
-                Err(e) => {
-                    return Some(Err(e));
-                }
-            };
-
-            if !sn.sortition && !shadow_tenure {
+            if !sn.sortition {
                 return None
             }
 
@@ -590,7 +635,8 @@ fn is_naka_reward_cycle_start_for_epoch(burnchain: &Burnchain, block_height: u64
 /// This is a little different than epoch 2.x:
 /// * we're guaranteed to have an anchor block
 /// * we pre-compute the reward set at the start of the prepare phase, so we only need to load it
-/// up here at the start of the reward phase.
+///   up here at the start of the reward phase.
+///
 /// `stacks_tip` is the tip that the caller is going to build a block on.
 pub fn get_nakamoto_next_recipients(
     sortition_tip: &BlockSnapshot,
@@ -633,8 +679,7 @@ impl<
         U: RewardSetProvider,
         CE: CostEstimator + ?Sized,
         FE: FeeEstimator + ?Sized,
-        B: BurnchainHeaderReader,
-    > ChainsCoordinator<'_, T, N, U, CE, FE, B>
+    > ChainsCoordinator<'_, T, N, U, CE, FE>
 {
     /// Get the first nakamoto reward cycle
     fn get_first_nakamoto_reward_cycle(&self) -> u64 {
@@ -695,7 +740,6 @@ impl<
         bits: u8,
         miner_status: Arc<Mutex<MinerStatus>>,
     ) -> bool {
-        // timeout so that we handle Ctrl-C a little gracefully
         if (bits & (CoordinatorEvents::NEW_STACKS_BLOCK as u8)) != 0 {
             signal_mining_blocked(miner_status.clone());
             debug!("Received new Nakamoto stacks block notice");
@@ -734,18 +778,8 @@ impl<
             }
 
             // now we can process the nakamoto block
-            match self.handle_new_nakamoto_stacks_block() {
-                Ok(new_anchor_block_opt) => {
-                    if let Some(bhh) = new_anchor_block_opt {
-                        debug!(
-                            "Found next PoX anchor block, waiting for reward cycle processing";
-                            "pox_anchor_block_hash" => %bhh
-                        );
-                    }
-                }
-                Err(e) => {
-                    warn!("Error processing new stacks block: {:?}", e);
-                }
+            if let Err(e) = self.handle_new_nakamoto_stacks_block() {
+                warn!("Error processing new stacks block: {:?}", e);
             }
 
             signal_mining_ready(miner_status.clone());
@@ -774,27 +808,12 @@ impl<
         true
     }
 
-    #[cfg(any(test, feature = "testing"))]
-    fn fault_injection_pause_nakamoto_block_processing() {
-        if *TEST_COORDINATOR_STALL.lock().unwrap() == Some(true) {
-            // Do an extra check just so we don't log EVERY time.
-            warn!("Coordinator is stalled due to testing directive");
-            while *TEST_COORDINATOR_STALL.lock().unwrap() == Some(true) {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            warn!("Coordinator is no longer stalled due to testing directive. Continuing...");
-        }
-    }
-
-    #[cfg(not(any(test, feature = "testing")))]
-    fn fault_injection_pause_nakamoto_block_processing() {}
-
     /// Handle one or more new Nakamoto Stacks blocks.
-    /// If we process a PoX anchor block, then return its block hash.  This unblocks processing the
-    /// next reward cycle's burnchain blocks.  Subsequent calls to this function will terminate
-    /// with Some(pox-anchor-block-hash) until the reward cycle info is processed in the sortition
-    /// DB.
-    pub fn handle_new_nakamoto_stacks_block(&mut self) -> Result<Option<BlockHeaderHash>, Error> {
+    /// If we process a PoX anchor block, then kick off processing the next sortition to unblock
+    /// processing the next reward cycle's burnchain blocks.
+    /// Return if there are no more blocks in the staging DB, or if the coordinator has received
+    /// a signal to shut down.
+    pub fn handle_new_nakamoto_stacks_block(&mut self) -> Result<(), Error> {
         debug!("Handle new Nakamoto block");
         let canonical_sortition_tip = self.canonical_sortition_tip.clone().ok_or_else(|| {
             ChainstateError::Expects(
@@ -803,7 +822,16 @@ impl<
         })?;
 
         loop {
-            Self::fault_injection_pause_nakamoto_block_processing();
+            // This loop will (almost always) run without interruption until the node has caught
+            // up to the chain tip. When you're doing a sync on chainstate that is a little behind,
+            // this can take a long time. Without this check here, it wouldn't be possible to safely
+            // stop the node without waiting for all that time.
+            if self.comms.has_pending_stop_signal() {
+                info!(
+                    "Stopping Nakamoto block handling because coordinator is about to shut down."
+                );
+                return Ok(());
+            }
 
             // process at most one block per loop pass
             let mut processed_block_receipt = match NakamotoChainState::process_next_nakamoto_block(
@@ -937,7 +965,9 @@ impl<
                 .burnchain
                 .block_height_to_reward_cycle(stacks_sn.block_height)
                 .ok_or_else(|| {
-                    ChainstateError::Expects(format!("burnchain block height has no reward cycle"))
+                    ChainstateError::Expects(
+                        "burnchain block height has no reward cycle".to_string(),
+                    )
                 })?;
 
             let last_processed_reward_cycle = {
@@ -982,8 +1012,7 @@ impl<
             debug!("Processed next reward cycle's sortitions");
         }
 
-        // no PoX anchor block found
-        Ok(None)
+        Ok(())
     }
 
     /// Given a burnchain header, find the PoX reward cycle info

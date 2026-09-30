@@ -86,6 +86,9 @@ coverage.lcov
 .claude
 .vite
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # proptest regression files
 proptest-regressions/
 *.proptest-regressions

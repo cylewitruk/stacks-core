@@ -65,7 +65,7 @@ pub const BANDWIDTH_POINT_LIFETIME: u64 = 600;
 pub const MAX_PEER_HEARTBEAT_INTERVAL: usize = 3600 * 6; // 6 hours
 
 /// Statistics on relayer hints in Stacks messages.  Used to deduce network choke points.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RelayStats {
     pub num_messages: u64, // how many messages a relayer has pushed to this neighbor
     pub num_bytes: u64,    // how many bytes a relayer has pushed to this neighbor
@@ -231,7 +231,7 @@ impl NeighborStats {
     }
 
     pub fn take_relayers(&mut self) -> HashMap<NeighborAddress, RelayStats> {
-        let ret = mem::replace(&mut self.relayed_messages, HashMap::new());
+        let ret = mem::take(&mut self.relayed_messages);
         ret
     }
 
@@ -309,6 +309,7 @@ impl NeighborStats {
     }
 
     /// Determine how many of a particular message this peer has received
+    #[cfg(test)]
     pub fn get_message_recv_count(&self, msg_id: StacksMessageID) -> u64 {
         *(self.msg_rx_counts.get(&msg_id).unwrap_or(&0))
     }
@@ -447,10 +448,7 @@ impl Neighbor {
         let asn_opt =
             PeerDB::asn_lookup(conn, &handshake_data.addrbytes).map_err(net_error::DBError)?;
 
-        let asn = match asn_opt {
-            Some(a) => a,
-            None => 0,
-        };
+        let asn = asn_opt.unwrap_or_default();
 
         self.public_key = pubk;
         self.expire_block = handshake_data.expire_block_height;
@@ -467,9 +465,10 @@ impl Neighbor {
     /// Instantiate a Neighbor from HandshakeData, merging the information we have on-disk in the
     /// PeerDB with information in the handshake.
     /// * If we already know about this neighbor, then all previously-calculated state and local
-    /// configuration state will be loaded as well.  This includes things like the calculated
-    /// in/out-degree and last-contact time, as well as the allow/deny time limits.
+    ///   configuration state will be loaded as well.  This includes things like the calculated
+    ///   in/out-degree and last-contact time, as well as the allow/deny time limits.
     /// * If we do not know about this neighbor, then the above state will not be loaded.
+    ///
     /// Returns (the neighbor, whether or not the neighbor was known)
     pub fn load_and_update(
         conn: &DBConn,
@@ -2051,6 +2050,7 @@ impl ConversationP2P {
     /// Check that a message was properly relayed.
     /// * there are no relay cycles
     /// * we didn't send this
+    ///
     /// Update relayer statistics for this conversation
     fn process_relayers(
         &mut self,
@@ -2481,11 +2481,6 @@ impl ConversationP2P {
             self.reply_handles.pop_front();
         }
         Ok(())
-    }
-
-    /// How many pending outgoing messages are there
-    pub fn num_pending_outbound(&self) -> usize {
-        self.reply_handles.len()
     }
 
     /// Validate an inbound p2p message
@@ -3027,14 +3022,23 @@ impl ConversationP2P {
         }
     }
 
-    /// Get a ref to the conversation stats
-    pub fn get_stats(&self) -> &NeighborStats {
-        &self.stats
-    }
-
     /// Get a mut ref to the conversation stats
     pub fn get_stats_mut(&mut self) -> &mut NeighborStats {
         &mut self.stats
+    }
+}
+
+/// Test-only helpers for [`ConversationP2P`].
+#[cfg(test)]
+impl ConversationP2P {
+    /// How many pending outgoing messages are there
+    pub fn num_pending_outbound(&self) -> usize {
+        self.reply_handles.len()
+    }
+
+    /// Get a ref to the conversation stats
+    pub fn get_stats(&self) -> &NeighborStats {
+        &self.stats
     }
 }
 
@@ -3045,7 +3049,6 @@ mod test {
 
     use stacks_common::types::chainstate::{BlockHeaderHash, BurnchainHeaderHash, SortitionId};
     use stacks_common::util::pipe::*;
-    use stacks_common::util::secp256k1::*;
     use stacks_common::util::uint::*;
     use stacks_common::util::*;
 
@@ -3160,8 +3163,8 @@ mod test {
 
         loop {
             let mut res = true;
-            for i in 0..sender_handles.len() {
-                let r = sender_handles[i].try_flush().unwrap();
+            for sender_handle in &mut sender_handles {
+                let r = sender_handle.try_flush().unwrap();
                 res = r && res;
             }
 
@@ -6923,8 +6926,10 @@ mod test {
 
     #[test]
     fn test_validate_block_push() {
-        let mut conn_opts = ConnectionOptions::default();
-        conn_opts.max_block_push_bandwidth = 100;
+        let conn_opts = ConnectionOptions {
+            max_block_push_bandwidth: 100,
+            ..Default::default()
+        };
 
         let socketaddr_1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 8081);
 
@@ -7050,8 +7055,10 @@ mod test {
 
     #[test]
     fn test_validate_transaction_push() {
-        let mut conn_opts = ConnectionOptions::default();
-        conn_opts.max_transaction_push_bandwidth = 100;
+        let conn_opts = ConnectionOptions {
+            max_transaction_push_bandwidth: 100,
+            ..Default::default()
+        };
 
         let socketaddr_1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 8081);
 
@@ -7177,8 +7184,10 @@ mod test {
 
     #[test]
     fn test_validate_microblocks_push() {
-        let mut conn_opts = ConnectionOptions::default();
-        conn_opts.max_microblocks_push_bandwidth = 100;
+        let conn_opts = ConnectionOptions {
+            max_microblocks_push_bandwidth: 100,
+            ..Default::default()
+        };
 
         let socketaddr_1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 8081);
 
@@ -7304,8 +7313,10 @@ mod test {
 
     #[test]
     fn test_validate_stackerdb_push() {
-        let mut conn_opts = ConnectionOptions::default();
-        conn_opts.max_stackerdb_push_bandwidth = 100;
+        let conn_opts = ConnectionOptions {
+            max_stackerdb_push_bandwidth: 100,
+            ..Default::default()
+        };
 
         let socketaddr_1 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 8081);
 

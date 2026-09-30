@@ -417,3 +417,67 @@ impl ExecCommand for RunArgs {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{BaselineMode, BenchRunParams};
+    use crate::cli::bench::BenchCommand;
+    use crate::cli::{Cli, Commands};
+
+    /// Parses fixed-range benchmark options without executing a benchmark.
+    #[test]
+    fn fixed_range_options_parse() {
+        let cli = Cli::try_parse_from([
+            "stacks-bench",
+            "bench",
+            "run",
+            "--source",
+            "/nonexistent",
+            "--tip",
+            "200",
+            "--start-at",
+            "100",
+            "--end-at",
+            "150",
+            "--warmup",
+            "5",
+            "--no-profiler-kv",
+            "--no-baseline",
+        ])
+        .expect("fixed-range options should parse");
+        let Commands::Bench(bench) = cli.command else {
+            panic!("expected bench command");
+        };
+        let BenchCommand::Run(run) = bench.command else {
+            panic!("expected run command");
+        };
+        let params = BenchRunParams::from(&run);
+
+        assert!(params.tip.is_some());
+        assert!(params.start_at.is_some());
+        assert!(params.end_at.is_some());
+        assert_eq!(params.warmup, 5);
+        assert!(params.no_profiler_kv);
+        std::assert_matches!(params.baseline, BaselineMode::Skipped);
+    }
+
+    /// Rejects incompatible baseline selection options during parsing.
+    #[test]
+    fn no_baseline_conflicts_with_baseline_id() {
+        assert!(
+            Cli::try_parse_from([
+                "stacks-bench",
+                "bench",
+                "run",
+                "--source",
+                "/nonexistent",
+                "--no-baseline",
+                "--baseline-id",
+                "1",
+            ])
+            .is_err()
+        );
+    }
+}
