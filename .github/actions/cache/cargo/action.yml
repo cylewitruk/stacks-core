@@ -1,33 +1,35 @@
 name: Cargo Cache
 description: |
-    Rust Cargo cache
+    Cargo crate cache management.
 
 inputs:
   action:
-    description: "Type of operation (restore,save)"
+    description: "Type of operation (check,restore,create)"
     required: false
-    default: ""
-  fail-on-cache-miss:
-    description: "Fail workflow if cache is not restorable"
-    required: false
-    default: "true"
-  cache-key:
-    description: "Cache Key name"
-    required: false
-    default: ${{ github.event.repository.name }}-${{ github.event.pull_request.head.sha || github.sha }}-cargo
+    default: "check"
 
 outputs:
-  cache-hit:
-    description: "Cache Hit"
-    value: ${{ steps.check_cache.outputs.cache-hit }}
+  cache-key:
+    description: "Cache Key"
+    value: ${{ steps.generate-keys.outputs.cargo-cache-key }}
+  cache-matched-key:
+    description: "Key of the cache that was checked or restored, it could either be the primary key on cache-hit or a partial/complete match of one of the restore keys."
+    value: ${{ steps.check-cache.outputs.cache-matched-key || steps.restore-cache.outputs.cache-matched-key }}
 
 runs:
   using: "composite"
   steps:
+    # Generate cache keys
+    - name: Generate Cache Keys
+      id: generate-keys
+      uses: ./.github/actions/cache/generate-keys
+      
     # Check if cache data exists
     - name: Check Cache
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-      id: check_cache
+      if: |
+        inputs.action == 'check'
+      uses: ./.github/wrappers/cache/restore
+      id: check-cache
       with:
         lookup-only: true
         path: |
@@ -35,33 +37,91 @@ runs:
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-        key: ${{ inputs.cache-key }}
+          target/
+        key: ${{ steps.generate-keys.outputs.cargo-cache-key }}
+        # Allows cache to "fallback" to `main` generated cache, using a prefix. The most recently created cache will be selected.
+        restore-keys: ${{ steps.generate-keys.outputs.cargo-restore-key }}
 
     # Restore cache data
     - name: Restore Cache
       if: |
-        inputs.action == 'restore' &&
-        steps.check_cache.outputs.cache-hit == 'true'
-      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        inputs.action == 'restore'
+      uses: ./.github/wrappers/cache/restore
+      id: restore-cache
       with:
-        fail-on-cache-miss: ${{ inputs.fail-on-cache-miss }}
         path: |
           ~/.cargo/bin/
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-        key: ${{ inputs.cache-key }}
+          target/
+        key: ${{ steps.generate-keys.outputs.cargo-cache-key }}
+        # Allows cache to "fallback" to `main` generated cache, using a prefix. The most recently created cache will be selected.
+        restore-keys: ${{ steps.generate-keys.outputs.cargo-restore-key }}
+        fail-on-cache-miss: true
 
+    # Checkout the code
+    - name: Checkout the latest code
+      if: |
+        inputs.action == 'create'
+      uses: $/.github/wrappers/checkout
+      with:
+        ref: ${{ github.ref }}
+  
+    # Setup rust toolchain
+    - name: Setup Rust Toolchain
+      if: |
+        inputs.action == 'create'
+      uses: ./.github/actions/setup-rust-toolchain
+      with:
+        components: llvm-tools-preview
+    
+    #  Install nextest and cargo-llvm-cov
+    - name: Install nextest and cargo-llvm-cov
+      if: |
+        inputs.action == 'create'
+      uses: ./.github/actions/install-tool
+      with:
+        tools: nextest, cargo-llvm-cov
+    
+    # Install mold linker and clang (faster than default)      
+    - name: Install mold Linker (and clang)
+      if: |
+        inputs.action == 'create'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mold clang
+  
+    # Build the cargo crates
+    # This will include local workspace crates, which will be automatically recompiled by future `cargo build`
+    # commands if they differ from the source code being built.
+    - name: Build Cargo Crates
+      if: |
+        inputs.action == 'create'
+      shell: bash
+      env:
+        RUSTFLAGS: "-C linker=clang -C link-arg=-fuse-ld=mold -A warnings"
+        CARGO_INCREMENTAL: 0
+      # This command should be kept in sync with the same command in artifacts/nextest-archive action
+      run: |
+        cargo llvm-cov nextest-archive \
+          --workspace \
+          --tests \
+          --locked \
+          --features monitoring_prom \
+          --archive-file "not_used.tar.zst"
+  
     # Save cache data
     - name: Save Cache
       if: |
-        inputs.action == 'save' &&
-        steps.check_cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        inputs.action == 'create'
+      uses: ./.github/wrappers/cache/save
       with:
         path: |
           ~/.cargo/bin/
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-        key: ${{ inputs.cache-key }}
+          target/
+        key: ${{ steps.generate-keys.outputs.cargo-cache-key }}

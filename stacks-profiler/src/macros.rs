@@ -13,277 +13,153 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-/// Execute a block of code inside a profiling span.
+/// Execute a block inside a profiling span.
 ///
-/// This is the most convenient way to profile a scope because it guarantees the span is ended even
-/// if the block returns early or panics (the guard is dropped).
+/// Wraps a block in a [`span!`] guard — the span ends when the block exits (including early
+/// returns and panics). Accepts the same modifiers as `span!` (`rate:`, `suppress`, `count_only`,
+/// tags). See [`span!`] for full details on sampling and tagging.
 ///
-/// `measure!` is implemented in terms of [`span!`](crate::span), and uses the same sampling and
-/// tagging options.
-///
-/// ## When to use
-/// - You want to profile a lexical scope (a block).
-/// - You don't need to manually keep the guard around.
-/// - You want panic/early-return safety without writing `let _guard = ...`.
-///
-/// If you need a guard whose lifetime is not exactly the block scope, use [`span!`](crate::span)
-/// directly.
-///
-/// ## Sampling
-/// The `rate: N` forms record timing for approximately **1 out of every N executions** at the
-/// callsite. Lower `N` means more overhead and better fidelity.
-///
-/// By default, if a span is **not sampled**, `span!` returns `None` (no guard is created), which is
-/// the cheapest path.
-///
-/// ## Suppression vs count-only (for unsampled calls)
-/// Two optional modes affect what happens on the **unsampled** path:
-///
-/// - `suppress`: unsampled parent spans enter *hierarchical suppression*. While suppressed, nested
-///   `span!`/`measure!` calls become no-ops so that children do **not** incorrectly attach to the
-///   nearest sampled ancestor. This prevents tree distortion but drops nested detail under
-///   unsampled parents.
-///
-/// - `count_only`: unsampled parent spans still push a lightweight frame to preserve hierarchy and
-///   increment counts, but do **not** read clocks. This keeps children correctly parented and
-///   yields accurate per-context call counts, at higher overhead than `suppress` / returning
-///   `None`.
-///
-/// ## Tagging
-/// Many forms accept a `$tag` which is converted into [`Tag`](crate::Tag). Tags are used to
-/// distinguish otherwise identical spans (for example, different transaction indices).
-///
-/// Be careful with very high-cardinality tags (e.g. unique IDs) at hot callsites: this can create
-/// many distinct nodes in the profile tree.
+/// Use `span!` directly if you need the guard to outlive a single block.
 ///
 /// ## Examples
 ///
-/// ### Basic (always recorded)
 /// ```rust
 /// use stacks_profiler::measure;
 ///
-/// measure!("decode_block", {
-///     // ...work...
-/// });
-/// ```
+/// // Always recorded:
+/// measure!("decode_block", { /* ... */ });
 ///
-/// ### With a tag
-/// ```rust
-/// use stacks_profiler::measure;
+/// // With a tag:
+/// measure!("execute_tx", 42u64, { /* ... */ });
 ///
-/// let tx_index: u64 = 42;
-/// measure!("execute_tx", tx_index, {
-///     // ...work...
-/// });
-/// ```
-///
-/// ### Sample 1/N (unsampled => nothing recorded)
-/// ```rust
-/// use stacks_profiler::measure;
-///
-/// // Time ~1% of calls at this callsite.
-/// measure!("hot_loop_body", rate: 100, {
-///     // ...work...
-/// });
-/// ```
-///
-/// ### Sample 1/N with hierarchical suppression
-/// ```rust
-/// use stacks_profiler::measure;
-///
-/// // If unsampled, enter suppression so nested spans don't attach to the wrong parent.
+/// // Sampled with suppression:
 /// measure!("tx", rate: 100, suppress, {
-///     // Nested spans are only recorded when `tx` itself is sampled.
 ///     measure!("verify", { /* ... */ });
-///     measure!("apply",  { /* ... */ });
+/// });
+///
+/// // Anonymous block:
+/// measure!({
+///     /* ... */
 /// });
 /// ```
-///
-/// ### Sample 1/N with count-only frames
-/// ```rust
-/// use stacks_profiler::measure;
-///
-/// // If unsampled, keep the hierarchy and increment counts without timing.
-/// measure!("tx", rate: 100, count_only, {
-///     // Nested spans will still attach under `tx` even when `tx` is not timed.
-///     measure!("verify", { /* ... */ });
-///     measure!("apply",  { /* ... */ });
-/// });
-/// ```
-///
-/// ## Notes
-/// - All macros are thread-local: each thread records its own tree.
-/// - `count_only` affects how you should interpret `count`: `count` becomes "number of calls"
-///   (sampled + unsampled), while timing fields are accumulated only for sampled calls.
 #[macro_export]
 macro_rules! measure {
     // Name, Tag, Rate, count_only, Block
     ($name:literal, $tag:expr, rate: $rate:literal, count_only, $block:block) => {{
-        let _guard = $crate::span!($name, $tag, rate: $rate, count_only);
+        let __profiler_guard = $crate::span!($name, $tag, rate: $rate, count_only);
         $block
     }};
 
     // Name, Rate, count_only, Block
     ($name:literal, rate: $rate:literal, count_only, $block:block) => {{
-        let _guard = $crate::span!($name, rate: $rate, count_only);
+        let __profiler_guard = $crate::span!($name, rate: $rate, count_only);
         $block
     }};
 
     // Name, Tag, Rate, suppress, Block
     ($name:literal, $tag:expr, rate: $rate:literal, suppress, $block:block) => {{
-        let _guard = $crate::span!($name, $tag, rate: $rate, suppress);
+        let __profiler_guard = $crate::span!($name, $tag, rate: $rate, suppress);
         $block
     }};
 
     // Name, Rate, suppress, Block
     ($name:literal, rate: $rate:literal, suppress, $block:block) => {{
-        let _guard = $crate::span!($name, rate: $rate, suppress);
+        let __profiler_guard = $crate::span!($name, rate: $rate, suppress);
         $block
     }};
 
     // Name, Tag, Rate, Block
     ($name:literal, $tag:expr, rate: $rate:literal, $block:block) => {{
-        let _guard = $crate::span!($name, $tag, rate: $rate);
+        let __profiler_guard = $crate::span!($name, $tag, rate: $rate);
         $block
     }};
 
     // Name, Rate, Block
     ($name:literal, rate: $rate:literal, $block:block) => {{
-        let _guard = $crate::span!($name, rate: $rate);
+        let __profiler_guard = $crate::span!($name, rate: $rate);
         $block
     }};
 
     // Name, Tag, Block
     ($name:literal, $tag:expr, $block:block) => {{
-        let _guard = $crate::span!($name, $tag);
+        let __profiler_guard = $crate::span!($name, $tag);
         $block
     }};
 
     // Name, Block
     ($name:literal, $block:block) => {{
-        let _guard = $crate::span!($name);
+        let __profiler_guard = $crate::span!($name);
         $block
     }};
 
     // Trap (Name, Rate)
     ($name:literal, rate: $rate:literal) => {
-        let _guard = $crate::span!($name, rate: $rate);
+        let __profiler_guard = $crate::span!($name, rate: $rate);
     };
 
     // Trap (Name)
     ($name:literal) => {
-        let _guard = $crate::span!($name);
+        let __profiler_guard = $crate::span!($name);
     };
 
     // Anonymous Block
-    ($($t:tt)*) => {{
-        let _guard = $crate::span!("scope");
-        $($t)*
+    ($block:block) => {{
+        let __profiler_guard = $crate::span!("scope");
+        $block
     }};
+
+    // Catch-all: reject malformed invocations instead of treating arbitrary tokens as an
+    // anonymous block body.
+    ($($t:tt)*) => {
+        compile_error!(
+            "invalid `measure!` invocation; see the macro documentation for supported forms and examples."
+        );
+    };
 }
 
 /// Create a profiling span guard for the current scope.
 ///
-/// This macro returns an `Option<ProfileGuard>`:
-/// - `Some(guard)` when the span is recorded (timed, count-only, or suppression guard),
-/// - `None` when the span is not recorded (fast path).
+/// Returns `Option<ProfileGuard>` — `Some` when recorded, `None` when suppressed or unsampled.
+/// The span ends when the guard is dropped. Use [`measure!`] instead if you just want to
+/// time a block.
 ///
-/// Most callsites will use:
-/// ```rust
-/// # use stacks_profiler::span;
-/// let _guard = span!("my_span");
-/// ```
-/// and ignore the returned value.
+/// ## Forms
 ///
-/// ## When to use
-/// Use `span!` when you need:
-/// - a guard that outlives a single block (e.g., around a loop where you `break`/`continue`),
-/// - to manually manage the scope (`drop(_guard)` to end early),
-/// - to attach a tag at the callsite.
+/// | Form | Behavior |
+/// |------|----------|
+/// | `span!("name")` | Always timed |
+/// | `span!("name", tag)` | Always timed, with tag |
+/// | `span!("name", rate: N)` | Timed 1/N; unsampled → `None` |
+/// | `span!("name", rate: N, suppress)` | Timed 1/N; unsampled → suppresses nested spans |
+/// | `span!("name", rate: N, count_only)` | Timed 1/N; unsampled → preserves hierarchy, increments count, no clocks (records/counters on that frame are skipped) |
 ///
-/// If you just want to profile a block, [`measure!`](crate::measure) is shorter and harder to misuse.
+/// All forms also accept `(name, tag, rate: N, ...)`.
 ///
-/// ## Supported forms
-/// ### Always recorded (timed)
-/// - `span!("name")`
-/// - `span!("name", tag)`
+/// ## Sampling modifiers
 ///
-/// ### Sampled (timed 1/N, unsampled => `None`)
-/// - `span!("name", rate: N)`
-/// - `span!("name", tag, rate: N)`
-///
-/// ### Sampled + hierarchical suppression (unsampled => suppression guard)
-/// - `span!("name", rate: N, suppress)`
-/// - `span!("name", tag, rate: N, suppress)`
-///
-/// Use this when you want to avoid *tree distortion* in analyses that depend on the true
-/// hierarchical parent, and it is acceptable to lose nested detail when the parent is unsampled.
-///
-/// ### Sampled + count-only frames (unsampled => count-only guard)
-/// - `span!("name", rate: N, count_only)`
-/// - `span!("name", tag, rate: N, count_only)`
-///
-/// Use this when you want correct parent/child relationships *and* accurate per-context
-/// call counts even when you are not timing a particular invocation.
-///
-/// ## Suppression behavior
-/// When suppression is active (entered via an unsampled `suppress` span), all nested spans
-/// return `None` immediately. This ensures nested spans do not attach to the wrong parent.
-///
-/// ## Count-only semantics
-/// In `count_only` mode, the profiler:
-/// - maintains parent context (push/pop a lightweight frame),
-/// - increments `count`,
-/// - **does not** read wall/cpu clocks for that invocation.
-///
-/// As a result:
-/// - `count` becomes total calls (sampled + unsampled),
-/// - `wall_time_ns` / `cpu_time_ns` are accumulated only for sampled calls.
+/// - **`suppress`**: unsampled parents suppress all nested `span!`/`measure!` calls (they
+///   return `None`), preventing children from attaching to the wrong ancestor.
+/// - **`count_only`**: unsampled parents still push a frame to maintain hierarchy and
+///   increment `count`, but skip clock reads. Timing fields only reflect sampled calls.
+///   `record!`/`counter_add!` on that unsampled frame are no-ops.
 ///
 /// ## Examples
-/// ### Manual guard usage
-/// ```rust
-/// use stacks_profiler::span;
 ///
-/// let guard = span!("outer");
-/// // ... do some work ...
-/// drop(guard); // end span early (optional)
-/// ```
-///
-/// ### Sampling (fast unsampled path)
-/// ```rust
-/// use stacks_profiler::span;
-///
-/// // Time about 1 out of every 100 calls at this callsite.
-/// let _g = span!("hot", rate: 100);
-/// ```
-///
-/// ### Avoid wrong-parent attachment
 /// ```rust
 /// use stacks_profiler::{measure, span};
+///
+/// let guard = span!("outer");
+/// drop(guard); // end early
+///
+/// // Keep the guard in a named binding for the span's duration.
+/// // `let _ = span!(...)` drops the guard immediately.
+/// let _guard = span!("hot", rate: 100); // sample 1%
 ///
 /// measure!("root", {
 ///     let _p = span!("parent", rate: 100, suppress);
-///     // This child will only be recorded when `parent` is sampled.
-///     let _c = span!("child");
+///     let _c = span!("child"); // only recorded when parent is sampled
 /// });
 /// ```
-///
-/// ### Preserve hierarchy with count-only
-/// ```rust
-/// use stacks_profiler::{measure, span};
-///
-/// measure!("root", {
-///     let _p = span!("parent", rate: 100, count_only);
-///     // This child will attach under `parent` even when `parent` is not timed.
-///     let _c = span!("child");
-/// });
-/// ```
-///
-/// ## Performance notes
-/// - `rate: N` unsampled (default) is the cheapest path.
-/// - `suppress` unsampled adds a very small overhead (TLS suppression depth).
-/// - `count_only` unsampled is more expensive because it must preserve hierarchy and update counts.
 #[macro_export]
 macro_rules! span {
     // Internal helpers
@@ -294,17 +170,24 @@ macro_rules! span {
     }};
 
     (@begin $id:expr, $tag_opt:expr) => {{
-        Some($crate::Profiler::begin_span($id, $tag_opt))
+        Some($crate::Profiler::begin_timed_span($id, $tag_opt))
+    }};
+
+    (@must_use $guard:expr) => {{
+        $crate::Profiler::must_use_span_guard($guard)
     }};
 
     (@should_sample $counter:ident, $rate:literal) => {{
         const __RATE: usize = $rate;
-        if __RATE <= 1 {
+        const __IS_ALWAYS_SAMPLED: bool = __RATE <= 1;
+        const __IS_POWER_OF_TWO: bool = __RATE.is_power_of_two();
+
+        if __IS_ALWAYS_SAMPLED {
             true
         } else {
             let __n = $counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-            if __RATE.is_power_of_two() {
+            if __IS_POWER_OF_TWO {
                 (__n & (__RATE - 1)) == 0
             } else {
                 (__n % __RATE) == 0
@@ -316,147 +199,161 @@ macro_rules! span {
 
     // Name, Tag, Rate, count_only
     ($name:literal, $tag:expr, rate: $rate:literal, count_only) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
-                std::sync::atomic::AtomicUsize::new(0);
-
-            // Hoist id + tag so both branches share the same OnceLock/static.
-            let __id = $crate::span!(@get_id $name);
-            let __tag: $crate::Tag = ::core::convert::Into::into($tag);
-
-            if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
-                $crate::span!(@begin __id, Some(__tag))
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
+                None
             } else {
-                Some($crate::Profiler::begin_span_count_only(__id, Some(__tag)))
+                static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+
+                // Hoist id + tag so both branches share the same OnceLock/static.
+                let __id = $crate::span!(@get_id $name);
+                let __tag: $crate::Tag = ::core::convert::Into::into($tag);
+
+                if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
+                    $crate::span!(@begin __id, Some(__tag))
+                } else {
+                    Some($crate::Profiler::begin_count_only_span(__id, Some(__tag)))
+                }
             }
-        }
+        })
     }};
 
     // Name, Rate, count_only
     ($name:literal, rate: $rate:literal, count_only) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
-                std::sync::atomic::AtomicUsize::new(0);
-
-            // Hoist id so both branches share the same OnceLock/static.
-            let __id = $crate::span!(@get_id $name);
-
-            if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
-                $crate::span!(@begin __id, None)
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
+                None
             } else {
-                Some($crate::Profiler::begin_span_count_only(__id, None))
+                static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+
+                // Hoist id so both branches share the same OnceLock/static.
+                let __id = $crate::span!(@get_id $name);
+
+                if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
+                    $crate::span!(@begin __id, None)
+                } else {
+                    Some($crate::Profiler::begin_count_only_span(__id, None))
+                }
             }
-        }
+        })
     }};
 
     // Name, Tag, Rate, suppress
     ($name:literal, $tag:expr, rate: $rate:literal, suppress) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
-                std::sync::atomic::AtomicUsize::new(0);
-
-            if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
-                let __id = $crate::span!(@get_id $name);
-                let __tag: $crate::Tag = ::core::convert::Into::into($tag);
-                $crate::span!(@begin __id, Some(__tag))
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
+                None
             } else {
-                Some($crate::Profiler::begin_suppression())
+                static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+
+                if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
+                    let __id = $crate::span!(@get_id $name);
+                    let __tag: $crate::Tag = ::core::convert::Into::into($tag);
+                    $crate::span!(@begin __id, Some(__tag))
+                } else {
+                    Some($crate::Profiler::begin_suppression())
+                }
             }
-        }
+        })
     }};
 
     // Name, Rate, suppress
     ($name:literal, rate: $rate:literal, suppress) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
-                std::sync::atomic::AtomicUsize::new(0);
-
-            if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
-                let __id = $crate::span!(@get_id $name);
-                $crate::span!(@begin __id, None)
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
+                None
             } else {
-                Some($crate::Profiler::begin_suppression())
+                static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+
+                if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
+                    let __id = $crate::span!(@get_id $name);
+                    $crate::span!(@begin __id, None)
+                } else {
+                    Some($crate::Profiler::begin_suppression())
+                }
             }
-        }
+        })
     }};
 
     // Name, Tag, Rate (default: unsampled => None)
     ($name:literal, $tag:expr, rate: $rate:literal) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
-                std::sync::atomic::AtomicUsize::new(0);
-
-            if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
-                let __id = $crate::span!(@get_id $name);
-                let __tag: $crate::Tag = ::core::convert::Into::into($tag);
-                $crate::span!(@begin __id, Some(__tag))
-            } else {
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
                 None
+            } else {
+                static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+
+                if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
+                    let __id = $crate::span!(@get_id $name);
+                    let __tag: $crate::Tag = ::core::convert::Into::into($tag);
+                    $crate::span!(@begin __id, Some(__tag))
+                } else {
+                    None
+                }
             }
-        }
+        })
     }};
 
     // Name, Rate (default: unsampled => None)
     ($name:literal, rate: $rate:literal) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
-                std::sync::atomic::AtomicUsize::new(0);
-
-            if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
-                let __id = $crate::span!(@get_id $name);
-                $crate::span!(@begin __id, None)
-            } else {
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
                 None
+            } else {
+                static __PROFILER_SAMPLE_COUNTER: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+
+                if $crate::span!(@should_sample __PROFILER_SAMPLE_COUNTER, $rate) {
+                    let __id = $crate::span!(@get_id $name);
+                    $crate::span!(@begin __id, None)
+                } else {
+                    None
+                }
             }
-        }
+        })
     }};
 
     // Name, Tag
     ($name:literal, $tag:expr) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            let __id = $crate::span!(@get_id $name);
-            let __tag: $crate::Tag = ::core::convert::Into::into($tag);
-            $crate::span!(@begin __id, Some(__tag))
-        }
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
+                None
+            } else {
+                let __id = $crate::span!(@get_id $name);
+                let __tag: $crate::Tag = ::core::convert::Into::into($tag);
+                $crate::span!(@begin __id, Some(__tag))
+            }
+        })
     }};
 
     // Name
     ($name:literal) => {{
-        if $crate::Profiler::is_suppressed() {
-            None
-        } else {
-            let __id = $crate::span!(@get_id $name);
-            $crate::span!(@begin __id, None)
-        }
+        $crate::span!(@must_use {
+            if $crate::Profiler::is_suppressed() {
+                None
+            } else {
+                let __id = $crate::span!(@get_id $name);
+                $crate::span!(@begin __id, None)
+            }
+        })
     }};
 }
 
-/// Conditionally create a profiling span guard based on a predicate.
-///
-/// This macro returns `None` when the predicate is false and otherwise forwards its arguments to
-/// [`span!`](crate::span).
+/// Conditional [`span!`](crate::span) — returns `None` when the predicate is false, otherwise
+/// forwards to `span!`.
 #[macro_export]
 macro_rules! span_if {
     ($pred:expr, $($rest:tt)+) => {{
-        if $pred {
+        $crate::Profiler::must_use_span_guard(if $pred {
             $crate::span!($($rest)+)
         } else {
             None
-        }
+        })
     }};
 }
 
@@ -482,16 +379,10 @@ macro_rules! record {
     }};
 }
 
-/// Attach a key/value record to the current span (if any), when a predicate is true.
-///
-/// Equivalent to `if pred { record!(key, val) }`, but reads more naturally at callsites that are
-/// gated on a runtime flag.
-///
-/// ## Examples
+/// Conditional [`record!`](crate::record) — equivalent to `if pred { record!(key, val) }`.
 ///
 /// ```rust
-/// use stacks_profiler::{measure, record_if};
-///
+/// # use stacks_profiler::{measure, record_if};
 /// let verbose = true;
 /// measure!("process", {
 ///     record_if!(verbose, "debug_info", "extra detail");
@@ -530,16 +421,11 @@ macro_rules! counter_add {
     }};
 }
 
-/// Increment a named counter on the current span (aggregated by key), when a predicate is true.
-///
-/// Equivalent to `if pred { counter_add!(key, delta) }`, but reads more naturally at callsites
-/// gated on a runtime flag.
-///
-/// ## Examples
+/// Conditional [`counter_add!`](crate::counter_add) — equivalent to
+/// `if pred { counter_add!(key, delta) }`.
 ///
 /// ```rust
-/// use stacks_profiler::{measure, counter_add_if};
-///
+/// # use stacks_profiler::{measure, counter_add_if};
 /// let capture = true;
 /// measure!("execute", {
 ///     counter_add_if!(capture, "runtime_cost", 500u64);

@@ -1,40 +1,32 @@
 #!/usr/bin/env bash
-# Generate a balanced test matrix for the Bitcoin integration test workflow.
 #
-# Discovers all ignored tests in the stacks-node binary via cargo nextest,
-# removes a hardcoded exclude list, then splits the remaining tests into
-# MATRIX balanced partitions.
+# Generates dynamic single-test matrices for the Bitcoin integration test workflow.
+# Every test runs in its own job and partitions output into
+# multiple matrix outputs (batches_1, batches_2, etc.) to bypass the GitHub Actions 256 matrix limit.
 #
 # Optional env vars:
-#   MATRIX           - Number of partitions to split tests into (default: 2)
-#   MAX_PER_MATRIX   - Maximum tests allowed per partition (default: 256)
-#   NEXTEST_ARCHIVE  - Nextest archive to use (default: ~/test_archive.tar.zst)
+#   MAX_CHUNKS       - Max chunks to process
+#   MAX_PER_CHUNK    - Max tests per matrix output chunk (default: 256)
+#   NEXTEST_ARCHIVE  - Nextest archive to use (default: ./test_archive.tar.zst)
 #   TEST_TAG_CI_SKIP - Tag name used to exclude tests from CI (default: ci_skip)
-#
-# Outputs:
-#   GITHUB_OUTPUT  - Path to the GitHub Actions output file (set by runner); prints to stderr if unset (via logging.sh)
+#   ONLY_TESTS       - Comma-separated fully qualified test names. When set, the
+#                      matrix is narrowed to just these tests, for cheap manual
+#                      runs. Empty (default) generates the full matrix, so PR CI
+#                      is unaffected. Names must survive the exclude list below.
+
 set -euo pipefail
 
-# Load logging functions from logging.sh for color and standardized output
-# shellcheck disable=SC1091
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/logging.sh"
 
 ## --- Configuration ----------------------------------------------------------
-# Set number of matrices to use for tests. default is 2
-matrix="${MATRIX:-2}"
-# Set number of tests per matrix. default is 256
-max_per_matrix="${MAX_PER_MATRIX:-256}"
-# Set the nextest archive to use
-nextest_archive="${NEXTEST_ARCHIVE:-${HOME}/test_archive.tar.zst}"
-# Exclude tests tagged with a skip tag
+max_chunks="${MAX_CHUNKS:-4}"
+max_per_chunk="${MAX_PER_CHUNK:-256}"
+nextest_archive="${NEXTEST_ARCHIVE:-./test_archive.tar.zst}"
+nextest_archive="${nextest_archive/#\~/$HOME}"
 ci_skip_tag="${TEST_TAG_CI_SKIP:-ci_skip}"
+only_tests="${ONLY_TESTS:-}"
 
-if ! [[ "$matrix" =~ ^[1-9][0-9]*$ ]]; then
-    error "MATRIX must be a positive integer, got: ${matrix}"
-    exit 1
-fi
-
-## ── Require bash 5+ (mapfile with -t flag behaviour) ────────────────────────
+## ── Require bash 5+ ─────────────────────────────────────────────────────────
 if [[ "${BASH_VERSINFO[0]}" -lt 5 ]]; then
     error "Bash version 5 or higher is required (found ${BASH_VERSION})"
     exit 1
@@ -62,12 +54,10 @@ jq -c '
     | [to_entries[] | select(.value.ignored) | .key]
 ' nextest_output.json > ignored_tests.json
 
-info "Ignored tests count: $(hl $(jq 'length' ignored_tests.json))"
-
 ## ── Build list of excluded tests --------------------------------------------
 info "Building exclude list..."
 cat << 'EOF' > raw_exclude.txt
-# The following tests are excluded from CI runs. Some of these may be worth investigating adding back into the CI
+# The following tests are excluded from CI runs.
 tests::nakamoto_integrations::consensus_hash_event_dispatcher
 tests::neon_integrations::atlas_integration_test
 tests::neon_integrations::atlas_stress_integration_test
@@ -82,8 +72,6 @@ tests::neon_integrations::run_with_custom_wallet
 tests::neon_integrations::test_competing_miners_build_anchor_blocks_on_same_chain_without_rbf
 tests::neon_integrations::test_one_miner_build_anchor_blocks_on_same_chain_without_rbf
 tests::signer::v0::tenure_extend::tenure_extend_after_2_bad_commits
-tests::stackerdb::test_stackerdb_event_observer
-tests::stackerdb::test_stackerdb_load_store
 # Epoch tests are covered by the epoch-tests CI workflow, and don't need to run on every PR (for older epochs)
 tests::epoch_205::test_cost_limit_switch_version205
 tests::epoch_205::test_dynamic_db_method_costs
@@ -116,56 +104,95 @@ tests::nakamoto_integrations::large_mempool_next_random_fee
 tests::nakamoto_integrations::larger_mempool
 tests::nakamoto_integrations::check_block_info_rewards
 tests::signer::v0::larger_mempool
+# This test takes too long run in CI
+tests::pox_5_integrations::check_pox_5_register_for_second_bond_no_downtime
 EOF
 
-## ── Append tests tagged with ci_skip to the exclude list ────────────────────
 ci_skip_regex=":t::(?:.*::)?${ci_skip_tag}::"
-info "Excluding tests matching tag: $(hl "${ci_skip_tag}") (regex: $(hl "${ci_skip_regex}"))"
 jq -r '.[]' ignored_tests.json | grep -P "${ci_skip_regex}" >> raw_exclude.txt || true
 
-## ── Strip blank lines and comments, then convert to JSON array ──────────────
 grep -v '^\s*$' raw_exclude.txt | grep -v '^\s*#' > clean_exclude.txt
 jq -R . clean_exclude.txt | jq -s . > exclude.json
-info "Excluded tests count: $(hl $(jq length exclude.json))"
 
-## ── Filter out excluded tests -----------------------------------------------
-info "Filtering excluded tests..."
-jq -e 'type == "array"' ignored_tests.json > /dev/null
-jq -e 'type == "array"' exclude.json > /dev/null
-
+## ── Filter excluded tests --------------------------------------------------
 jq -r '.[]' ignored_tests.json | sort > ignored_sorted.txt
-jq -r '.[]' exclude.json       | sort > exclude_sorted.txt
+jq -r '.[]' exclude.json        | sort > exclude_sorted.txt
 
 comm -23 ignored_sorted.txt exclude_sorted.txt > filtered.txt
 
-total=$(wc -l < filtered.txt)
-info "Final test count: $(hl ${total})"
+## ── Optionally narrow to specific tests -------------------------------------
+# For manual runs: restrict the matrix to the named tests, still one job per
+# test. Names must be present in the runnable set above; a name that
+# is misspelled, not marked #[ignore], or on the exclude list is an error rather
+# than a silently empty matrix, which would otherwise report a green run that
+# tested nothing.
+if [[ -n "${only_tests}" ]]; then
+    tr ',' '\n' <<< "${only_tests}" \
+        | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+        | grep -v '^$' \
+        | sort -u > only_tests.txt || true
 
-## --- Validate capacity ------------------------------------------------------
-max_total=$(( matrix * max_per_matrix ))
-if (( total > max_total )); then
-    error "${total} tests exceed the limit of ${max_total} (${matrix} partitions × ${max_per_matrix} tests each)"
-    error "Increase MATRIX or MAX_PER_MATRIX to accommodate."
+    if [[ ! -s only_tests.txt ]]; then
+        error "$(hl "ONLY_TESTS") is set but contains no test names"
+        exit 1
+    fi
+
+    # Sort explicitly rather than relying on how filtered.txt was produced:
+    # comm only warns on unsorted input and still exits 0, so a mismatch here
+    # would silently yield the wrong matrix.
+    sort -u filtered.txt > filtered_sorted.txt
+
+    comm -23 only_tests.txt filtered_sorted.txt > only_missing.txt
+    if [[ -s only_missing.txt ]]; then
+        error "$(hl "ONLY_TESTS") names tests that are not in the runnable set:"
+        while read -r missing_test; do
+            error "  - $(hl "${missing_test}")"
+        done < only_missing.txt
+        error "Each name must be fully qualified, marked #[ignore], and not excluded."
+        exit 1
+    fi
+
+    comm -12 only_tests.txt filtered_sorted.txt > filtered_only.txt
+    mv filtered_only.txt filtered.txt
+    info "$(hl "ONLY_TESTS") applied: matrix narrowed to $(hl "$(wc -l < filtered.txt)") test(s)"
+fi
+
+mapfile -t tests < filtered.txt
+total=${#tests[@]}
+info "Total tests to run individually: $(hl ${total})"
+
+## ── Validate Matrix Capacity Limits ─────────────────────────────────────────
+max_capacity=$(( max_chunks * max_per_chunk ))
+if (( total > max_capacity )); then
+    error "Total tests ($(hl "${total}")) exceeds maximum total capacity of $(hl "${max_capacity}") (${max_chunks} chunks × ${max_per_chunk} limit per matrix)."
+    error "Increase MAX_CHUNKS or reduce the test count to prevent matrix truncation."
     exit 1
 fi
 
-## ── Split into $matrix balanced partitions ----------------------------------
-info "Splitting $(hl ${total}) tests into $(hl ${matrix}) active partitions..."
-mapfile -t tests < filtered.txt
+## ── Create Single-Test Batches ──────────────────────────────────────────────
+all_batches="[]"
+idx=1
+all_batches=$(jq -R 'select(length > 0)' filtered.txt \
+      | jq -s -c 'to_entries | map({index: (.key + 1), csv: .value})')
 
-base=$(( total / matrix ))
-remainder=$(( total % matrix ))
-offset=0
-
-for (( i = 1; i <= matrix; i++ )); do
-    # Distribute remainder one test at a time across the first partitions
-    size=$(( base + ( i <= remainder ? 1 : 0 ) ))
-    partition=$(printf '%s\n' "${tests[@]:$offset:$size}" | jq -R . | jq -s -c .)
-    info "matrix${i}: $(hl ${size}) tests"
-    if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-        echo "matrix${i}=${partition}" >> "${GITHUB_OUTPUT}"
-    else
-        echo "matrix${i}=${partition}"
+## ── Partition Single-Test Batches into Dynamic Chunks ────────────────────────
+# Output chunks: batches_1, batches_2, etc. based on `max_chunks`
+for (( c=1; c<=max_chunks; c++ )); do
+    start_offset=$(( (c - 1) * max_per_chunk ))
+    
+    chunk_json=$(echo "$all_batches" | jq -c ".[${start_offset}:${start_offset}+${max_per_chunk}]")
+    
+    if [[ "$chunk_json" == "null" ]] || [[ -z "$chunk_json" ]]; then
+        chunk_json="[]"
     fi
-    offset=$(( offset + size ))
+
+    chunk_length=$(echo "$chunk_json" | jq 'length')
+    info "Chunk ${c} (batches_${c}): $(hl "${chunk_length}") single-test jobs"
+
+    # Export to GitHub Actions or stdout
+    if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+        echo "batches_${c}=${chunk_json}" >> "${GITHUB_OUTPUT}"
+    else
+        jq -c . <<< "$chunk_json"
+    fi
 done

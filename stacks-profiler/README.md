@@ -59,8 +59,12 @@ fn request_handler() { /* ... */ }
 fn execute_tx() { /* ... */ }
 ```
 
+**Note:** `#[profile]` currently does not support `async fn`. A function-wide
+async span would hold the thread-local guard across `.await`, so instrument
+synchronous regions between await points with `span!` or `measure!` instead.
+
 **Tip:** Power-of-two rates (e.g., 2, 4, 8, 16, 32, 64, 128) use a bitmask
-instead of modulo on the hot path, so prefer them when the exact ratio doesn't
+instead of modulo on the hot path (more efficient), so prefer them when the exact ratio doesn't
 matter.
 
 #### `span!(name, [tag], [rate: N], [suppress | count_only])`
@@ -81,14 +85,20 @@ for i in 0..10 {
 
 Returns `Option<ProfileGuard>` — `None` when suppressed or unsampled.
 
-#### `measure!(name, [tag], { block })`
+#### `measure!(name, [tag], { block })` / `measure!({ block })`
 
 Block-scoped span — wraps a block and returns its value. Shorter and harder
 to misuse than `span!` when you just want to time a region inline.
 
 ```rust
+// Named block:
 let result = stacks_profiler::measure!("Compute", {
     expensive_work()
+});
+
+// Anonymous block, span name defaults to "scope":
+stacks_profiler::measure!({
+    setup_work();
 });
 ```
 
@@ -161,7 +171,7 @@ calls at each callsite. They are available on both `span!` and `measure!`.
 | Modifier | Unsampled behaviour | Use case |
 | --- | --- | --- |
 | `rate: N` | Returns `None` (no node created) | Cheapest; fine when you don't need exact counts |
-| `rate: N, count_only` | Pushes a lightweight frame, increments count, no timing | Need accurate per-context call counts |
+| `rate: N, count_only` | Pushes a lightweight frame, increments count, no timing (records/counters on that unsampled frame are skipped) | Need accurate per-context call counts |
 | `rate: N, suppress` | Suppresses all nested spans | Prevent child spans from attaching to wrong parent |
 
 ```rust
@@ -177,15 +187,15 @@ let _g = stacks_profiler::span!("hot", rate: 100, suppress);
 
 ### Retrieving Results
 
-#### `Profiler::take_results() -> Vec<ProfileStats>`
+#### `Profiler::take_results() -> Result<Vec<ProfileStats>, TakeResultsError>`
 
 Drains the calling thread's profile tree and returns it. Each entry is a
-root span. The thread-local state is reset afterward.
+root span. The thread-local state is reset afterward if materialization succeeds.
 
 ```rust
 use stacks_profiler::Profiler;
 
-let results = Profiler::take_results();
+let results = Profiler::take_results().expect("take profiler results");
 
 for root in &results {
     // Pretty-print to stdout (colourised tree with records & counters)

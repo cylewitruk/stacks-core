@@ -1,23 +1,14 @@
-//! **cpu_vs_wait** – Understand where time is spent: CPU work vs idle waiting.
+//! CPU work vs idle waiting — demonstrates wall-time / CPU-time distinction,
+//! `record!`, `record_if!`, `counter_add!`, and `span_if!`.
 //!
-//! Run with:
 //! ```sh
 //! cargo run -p stacks-profiler --example cpu_vs_wait
 //! ```
-//!
-//! This example covers:
-//! - Wall-time vs CPU-time distinction (busy loops vs `thread::sleep`)
-//! - `record!()` and `record_if!()` – attaching key/value metadata to spans
-//! - `counter_add!()` and `counter_add_if!()` – aggregated counters on spans
-//! - `span_if!()` – conditional span creation
-//! - How the tree printer highlights wait-bound spans in red
 
 use std::thread;
 use std::time::{Duration, Instant};
 
 use stacks_profiler::Profiler;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Pure CPU load — busy-loops so the CPU-time counter ticks.
 fn burn_cpu(ms: u64) {
@@ -28,13 +19,10 @@ fn burn_cpu(ms: u64) {
     }
 }
 
-/// Simulated I/O — the thread sleeps, so CPU time stays near zero while
-/// wall-time increases.
+/// Simulated I/O — sleeps so CPU time stays near zero while wall-time increases.
 fn simulate_io(ms: u64) {
     thread::sleep(Duration::from_millis(ms));
 }
-
-// ── Pipeline stages ──────────────────────────────────────────────────────────
 
 fn fetch_data() {
     let _guard = stacks_profiler::span!("Fetch Data (I/O)");
@@ -84,8 +72,6 @@ fn save_results() {
     }
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
-
 fn main() {
     let verbose = true;
     let items = &["tx-alpha", "tx-beta", "tx-gamma"];
@@ -98,7 +84,7 @@ fn main() {
         save_results();
     }
 
-    let results = Profiler::take_results();
+    let results = Profiler::take_results().expect("take profiler results");
 
     println!("\n=== cpu_vs_wait ===");
     println!("(Wait-bound spans are highlighted in RED)\n");

@@ -14,7 +14,7 @@ set -euo pipefail
 
 # Load logging functions
 # shellcheck disable=SC1091
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/logging.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/logging.sh"
 
 ## ── Validate required inputs ────────────────────────────────────────────────
 # Uppercase: these are env var inputs supplied by the calling workflow step.
@@ -75,7 +75,7 @@ if [[ "${cargo_status}" -eq 0 ]]; then
     info "Code is formatted correctly"
     if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
         cat >> "${GITHUB_STEP_SUMMARY}" <<'MARKDOWN'
-# Rustfmt Results
+## `rustfmt` Results
 
 The code is formatted correctly
 MARKDOWN
@@ -83,7 +83,7 @@ MARKDOWN
 else
     if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
         cat >> "${GITHUB_STEP_SUMMARY}" <<'MARKDOWN'
-# Rustfmt Results
+## `rustfmt` Results
 
 `cargo fmt` reported formatting errors in the following locations.
 You can fix them by executing the following command and committing the changes.

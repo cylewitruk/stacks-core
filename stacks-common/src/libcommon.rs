@@ -1,5 +1,4 @@
 #![allow(unused_macros)]
-#![allow(dead_code)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
@@ -12,15 +11,6 @@ extern crate slog;
 #[macro_use]
 extern crate serde_derive;
 
-#[macro_use]
-extern crate stacks_codec;
-
-// Re-export stacks_codec macros at the crate root so downstream crates
-// can continue to import them as `stacks_common::impl_byte_array_message_codec`, etc.
-pub use stacks_codec::{
-    impl_byte_array_message_codec, impl_stacks_message_codec_for_int, BITVEC_LEN,
-};
-
 #[cfg(all(unix, feature = "ctrlc-handler"))]
 extern crate nix;
 
@@ -30,6 +20,7 @@ extern crate winapi;
 #[macro_use]
 pub mod util;
 
+#[macro_use]
 pub mod codec;
 
 pub mod types;
@@ -66,6 +57,8 @@ pub mod consts {
 
     pub const CHAIN_ID_MAINNET: u32 = 0x00000001;
     pub const CHAIN_ID_TESTNET: u32 = 0x80000000;
+    /// Default Stacks transaction and P2P network identity for signet deployments.
+    pub const CHAIN_ID_SIGNET: u32 = 0x80000001;
 
     #[cfg(any(test, feature = "testing"))]
     pub const MINER_REWARD_MATURITY: u64 = 2; // small for testing purposes
@@ -99,10 +92,12 @@ pub mod consts {
     pub const PEER_VERSION_EPOCH_3_2: u8 = 0x0d;
     pub const PEER_VERSION_EPOCH_3_3: u8 = 0x0e;
     pub const PEER_VERSION_EPOCH_3_4: u8 = 0x0f;
+    pub const PEER_VERSION_EPOCH_4_0: u8 = 0x10;
+    pub const PEER_VERSION_EPOCH_4_1: u8 = 0x11;
 
     /// this should be updated to the latest network epoch version supported by
     ///  this node. this will be checked by the `validate_epochs()` method.
-    pub const PEER_NETWORK_EPOCH: u32 = PEER_VERSION_EPOCH_3_4 as u32;
+    pub const PEER_NETWORK_EPOCH: u32 = PEER_VERSION_EPOCH_4_0 as u32;
 
     /// set the fourth byte of the peer version
     pub const PEER_VERSION_MAINNET: u32 = PEER_VERSION_MAINNET_MAJOR | PEER_NETWORK_EPOCH;
@@ -117,6 +112,8 @@ pub mod consts {
 }
 
 pub mod versions {
+    pub const STACKS_NODE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
     include!(concat!(env!("OUT_DIR"), "/versions.rs"));
 }
 

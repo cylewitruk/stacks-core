@@ -995,7 +995,7 @@ impl<T: MarfTrieId> TrieMerkleProof<T> {
     /// * segment proof 0 must end in a leaf
     /// * all segment proofs must end in a Node256 (a root)
     fn is_proof_well_formed(proof: &[TrieMerkleProofType<T>], expected_path: &TrieHash) -> bool {
-        let Some(proof_head) = proof.get(0) else {
+        let Some(proof_head) = proof.first() else {
             trace!("Proof is empty");
             return false;
         };
@@ -1112,7 +1112,7 @@ impl<T: MarfTrieId> TrieMerkleProof<T> {
             return false;
         }
 
-        let (mut node_hash, node_data) = match proof.get(0) {
+        let (mut node_hash, node_data) = match proof.first() {
             Some(TrieMerkleProofType::Leaf((_, ref node))) => {
                 (get_leaf_hash(node), node.data.clone())
             }
@@ -1401,6 +1401,13 @@ impl<T: MarfTrieId> TrieMerkleProof<T> {
         expected_value: &MARFValue,
         root_block_header: &T,
     ) -> Result<TrieMerkleProof<T>, Error> {
+        // Squash-aware proofs are not currently supported.
+        if storage.is_squashed() {
+            return Err(Error::UnsupportedOnSquashedMarf(
+                "TrieMerkleProof::from_path",
+            ));
+        }
+
         // accumulate proofs in reverse order -- each proof will be from an earlier and earlier
         // trie, so we'll reverse them in the end so the proof starts with the latest trie.
         let mut segment_proofs = vec![];

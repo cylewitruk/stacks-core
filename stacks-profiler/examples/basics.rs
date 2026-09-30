@@ -1,19 +1,10 @@
-//! **basics** – A quick tour of every instrumentation macro.
+//! Quick tour of `span!`, `measure!`, `#[profile]`, and `print_tree()`.
 //!
-//! Run with:
 //! ```sh
 //! cargo run -p stacks-profiler --example basics
 //! ```
-//!
-//! This example covers:
-//! - `span!("name")` and `span!("name", tag)` – RAII guards
-//! - `measure!("name", { .. })` and `measure!("name", tag, { .. })` – block-scoped spans
-//! - `#[profile]` and `#[profile(name = "...")]` – attribute macros on functions
-//! - `Profiler::take_results()` + `print_tree()` – extracting and displaying results
 
 use stacks_profiler::{Profiler, profile};
-
-// ── #[profile] attribute ─────────────────────────────────────────────────────
 
 /// Uses the function name ("setup") as the span name.
 #[profile]
@@ -26,8 +17,6 @@ fn setup() {
 fn teardown() {
     std::hint::spin_loop();
 }
-
-// ── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
     // 1. span!() – RAII guard, ended when `_guard` is dropped
@@ -56,7 +45,7 @@ fn main() {
     }
 
     // Extract and print
-    let results = Profiler::take_results();
+    let results = Profiler::take_results().expect("take profiler results");
     println!("\n=== basics ===\n");
     for root in &results {
         root.print_tree();

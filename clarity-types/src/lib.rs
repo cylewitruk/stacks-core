@@ -24,14 +24,17 @@ pub use stacks_common::{
     impl_byte_array_serde, types as stacks_types, util,
 };
 
+pub mod effects;
 pub mod errors;
 pub mod representations;
 pub mod types;
+pub mod version;
 
 pub use errors::{ClarityTypeError, IncomparableError};
 pub use representations::{ClarityName, ContractName};
 use stacks_common::types::StacksEpochId;
 pub use types::Value;
+pub use version::ClarityVersion;
 
 /// Max call stack depth for Epoch 3.4+.
 const MAX_CALL_STACK_DEPTH: u64 = 128;

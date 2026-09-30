@@ -17,8 +17,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use clarity::types::chainstate::{BlockHeaderHash, TrieHash};
-use stacks_common::types::chainstate::StacksBlockId;
+use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash};
 use stacks_common::util::hash::to_hex;
 
 use crate::chainstate::stacks::index::marf::{
@@ -37,7 +36,7 @@ use crate::chainstate::stacks::index::{ClarityMarfTrieId, Error, MARFValue, Trie
 #[test]
 fn marf_insert_different_leaf_same_block_100() {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         test_debug!("With {:?}", &marf_opts);
         let f = TrieFileStorage::new_memory(marf_opts).unwrap();
 
@@ -96,7 +95,7 @@ fn marf_insert_different_leaf_same_block_100() {
 #[test]
 fn marf_insert_different_leaf_different_path_different_block_100() {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         test_debug!("With {:?}", &marf_opts);
         let f = TrieFileStorage::new_memory(marf_opts).unwrap();
 
@@ -176,7 +175,7 @@ fn marf_insert_different_leaf_different_path_different_block_100() {
 #[test]
 fn marf_insert_same_leaf_different_block_100() {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         test_debug!("With {:?}", &marf_opts);
         let f = TrieFileStorage::new_memory(marf_opts).unwrap();
         let block_header = BlockHeaderHash::from_bytes(&[0u8; 32]).unwrap();
@@ -258,7 +257,7 @@ fn marf_insert_same_leaf_different_block_100() {
 #[test]
 fn marf_insert_leaf_sequence_2() {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         test_debug!("With {:?}", &marf_opts);
         let f = TrieFileStorage::new_memory(marf_opts).unwrap();
         let block_header = BlockHeaderHash::from_bytes(&[0u8; 32]).unwrap();
@@ -335,7 +334,7 @@ fn marf_insert_leaf_sequence_2() {
 #[test]
 fn marf_insert_leaf_sequence_100() {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         test_debug!("With {:?}", &marf_opts);
         let f = TrieFileStorage::new_memory(marf_opts).unwrap();
         let block_header = BlockHeaderHash::from_bytes(&[0u8; 32]).unwrap();
@@ -542,7 +541,7 @@ where
     ) -> (Vec<TrieNodeType>, Vec<TriePtr>, Vec<TrieHash>),
 {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         let mut f_store = TrieFileStorage::new_memory(marf_opts).unwrap();
         let path = [
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
@@ -810,7 +809,7 @@ fn marf_merkle_verify_backptrs() {
     .iter()
     {
         let mut last_root_hashes = None;
-        for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+        for marf_opts in opts::ALL_OPTS.clone().into_iter() {
             let mut f_store = TrieFileStorage::new_memory(marf_opts.clone()).unwrap();
 
             let path_segments = vec![
@@ -928,7 +927,7 @@ where
     F: FnMut(u32) -> ([u8; 32], Option<BlockHeaderHash>),
 {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         test_debug!("With {:?}", &marf_opts);
         let f = TrieFileStorage::new_memory(marf_opts).unwrap();
         let mut block_header = BlockHeaderHash::from_bytes(&[0u8; 32]).unwrap();
@@ -1304,7 +1303,7 @@ fn marf_insert_random_65536_2048() {
 #[ignore]
 fn marf_insert_random_4096_128_merkle_proof() {
     let mut last_root_hashes = None;
-    for marf_opts in opts::ALL_OPTS_NOOP.clone().into_iter() {
+    for marf_opts in opts::ALL_OPTS.clone().into_iter() {
         let f = TrieFileStorage::new_memory(marf_opts).unwrap();
 
         let mut marf = MARF::from_storage(f);
@@ -1536,11 +1535,12 @@ fn marf_insert_get_128_fork_256() {
 
     for i in 1..8 {
         let parent_row = &fork_headers[i - 1];
-        for j in 0..parent_row.len() {
-            let parent_hash = &parent_row[j];
-            for k in (2 * j)..(2 * j + 2) {
-                let child_hash = &fork_headers[i][k];
-
+        for (j, parent_hash) in parent_row.iter().enumerate() {
+            for (k, child_hash) in fork_headers[i][..(2 * j + 2)]
+                .iter()
+                .enumerate()
+                .skip(2 * j)
+            {
                 debug!("Branch from {:?} to {:?}", parent_hash, child_hash);
                 m.begin(parent_hash, child_hash).unwrap();
 
@@ -1590,7 +1590,7 @@ fn marf_insert_get_128_fork_256() {
 
     let mut block_table = None;
 
-    for k in 0..expected_chain_tips.len() {
+    for (k, expected_chain_tip) in expected_chain_tips.iter().enumerate() {
         for l in 0..128 {
             let raw_value = [
                 7u8,
@@ -1631,12 +1631,12 @@ fn marf_insert_get_128_fork_256() {
             let expected_value = to_hex(&raw_value);
             let key = format!("{}-{}-{}-{}", 7, (k / 2), k, l);
 
-            let marf_value = m.get(&expected_chain_tips[k], &key).unwrap().unwrap();
+            let marf_value = m.get(expected_chain_tip, &key).unwrap().unwrap();
             assert_eq!(marf_value, MARFValue::from_value(&expected_value));
 
             block_table = Some(merkle_test_marf_key_value(
                 &mut m.borrow_storage_backend(),
-                &expected_chain_tips[k],
+                expected_chain_tip,
                 &key,
                 &expected_value,
                 block_table,
@@ -2209,14 +2209,14 @@ fn assert_metadata_keys_present(
     }
 }
 
-/// Create a configurable multi-block MARF for `for_each_leaf` tests.
+/// Create a configurable multi-block MARF for tests.
 ///
 /// `k1` is updated at every block (exercises backpointers at every depth).
 /// For each block at height h > 0, inserts `keys_per_block` new keys.
 /// Also creates:
 /// - 10 common keys updated at every block
 /// - 10 common keys updated only on some blocks
-fn setup_for_each_leaf_marf(
+pub(super) fn setup_marf(
     path: &str,
     num_blocks: usize,
     keys_per_block: usize,
@@ -2225,7 +2225,7 @@ fn setup_for_each_leaf_marf(
     Vec<StacksBlockId>,
     HashMap<String, String>,
 ) {
-    let open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, "noop", true);
+    let open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
     let mut marf = MARF::<StacksBlockId>::from_path(path, open_opts).unwrap();
 
     assert!(num_blocks > 0, "num_blocks must be > 0");
@@ -2299,7 +2299,7 @@ fn setup_for_each_leaf_marf(
 
 #[test]
 fn test_for_each_leaf_yields_all_keys() {
-    let (mut marf, blocks, expected_keys) = setup_for_each_leaf_marf(":memory:", 2, 1);
+    let (mut marf, blocks, expected_keys) = setup_marf(":memory:", 2, 1);
     let b1 = blocks[0].clone();
     let b2 = blocks[1].clone();
 
@@ -2352,7 +2352,7 @@ fn test_for_each_leaf_yields_all_keys() {
 
 #[test]
 fn test_for_each_leaf_large_scale_resolves_backpointers_and_values() {
-    let (mut marf, blocks, expected_keys) = setup_for_each_leaf_marf(":memory:", 300, 150);
+    let (mut marf, blocks, expected_keys) = setup_marf(":memory:", 300, 150);
 
     let block_at_tip = &blocks[299];
 
@@ -2402,7 +2402,7 @@ fn test_for_each_leaf_large_scale_resolves_backpointers_and_values() {
 
 #[test]
 fn test_for_each_leaf_single_block() {
-    let open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, "noop", true);
+    let open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
     let mut marf = MARF::<StacksBlockId>::from_path(":memory:", open_opts).unwrap();
 
     let b1 = StacksBlockId::from_bytes(&[1u8; 32]).unwrap();
@@ -2450,7 +2450,7 @@ fn test_for_each_leaf_single_block() {
 
 #[test]
 fn test_for_each_leaf_at_intermediate_height() {
-    let (mut marf, blocks, _expected_keys) = setup_for_each_leaf_marf(":memory:", 300, 150);
+    let (mut marf, blocks, _expected_keys) = setup_marf(":memory:", 300, 150);
 
     // Walk at height 4 (blocks[4]), NOT the tip.
     let block_at_4 = &blocks[4];
@@ -2514,8 +2514,8 @@ fn test_for_each_leaf_at_intermediate_height() {
 
 #[test]
 fn test_for_each_leaf_callback_error_propagates() {
-    let (mut marf, blocks, _expected_keys) = setup_for_each_leaf_marf(":memory:", 10, 10);
-    let tip = &blocks[9];
+    let (mut marf, blocks, _expected_keys) = setup_marf(":memory:", 2, 1);
+    let tip = &blocks[1];
 
     let call_count = Cell::new(0u64);
     let result = marf.with_conn(|conn| {

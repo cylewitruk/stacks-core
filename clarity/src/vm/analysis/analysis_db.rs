@@ -17,7 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use clarity_types::representations::ClarityName;
-use clarity_types::types::{QualifiedContractIdentifier, TraitIdentifier};
+use clarity_types::types::{BoundedErrorString, QualifiedContractIdentifier, TraitIdentifier};
 use stacks_common::types::StacksEpochId;
 
 use crate::vm::ClarityVersion;
@@ -51,12 +51,13 @@ impl<'a> AnalysisDatabase<'a> {
     {
         self.begin();
         let result = f(self).or_else(|e| {
-            self.roll_back()
-                .map_err(|e| StaticCheckErrorKind::Unreachable(format!("{e:?}")))?;
+            self.roll_back().map_err(|e| {
+                StaticCheckErrorKind::Unreachable(BoundedErrorString::from_debug(&e))
+            })?;
             Err(e)
         })?;
         self.commit()
-            .map_err(|e| StaticCheckErrorKind::Unreachable(format!("{e:?}")))?;
+            .map_err(|e| StaticCheckErrorKind::Unreachable(BoundedErrorString::from_debug(&e)))?;
         Ok(result)
     }
 
@@ -66,16 +67,16 @@ impl<'a> AnalysisDatabase<'a> {
 
     #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit(&mut self) -> Result<(), StaticCheckError> {
-        self.store
-            .commit()
-            .map_err(|e| StaticCheckErrorKind::Unreachable(format!("{e:?}")).into())
+        self.store.commit().map_err(|e| {
+            StaticCheckErrorKind::Unreachable(BoundedErrorString::from_debug(&e)).into()
+        })
     }
 
     #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn roll_back(&mut self) -> Result<(), StaticCheckError> {
-        self.store
-            .rollback()
-            .map_err(|e| StaticCheckErrorKind::Unreachable(format!("{e:?}")).into())
+        self.store.rollback().map_err(|e| {
+            StaticCheckErrorKind::Unreachable(BoundedErrorString::from_debug(&e)).into()
+        })
     }
 
     pub fn storage_key() -> &'static str {
@@ -160,7 +161,7 @@ impl<'a> AnalysisDatabase<'a> {
 
         self.store
             .insert_metadata(contract_identifier, key, &contract.serialize())
-            .map_err(|e| StaticCheckErrorKind::Unreachable(format!("{e:?}")))?;
+            .map_err(|e| StaticCheckErrorKind::Unreachable(BoundedErrorString::from_debug(&e)))?;
         Ok(())
     }
 

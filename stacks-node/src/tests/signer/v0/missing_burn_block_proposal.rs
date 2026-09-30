@@ -16,7 +16,6 @@ use std::env;
 use std::time::Duration;
 
 use libsigner::v0::messages::RejectCode;
-use pinny::tag;
 use stacks::chainstate::burn::ConsensusHash;
 use stacks::chainstate::stacks::TransactionPayload;
 use stacks::net::api::postblock_proposal::ValidateRejectCode;
@@ -33,7 +32,6 @@ use crate::tests::neon_integrations::{get_chain_info, test_observer};
 use crate::tests::signer::v0::{wait_for_block_proposal, wait_for_block_rejections_from_signers};
 use crate::tests::signer::SignerTest;
 
-#[tag(bitcoind)]
 #[test]
 #[ignore]
 /// Test that when a block proposal contains a TenureChange referencing an
@@ -111,17 +109,16 @@ fn signer_reevaluates_proposal_with_missing_burn_view() {
     info!("------------------------- Re-propose block proposal with bad burn view consensus hash -------------------------");
     test_observer::clear();
     let mut block = block_proposal.block.clone();
-    let mut tenure_change_tx = block.txs[0].clone();
+    let mut tenure_change_tx = block.executed_and_skipped_txs()[0].clone();
     let mut tenure_change_payload = tenure_change_tx.try_as_tenure_change().unwrap().clone();
     tenure_change_payload.burn_view_consensus_hash = ConsensusHash([7u8; 20]);
     tenure_change_tx.payload = TransactionPayload::TenureChange(tenure_change_payload);
 
-    block.txs[0] = tenure_change_tx;
+    block.executed_and_skipped_txs_mut()[0] = tenure_change_tx;
 
     let tx_merkle_root = {
         let txid_vecs: Vec<_> = block
-            .txs
-            .iter()
+            .txs()
             .map(|tx| tx.txid().as_bytes().to_vec())
             .collect();
         MerkleTree::<Sha512Trunc256Sum>::new(&txid_vecs).root()

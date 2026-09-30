@@ -41,12 +41,12 @@ fn bench_overhead(c: &mut Criterion) {
 
         // Warm up OnceLock / TLS by doing one span outside measurement
         {
-            let _guard = Profiler::begin_span(id, None);
+            let _guard = Profiler::begin_timed_span(id, None);
             black_box(());
         }
 
         b.iter(|| {
-            let _guard = Profiler::begin_span(id, None);
+            let _guard = Profiler::begin_timed_span(id, None);
             black_box(());
         });
         Profiler::clear();
@@ -59,12 +59,12 @@ fn bench_overhead(c: &mut Criterion) {
 
         // Warm up OnceLock / TLS by doing one span outside measurement
         {
-            let _guard = Profiler::begin_span(id, None);
+            let _guard = Profiler::begin_timed_span(id, None);
             black_box(());
         }
 
         b.iter(|| {
-            let _guard = Profiler::begin_span(id, Some(12345u64.into()));
+            let _guard = Profiler::begin_timed_span(id, Some(12345u64.into()));
             black_box(());
         });
         Profiler::clear();
@@ -85,12 +85,12 @@ fn bench_overhead(c: &mut Criterion) {
 
         // Pre-intern once (warm hit for tag)
         let tag = "contract::call::foo".to_string();
-        let _warm = Profiler::begin_span(id, Some(tag.clone().into()));
+        let _warm = Profiler::begin_timed_span(id, Some(tag.clone().into()));
         drop(_warm);
 
         b.iter(|| {
             // Same string content each time -> interner hit
-            let _guard = Profiler::begin_span(id, Some(tag.clone().into()));
+            let _guard = Profiler::begin_timed_span(id, Some(tag.clone().into()));
             black_box(());
         });
         Profiler::clear();
@@ -105,7 +105,7 @@ fn bench_overhead(c: &mut Criterion) {
             counter += 1;
             // Unique content each time -> interner miss
             let tag = make_unique_tag(counter);
-            let _guard = Profiler::begin_span(id, Some(tag.into()));
+            let _guard = Profiler::begin_timed_span(id, Some(tag.into()));
             black_box(());
         });
         Profiler::clear();
@@ -138,7 +138,7 @@ fn bench_overhead(c: &mut Criterion) {
 
     // Sibling Merge Overhead
     // This tests the "Hot Loop" scenario where we merge into the same sibling repeatedly.
-    // This validates the `if last.id == stats.id` optimization in `merge_into_list`.
+    // This exercises the `last_child` fast-path in `find_or_create_child`.
     group.bench_function("sibling_merge_loop", |b| {
         b.iter(|| {
             measure!("root", {
@@ -377,8 +377,8 @@ fn bench_record(c: &mut Criterion) {
         Profiler::clear();
     });
 
-    group.bench_function("record_string_no_span", |b| {
-        let _g = span!("record_string_no_span");
+    group.bench_function("record_string_outer_span", |b| {
+        let _g = span!("record_string_outer_span");
         let mut c = 0u64;
         b.iter(|| {
             let s = String::from("some-key");
@@ -389,8 +389,8 @@ fn bench_record(c: &mut Criterion) {
         Profiler::clear();
     });
 
-    group.bench_function("record_1k_string_no_span", |b| {
-        let _g = span!("record_1k_string_no_span");
+    group.bench_function("record_1k_string_outer_span", |b| {
+        let _g = span!("record_1k_string_outer_span");
         let mut c = 0u64;
         b.iter(|| {
             for i in 0..1000u64 {
