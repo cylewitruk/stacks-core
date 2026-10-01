@@ -2852,7 +2852,12 @@ impl NodeConfig {
             TrieHashCalculationMode::Immediate
         };
 
-        MARFOpenOpts::new(hash_mode, false).with_compression(self.marf_compress)
+        let mut opts = MARFOpenOpts::new(hash_mode, false)
+            .with_compression(self.marf_compress)
+            .with_mmap(true);
+        opts.root_node_cache = false;
+        opts.resolved_patch_cache_capacity = 64;
+        opts
     }
 
     pub fn effective_event_dispatcher_queue_size(&self) -> usize {
@@ -5820,6 +5825,10 @@ mod tests {
             "default defer hashing opt"
         );
         assert!(cfg_opts.compress, "default compress opt");
+        assert!(cfg_opts.mmap, "default mmap opt");
+        assert!(!cfg_opts.root_node_cache, "default root cache opt");
+        assert_eq!(cfg_opts.resolved_patch_cache_capacity, 64);
+        assert_eq!(cfg_opts.result_cache_capacity, 2048);
         assert!(!cfg_opts.external_blobs, "internal default blob setting");
         assert!(
             !cfg_opts.force_db_migrate,

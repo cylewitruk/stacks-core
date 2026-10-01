@@ -19,7 +19,7 @@ use std::path::Path;
 use stackslib::chainstate::burn::db::sortdb::SortitionTipCopyBoundary;
 use stackslib::chainstate::stacks::db::snapshot::{
     copy_burnchain_db, copy_clarity_side_tables, copy_index_side_tables,
-    copy_sortition_side_tables_with_boundary, copy_spv_headers,
+    copy_sortition_side_tables_with_boundary, copy_spv_headers, open_clarity_value_resolver,
 };
 use stackslib::chainstate::stacks::index::MarfTrieId;
 use stackslib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts};
@@ -82,13 +82,22 @@ pub fn squash_and_copy_one<T: MarfTrieId + Send + Sync>(job: SquashJob<T>) {
         std::process::exit(1);
     }
 
-    let stats = match MARF::squash_to_path(
+    let resolver = if matches!(&side_table_mode, SideTableMode::Clarity) {
+        open_clarity_value_resolver(source.db.to_str().unwrap()).unwrap_or_else(|error| {
+            eprintln!("Failed to open Clarity value generation: {error:?}");
+            std::process::exit(1);
+        })
+    } else {
+        None
+    };
+    let stats = match MARF::squash_to_path_with_resolver(
         source.db.to_str().unwrap(),
         out.db.to_str().unwrap(),
         open_opts,
         tip,
         squash_height,
         label,
+        resolver,
     ) {
         Ok(stats) => stats,
         Err(e) => {

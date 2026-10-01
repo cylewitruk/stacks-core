@@ -18,12 +18,12 @@ use clarity::vm::analysis::types::ContractAnalysis;
 use clarity::vm::clarity::TransactionConnection;
 // Re-exported to keep the old import paths working.
 pub use clarity::vm::clarity::{
-    handle_clarity_analysis_error, handle_clarity_runtime_error, ClarityAnalysisTxError,
-    ClarityRuntimeTxError, IncludedRuntimeTxError, RejectedRuntimeTxError,
+    ClarityAnalysisTxError, ClarityRuntimeTxError, IncludedRuntimeTxError, RejectedRuntimeTxError,
+    handle_clarity_analysis_error, handle_clarity_runtime_error,
 };
 use clarity::vm::contexts::{AssetMap, ExecutionState, InvocationContext};
 use clarity::vm::costs::cost_functions::ClarityCostFunction;
-use clarity::vm::costs::{runtime_cost, CostTracker, ExecutionCost};
+use clarity::vm::costs::{CostTracker, ExecutionCost, runtime_cost};
 use clarity::vm::errors::VmExecutionError;
 use clarity::vm::representations::ClarityName;
 use clarity::vm::resource_limiter::ResourceBudget;
@@ -600,6 +600,7 @@ impl StacksChainState {
         tx: &StacksTransaction,
         epoch_id: StacksEpochId,
     ) -> Result<(), Error> {
+        let _writeback_diagnostic = stacks_profiler::diagnostic_span!("Tx: Static validation");
         // valid auth?
         if !tx.auth.is_supported_in_epoch(epoch_id) {
             let msg = format!(
@@ -916,6 +917,7 @@ impl StacksChainState {
         origin_account: &StacksAccount,
         resource_budgets: &TransactionResourceBudgets,
     ) -> Result<StacksTransactionReceipt, Error> {
+        let _writeback_diagnostic = stacks_profiler::diagnostic_span!("Tx: Payload execution");
         match tx.payload {
             TransactionPayload::TokenTransfer(ref addr, ref amount, ref memo) => {
                 // post-conditions are not allowed for this variant, since they're non-sensical.
@@ -1188,12 +1190,12 @@ impl StacksChainState {
                             } => match rejected {
                                 ClarityError::CostError(cost_after, budget) => {
                                     warn!(
-                                            "Block compute budget exceeded on {}: cost before={}, after={}, budget={}",
-                                            tx.txid(),
-                                            &cost_before,
-                                            &cost_after,
-                                            &budget
-                                        );
+                                        "Block compute budget exceeded on {}: cost before={}, after={}, budget={}",
+                                        tx.txid(),
+                                        &cost_before,
+                                        &cost_after,
+                                        &budget
+                                    );
                                     return Err(Error::CostOverflowError(
                                         CostOverflowContext {
                                             before: cost_before,
@@ -1213,9 +1215,9 @@ impl StacksChainState {
                                 }
                                 other_error => {
                                     info!(
-                                            "Transaction {} is problematic and should have prevented this block from being relayed",
-                                            tx.txid()
-                                        );
+                                        "Transaction {} is problematic and should have prevented this block from being relayed",
+                                        tx.txid()
+                                    );
                                     return Err(Error::ClarityError(other_error));
                                 }
                             },
@@ -1607,6 +1609,7 @@ impl StacksChainState {
 
         StacksChainState::process_transaction_precheck(&clarity_block.config, tx, epoch)?;
 
+        let _accounts = stacks_profiler::diagnostic_span!("Tx: Account preparation");
         let mut transaction = clarity_block.connection().start_transaction_processing();
 
         let fee = tx.get_tx_fee();
@@ -1623,6 +1626,7 @@ impl StacksChainState {
             let origin_account =
                 StacksChainState::get_account(&mut transaction, &tx.origin_address().into());
 
+            drop(_accounts);
             let tx_receipt = StacksChainState::process_transaction_payload(
                 &mut transaction,
                 tx,
@@ -1630,6 +1634,7 @@ impl StacksChainState {
                 resource_budgets,
             )?;
 
+            let _nonce = stacks_profiler::diagnostic_span!("Tx: Account finalization");
             // update the account nonces
             StacksChainState::update_account_nonce(
                 &mut transaction,
@@ -1651,6 +1656,7 @@ impl StacksChainState {
             let (origin_account, payer_account) =
                 StacksChainState::check_transaction_nonces(&mut transaction, tx, quiet)?;
 
+            drop(_accounts);
             let tx_receipt = StacksChainState::process_transaction_payload(
                 &mut transaction,
                 tx,
@@ -1661,6 +1667,7 @@ impl StacksChainState {
             let new_payer_account = StacksChainState::get_payer_account(&mut transaction, tx);
             StacksChainState::pay_transaction_fee(&mut transaction, fee, new_payer_account)?;
 
+            let _nonce = stacks_profiler::diagnostic_span!("Tx: Account finalization");
             // update the account nonces
             StacksChainState::update_account_nonce(
                 &mut transaction,
@@ -1678,7 +1685,10 @@ impl StacksChainState {
             tx_receipt
         };
 
-        check(&tx_receipt)?;
+        {
+            let _phase = stacks_profiler::diagnostic_span!("Tx: Receipt checks");
+            check(&tx_receipt)?;
+        }
 
         transaction
             .commit()
@@ -1692,7 +1702,7 @@ impl StacksChainState {
 pub mod test {
     use clarity::util::secp256k1::Secp256k1PrivateKey;
     use clarity::vm::representations::{ClarityName, ContractName};
-    use clarity::vm::test_util::{UnitTestBurnStateDB, TEST_BURN_STATE_DB};
+    use clarity::vm::test_util::{TEST_BURN_STATE_DB, UnitTestBurnStateDB};
     use clarity::vm::tests::TEST_HEADER_DB;
     use clarity::vm::types::{ResponseData, StandardPrincipalData};
     use rand::Rng;
@@ -6163,9 +6173,12 @@ pub mod test {
         if let Err(Error::InvalidStacksTransaction(msg, ..)) =
             StacksChainState::process_transaction(&mut conn, &smart_contract_v2, false, None)
         {
-            assert!(msg
-                .find("asks for Clarity 2, but current epoch 2.05 only supports up to Clarity 1")
-                .is_some());
+            assert!(
+                msg.find(
+                    "asks for Clarity 2, but current epoch 2.05 only supports up to Clarity 1"
+                )
+                .is_some()
+            );
         } else {
             panic!(
                 "FATAL: did not recieve the appropriate error in processing a clarity2 tx in pre-2.1 epoch"
@@ -7219,9 +7232,11 @@ pub mod test {
 
         assert!(tx_receipt.vm_error.is_some());
         let err_str = tx_receipt.vm_error.unwrap();
-        assert!(err_str
-            .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
-            .is_some());
+        assert!(
+            err_str
+                .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
+                .is_some()
+        );
 
         let (fee, tx_receipt) = validate_transactions_static_epoch_and_process_transaction(
             &mut conn,
@@ -7242,9 +7257,11 @@ pub mod test {
 
         assert!(tx_receipt.vm_error.is_some());
         let err_str = tx_receipt.vm_error.unwrap();
-        assert!(err_str
-            .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
-            .is_some());
+        assert!(
+            err_str
+                .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
+                .is_some()
+        );
 
         conn.commit_block();
 
@@ -7505,10 +7522,12 @@ pub mod test {
                 addr.clone(),
                 "call-foo",
                 "call-do-it",
-                vec![Value::some(Value::Principal(PrincipalData::Contract(
-                    QualifiedContractIdentifier::parse(&format!("{}.foo-impl", &addr)).unwrap(),
-                )))
-                .unwrap()],
+                vec![
+                    Value::some(Value::Principal(PrincipalData::Contract(
+                        QualifiedContractIdentifier::parse(&format!("{}.foo-impl", &addr)).unwrap(),
+                    )))
+                    .unwrap(),
+                ],
             )
             .unwrap(),
         );

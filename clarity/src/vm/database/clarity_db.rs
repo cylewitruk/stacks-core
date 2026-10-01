@@ -14,6 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! High-level Clarity state access and typed value persistence.
+
+use crate::vm::{ValueRef, composite_vm_error};
 use stacks_common::bounded_format;
 use stacks_common::consts::{
     BITCOIN_REGTEST_FIRST_BLOCK_HASH, BITCOIN_REGTEST_FIRST_BLOCK_HEIGHT,
@@ -38,7 +41,9 @@ use crate::vm::database::structures::{
     ClarityDeserializable, ClaritySerializable, DataMapMetadata, DataVariableMetadata,
     FungibleTokenMetadata, NonFungibleTokenMetadata, STXBalance, STXBalanceSnapshot,
 };
-use crate::vm::database::{ClarityBackingStore, RollbackWrapper};
+use crate::vm::database::{
+    ClarityBackingStore, RollbackWrapper, StoredValue, StoredValueResult, TypedValueData,
+};
 use crate::vm::errors::{RuntimeCheckErrorKind, RuntimeError, VmExecutionError, VmInternalError};
 use crate::vm::representations::ClarityName;
 use crate::vm::types::serialization::NONE_SERIALIZATION_LEN;
@@ -577,6 +582,39 @@ impl<'a> ClarityDatabase<'a> {
         Ok(())
     }
 
+    /// Persist a value view without materializing shared payloads before serialization.
+    pub fn put_value_ref_with_size(
+        &mut self,
+        key: &str,
+        value: ValueRef<'_>,
+        epoch: &StacksEpochId,
+    ) -> Result<u64, VmExecutionError> {
+        if !matches!(value, ValueRef::Packed(_)) {
+            return self.put_value_with_size(key, value.into_owned()?, epoch);
+        }
+        let mut value = value.into_shared(epoch)?;
+        let mut original_size = None;
+        if epoch.value_sanitizing() {
+            let schema = value.logical_type().map_err(composite_vm_error)?;
+            let size = u64::from(value.consensus_byte_len());
+            let (sanitized, changed) = value
+                .sanitize(epoch, &schema)
+                .ok_or(RuntimeCheckErrorKind::CouldNotDetermineType)?;
+            value = sanitized;
+            if changed {
+                original_size = Some(size);
+            }
+        }
+        let typed = TypedValueData::prepare_shared(value)?;
+        let size = u64::from(typed.consensus_byte_len());
+        if self.store.stores_typed_values() {
+            self.store.put_typed_value(key, typed)?;
+        } else {
+            self.store.put_data(key, &typed.into_canonical())?;
+        }
+        Ok(original_size.unwrap_or(size))
+    }
+
     pub fn put_value_with_size(
         &mut self,
         key: &str,
@@ -586,33 +624,42 @@ impl<'a> ClarityDatabase<'a> {
         let sanitize = epoch.value_sanitizing();
         let mut pre_sanitized_size = None;
 
-        let serialized = if sanitize {
+        let stored_value = if sanitize {
+            // Preserve the existing consensus serialization behavior. Sanitization has
+            // historically used the value's actual type. Storage operations that have a declared
+            // type perform their authoritative admission check before reaching this method.
+            let sanitization_type = TypeSignature::type_of(&value)?;
             let value_size = value
                 .serialized_size()
                 .map_err(|e| VmInternalError::Expect(e.to_string()))?
                 as u64;
 
             let (sanitized_value, did_sanitize) =
-                Value::sanitize_value(epoch, &TypeSignature::type_of(&value)?, value)
-                    .ok_or(RuntimeCheckErrorKind::CouldNotDetermineType)?;
+                Value::sanitize_value(epoch, &sanitization_type, value)
+                    .ok_or_else(|| RuntimeCheckErrorKind::CouldNotDetermineType)?;
             // if data needed to be sanitized *charge* for the unsanitized cost
             if did_sanitize {
                 pre_sanitized_size = Some(value_size);
             }
             sanitized_value
-                .serialize_to_vec()
-                .map_err(|_| VmInternalError::Expect("IOError filling byte buffer.".into()))?
         } else {
             value
-                .serialize_to_vec()
-                .map_err(|_| VmInternalError::Expect("IOError filling byte buffer.".into()))?
         };
 
-        let size = serialized.len() as u64;
-        let hex_serialized = to_hex(serialized.as_slice());
-        self.store.put_data(key, &hex_serialized)?;
-
-        Ok(pre_sanitized_size.unwrap_or(size))
+        if self.store.stores_typed_values() {
+            let typed = TypedValueData::prepare(stored_value)?;
+            let size = u64::from(typed.consensus_byte_len());
+            self.store.put_typed_value(key, typed)?;
+            Ok(pre_sanitized_size.unwrap_or(size))
+        } else {
+            let serialized = stored_value
+                .serialize_to_vec()
+                .map_err(|_| VmInternalError::Expect("IOError filling byte buffer.".into()))?;
+            let size = serialized.len() as u64;
+            let hex_serialized = to_hex(serialized.as_slice());
+            self.store.put_data(key, &hex_serialized)?;
+            Ok(pre_sanitized_size.unwrap_or(size))
+        }
     }
 
     pub fn get_value(
@@ -624,6 +671,18 @@ impl<'a> ClarityDatabase<'a> {
         self.store
             .get_value(key, expected, epoch)
             .map_err(|e| VmInternalError::DBError(e.to_string()).into())
+    }
+
+    /// Get a Clarity value while retaining a shared packed representation when available.
+    pub fn get_stored_value(
+        &mut self,
+        key: &str,
+        expected: &TypeSignature,
+        epoch: &StacksEpochId,
+    ) -> Result<Option<StoredValueResult>, VmExecutionError> {
+        self.store
+            .get_stored_value(key, expected, epoch)
+            .map_err(|error| VmInternalError::DBError(error.to_string()).into())
     }
 
     pub fn get_data_with_proof<T>(
@@ -951,6 +1010,7 @@ impl<'a> ClarityDatabase<'a> {
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
     ) -> Result<Contract, VmExecutionError> {
+        let _writeback_diagnostic = stacks_profiler::diagnostic_span!("VM: Contract load");
         let retargeted = self.store.is_retargeted();
 
         // Attempt to serve from cache ONLY if we are reading at chain tip (not retargeted).
@@ -1742,21 +1802,22 @@ impl ClarityDatabase<'_> {
         .map(|data| data.value)
     }
 
-    pub fn set_variable(
+    /// Retain borrowed payloads through admission and serialization.
+    pub fn set_variable_ref(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
         variable_name: &str,
-        value: Value,
+        value: ValueRef<'_>,
         variable_descriptor: &DataVariableMetadata,
         epoch: &StacksEpochId,
     ) -> Result<ValueResult, VmExecutionError> {
         if !variable_descriptor
             .value_type
-            .admits(&self.get_clarity_epoch_version()?, &value)?
+            .admits_type(&self.get_clarity_epoch_version()?, &value.type_signature()?)?
         {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(variable_descriptor.value_type.clone()),
-                value.to_error_string(),
+                value.as_ref().to_error_string(),
             )
             .into());
         }
@@ -1767,12 +1828,29 @@ impl ClarityDatabase<'_> {
             variable_name,
         );
 
-        let size = self.put_value_with_size(&key, value, epoch)?;
+        let size = self.put_value_ref_with_size(&key, value, epoch)?;
 
         Ok(ValueResult {
             value: Value::Bool(true),
             serialized_byte_len: size,
         })
+    }
+
+    pub fn set_variable(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        variable_name: &str,
+        value: Value,
+        variable_descriptor: &DataVariableMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<ValueResult, VmExecutionError> {
+        self.set_variable_ref(
+            contract_identifier,
+            variable_name,
+            ValueRef::Owned(value),
+            variable_descriptor,
+            epoch,
+        )
     }
 
     pub fn lookup_variable_unknown_descriptor(
@@ -1830,6 +1908,27 @@ impl ClarityDatabase<'_> {
             }),
             Some(data) => Ok(data),
         }
+    }
+
+    /// Load a variable while preserving shared packed storage when available.
+    pub fn lookup_variable_stored_with_size(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        variable_name: &str,
+        variable_descriptor: &DataVariableMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<StoredValueResult, VmExecutionError> {
+        let key = ClarityDatabase::make_key_for_trip(
+            contract_identifier,
+            StoreType::Variable,
+            variable_name,
+        );
+        Ok(self
+            .get_stored_value(&key, &variable_descriptor.value_type, epoch)?
+            .unwrap_or(StoredValueResult {
+                value: StoredValue::Owned(Value::none()),
+                serialized_byte_len: *NONE_SERIALIZATION_LEN,
+            }))
     }
 }
 
@@ -1985,6 +2084,93 @@ impl ClarityDatabase<'_> {
         }
     }
 
+    /// Fetch a map entry while preserving shared packed storage when available.
+    /// Retain borrowed payloads through admission and serialization.
+    pub fn fetch_entry_stored_with_size_ref(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        map_name: &str,
+        key_value: &ValueRef<'_>,
+        map_descriptor: &DataMapMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<StoredValueResult, VmExecutionError> {
+        if !map_descriptor.key_type.admits_type(
+            &self.get_clarity_epoch_version()?,
+            &key_value.type_signature()?,
+        )? {
+            return Err(RuntimeCheckErrorKind::TypeValueError(
+                Box::new(map_descriptor.key_type.clone()),
+                key_value.as_ref().to_error_string(),
+            )
+            .into());
+        }
+
+        let key_serialized = key_value
+            .serialize_to_hex()
+            .map_err(|_| VmInternalError::Expect("IOError filling byte buffer.".into()))?;
+        let key = ClarityDatabase::make_key_for_data_map_entry_serialized(
+            contract_identifier,
+            map_name,
+            &key_serialized,
+        );
+        let stored_type = TypeSignature::new_option(map_descriptor.value_type.clone())?;
+        let result = self.get_stored_value(&key, &stored_type, epoch)?;
+        let key_size = byte_len_of_serialization(&key_serialized);
+        match result {
+            None => Ok(StoredValueResult {
+                value: StoredValue::Owned(Value::none()),
+                serialized_byte_len: key_size,
+            }),
+            Some(StoredValueResult {
+                value,
+                serialized_byte_len,
+            }) => Ok(StoredValueResult {
+                value,
+                serialized_byte_len: serialized_byte_len.checked_add(key_size).ok_or_else(
+                    || VmInternalError::Expect("Overflowed Clarity key/value size".into()),
+                )?,
+            }),
+        }
+    }
+
+    pub fn fetch_entry_stored_with_size(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        map_name: &str,
+        key_value: &Value,
+        map_descriptor: &DataMapMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<StoredValueResult, VmExecutionError> {
+        self.fetch_entry_stored_with_size_ref(
+            contract_identifier,
+            map_name,
+            &ValueRef::Borrowed(key_value),
+            map_descriptor,
+            epoch,
+        )
+    }
+
+    /// Retain borrowed payloads through admission and serialization.
+    pub fn set_entry_ref(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        map_name: &str,
+        key: ValueRef<'_>,
+        value: ValueRef<'_>,
+        map_descriptor: &DataMapMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<ValueResult, VmExecutionError> {
+        self.inner_set_entry_ref(
+            contract_identifier,
+            map_name,
+            key,
+            value,
+            false,
+            map_descriptor,
+            epoch,
+        )
+    }
+
     pub fn set_entry(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2045,6 +2231,27 @@ impl ClarityDatabase<'_> {
         .map(|data| data.value)
     }
 
+    /// Retain borrowed payloads through admission and serialization.
+    pub fn insert_entry_ref(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        map_name: &str,
+        key: ValueRef<'_>,
+        value: ValueRef<'_>,
+        map_descriptor: &DataMapMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<ValueResult, VmExecutionError> {
+        self.inner_set_entry_ref(
+            contract_identifier,
+            map_name,
+            key,
+            value,
+            true,
+            map_descriptor,
+            epoch,
+        )
+    }
+
     pub fn insert_entry(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
@@ -2071,40 +2278,52 @@ impl ClarityDatabase<'_> {
         expected_value: &TypeSignature,
         epoch: &StacksEpochId,
     ) -> Result<bool, VmExecutionError> {
-        match self.get_value(key, expected_value, epoch)? {
+        match self.get_stored_value(key, expected_value, epoch)? {
             None => Ok(false),
-            Some(value) => Ok(value.value != Value::none()),
+            Some(StoredValueResult {
+                value: StoredValue::Owned(value),
+                ..
+            }) => Ok(value != Value::none()),
+            Some(StoredValueResult {
+                value: StoredValue::Packed(value),
+                ..
+            }) => Ok(value
+                .as_view()
+                .optional_child()
+                .map_err(composite_vm_error)?
+                .is_some()),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn inner_set_entry(
+    /// Retain borrowed payloads through admission and serialization.
+    fn inner_set_entry_ref(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
         map_name: &str,
-        key_value: Value,
-        value: Value,
+        key_value: ValueRef<'_>,
+        value: ValueRef<'_>,
         return_if_exists: bool,
         map_descriptor: &DataMapMetadata,
         epoch: &StacksEpochId,
     ) -> Result<ValueResult, VmExecutionError> {
-        if !map_descriptor
-            .key_type
-            .admits(&self.get_clarity_epoch_version()?, &key_value)?
-        {
+        if !map_descriptor.key_type.admits_type(
+            &self.get_clarity_epoch_version()?,
+            &key_value.type_signature()?,
+        )? {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(map_descriptor.key_type.clone()),
-                key_value.to_error_string(),
+                key_value.as_ref().to_error_string(),
             )
             .into());
         }
         if !map_descriptor
             .value_type
-            .admits(&self.get_clarity_epoch_version()?, &value)?
+            .admits_type(&self.get_clarity_epoch_version()?, &value.type_signature()?)?
         {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(map_descriptor.value_type.clone()),
-                value.to_error_string(),
+                value.as_ref().to_error_string(),
             )
             .into());
         }
@@ -2128,8 +2347,8 @@ impl ClarityDatabase<'_> {
             });
         }
 
-        let placed_value = Value::some(value)?;
-        let placed_size = self.put_value_with_size(&key, placed_value, epoch)?;
+        let placed_value = value.into_optional()?;
+        let placed_size = self.put_value_ref_with_size(&key, placed_value, epoch)?;
 
         Ok(ValueResult {
             value: Value::Bool(true),
@@ -2141,21 +2360,43 @@ impl ClarityDatabase<'_> {
         })
     }
 
-    pub fn delete_entry(
+    fn inner_set_entry(
         &mut self,
         contract_identifier: &QualifiedContractIdentifier,
         map_name: &str,
-        key_value: &Value,
+        key_value: Value,
+        value: Value,
+        return_if_exists: bool,
         map_descriptor: &DataMapMetadata,
         epoch: &StacksEpochId,
     ) -> Result<ValueResult, VmExecutionError> {
-        if !map_descriptor
-            .key_type
-            .admits(&self.get_clarity_epoch_version()?, key_value)?
-        {
+        self.inner_set_entry_ref(
+            contract_identifier,
+            map_name,
+            ValueRef::Owned(key_value),
+            ValueRef::Owned(value),
+            return_if_exists,
+            map_descriptor,
+            epoch,
+        )
+    }
+
+    /// Retain borrowed payloads through admission and serialization.
+    pub fn delete_entry_ref(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        map_name: &str,
+        key_value: &ValueRef<'_>,
+        map_descriptor: &DataMapMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<ValueResult, VmExecutionError> {
+        if !map_descriptor.key_type.admits_type(
+            &self.get_clarity_epoch_version()?,
+            &key_value.type_signature()?,
+        )? {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(map_descriptor.key_type.clone()),
-                key_value.to_error_string(),
+                key_value.as_ref().to_error_string(),
             )
             .into());
         }
@@ -2178,7 +2419,7 @@ impl ClarityDatabase<'_> {
             });
         }
 
-        self.put_value(&key, Value::none(), epoch)?;
+        self.put_value_with_size(&key, Value::none(), epoch)?;
 
         Ok(ValueResult {
             value: Value::Bool(true),
@@ -2188,6 +2429,23 @@ impl ClarityDatabase<'_> {
                     VmInternalError::Expect("Overflowed Clarity key/value size".into())
                 })?,
         })
+    }
+
+    pub fn delete_entry(
+        &mut self,
+        contract_identifier: &QualifiedContractIdentifier,
+        map_name: &str,
+        key_value: &Value,
+        map_descriptor: &DataMapMetadata,
+        epoch: &StacksEpochId,
+    ) -> Result<ValueResult, VmExecutionError> {
+        self.delete_entry_ref(
+            contract_identifier,
+            map_name,
+            &ValueRef::Borrowed(key_value),
+            map_descriptor,
+            epoch,
+        )
     }
 }
 
@@ -2456,7 +2714,7 @@ impl ClarityDatabase<'_> {
         );
 
         let value = Value::some(Value::Principal(principal.clone()))?;
-        self.put_value(&key, value, epoch)?;
+        self.put_value_with_size(&key, value, epoch)?;
 
         Ok(())
     }
@@ -2486,7 +2744,7 @@ impl ClarityDatabase<'_> {
                 .map_err(|_| VmInternalError::Expect("IOError filling byte buffer.".into()))?,
         );
 
-        self.put_value(&key, Value::none(), epoch)?;
+        self.put_value_with_size(&key, Value::none(), epoch)?;
         Ok(())
     }
 }

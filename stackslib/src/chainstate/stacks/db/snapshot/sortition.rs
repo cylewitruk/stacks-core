@@ -13,21 +13,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Sortition-database copying for chainstate snapshots.
+
 use std::collections::HashSet;
 
 use rusqlite::types::Value;
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use stacks_common::types::chainstate::{BurnchainHeaderHash, SortitionId};
 use stacks_common::types::sqlite::NO_PARAMS;
 
 use super::common::{
-    classify_hint, clone_schemas_from_source, copied_rows, marf_err, with_offline_write_session,
-    DbSnapshotSpec, TableCopySpec, TableCopySpecs, MARF_INFRA_TABLES,
+    DbSnapshotSpec, TableCopySpec, TableCopySpecs, classify_hint, clone_schemas_from_source,
+    copied_rows, marf_err, with_offline_write_session,
 };
 use super::fork_storage::{collect_canonical_leaf_hashes, copy_canonical_fork_storage};
 use crate::chainstate::burn::db::sortdb::SortitionTipCopyBoundary;
-use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue};
-use crate::util_lib::db::{sqlite_open, u64_to_sql, Error as db_error};
+use crate::chainstate::stacks::index::{Error, MARF_SQLITE_TABLES, MARFValue, trie_sql};
+use crate::util_lib::db::{Error as db_error, sqlite_open, u64_to_sql};
 
 /// Snapshot-only reads over a sortition DB connection.
 pub trait SortitionSnapshotExt {
@@ -161,7 +163,7 @@ const IGNORED_TABLES: &[&str] = &["snapshot_burn_distributions"];
 /// The sortition (`marf.sqlite` side-tables) snapshot spec. The `boundary`
 /// selects the `stacks_chain_tips*` memo template (plain vs rewrite) and feeds
 /// the rewrite anchors as `?N` binds; the table-name set is independent of it.
-/// MARF infra ([`MARF_INFRA_TABLES`], created by the squash engine) and
+/// MARF infra ([`MARF_SQLITE_TABLES`], created by the squash engine) and
 /// deliberately-skipped ([`IGNORED_TABLES`]) tables are recognized by the guard
 /// but not row-copied.
 struct SortitionDbSnapshotSpec {
@@ -187,7 +189,7 @@ impl DbSnapshotSpec for SortitionDbSnapshotSpec {
     }
 
     fn extra_recognized_tables() -> Vec<&'static str> {
-        MARF_INFRA_TABLES
+        MARF_SQLITE_TABLES
             .iter()
             .copied()
             .chain(IGNORED_TABLES.iter().copied())

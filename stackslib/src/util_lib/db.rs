@@ -14,20 +14,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Shared SQLite, transaction, and MARF-index database utilities.
+
 use std::io::Error as IOError;
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{error, fmt, fs, io};
 
 use clarity::vm::types::QualifiedContractIdentifier;
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use rusqlite::types::ToSql;
 use rusqlite::{params, Connection, Error as sqlite_error, Params, Row};
 use serde_json::Error as serde_error;
+use stacks_common::types::Address;
 use stacks_common::types::chainstate::{SortitionId, StacksAddress, StacksBlockId, TrieHash};
 use stacks_common::types::sqlite::NO_PARAMS;
-use stacks_common::types::Address;
-// Generic SQLite plumbing now lives in `stacks_common`; re-exported here so that
-// the many `util_lib::db::*` call sites keep working unchanged.
+// Shared SQLite connection policy and MARF constants live in stacks-common.
 pub use stacks_common::util::db::{
     sqlite_open, table_exists, tx_begin_immediate as tx_begin_immediate_sqlite, tx_busy_handler,
     update_lock_table, SQLITE_MARF_PAGE_SIZE, SQLITE_MMAP_SIZE, SQLITE_STATEMENT_CACHE_CAPACITY,
@@ -35,11 +37,89 @@ pub use stacks_common::util::db::{
 use stacks_common::util::hash::to_hex;
 use stacks_common::util::secp256k1::{Secp256k1PrivateKey, Secp256k1PublicKey};
 
-use crate::chainstate::stacks::index::marf::{MarfConnection, MarfTransaction, MARF};
+use crate::chainstate::stacks::index::marf::{MARF, MarfConnection, MarfCore, MarfTransaction};
 use crate::chainstate::stacks::index::{Error as MARFError, MARFValue, MarfTrieId};
 
 pub type DBConn = rusqlite::Connection;
 pub type DBTx<'a> = rusqlite::Transaction<'a>;
+
+/// Chars that must be escaped inside a SQLite `file:` URI path.
+const SQLITE_URI_PATH_RESERVED: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'[')
+    .add(b'\\')
+    .add(b']')
+    .add(b'^')
+    .add(b'`')
+    .add(b'{')
+    .add(b'|')
+    .add(b'}');
+
+/// One user-defined object read from a SQLite schema catalog.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SqliteSchemaObject {
+    /// SQLite object kind (`table`, `index`, `view`, or `trigger`).
+    pub kind: String,
+    /// Object name.
+    pub name: String,
+    /// Owning table name as recorded by SQLite.
+    pub table: String,
+    /// Creation SQL stored in `sqlite_master`.
+    pub sql: String,
+}
+
+/// Quote a trusted SQLite identifier, escaping embedded double quotes.
+pub fn quote_sql_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
+
+/// Build a read-only SQLite file URI, optionally disabling locking and WAL handling.
+pub fn sqlite_readonly_uri(path: &Path, immutable: bool) -> Result<String, sqlite_error> {
+    let path_text = path
+        .to_str()
+        .ok_or_else(|| sqlite_error::InvalidPath(path.to_path_buf()))?;
+    let encoded = utf8_percent_encode(path_text, SQLITE_URI_PATH_RESERVED);
+    let immutable = if immutable { "&immutable=1" } else { "" };
+    Ok(format!("file:{encoded}?mode=ro{immutable}"))
+}
+
+/// Read every user-defined object in `schema` from its SQLite catalog.
+pub fn sqlite_schema_objects(
+    connection: &Connection,
+    schema: &str,
+) -> Result<Vec<SqliteSchemaObject>, sqlite_error> {
+    if schema.is_empty()
+        || !schema
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return Err(sqlite_error::InvalidParameterName(schema.to_owned()));
+    }
+    let schema = quote_sql_identifier(schema);
+    let mut statement = connection.prepare(&format!(
+        "SELECT type, name, tbl_name, sql
+         FROM {schema}.sqlite_master
+         WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+         ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, rowid"
+    ))?;
+    let objects = statement
+        .query_map([], |row| {
+            Ok(SqliteSchemaObject {
+                kind: row.get(0)?,
+                name: row.get(1)?,
+                table: row.get(2)?,
+                sql: row.get(3)?,
+            })
+        })?
+        .collect();
+    objects
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -818,6 +898,8 @@ impl<'a, C: Clone, T: MarfTrieId> IndexDBTx<'a, C, T> {
     /// Store some data to the index storage.
     fn store_indexed(&mut self, value: &String) -> Result<MARFValue, Error> {
         let marf_value = MARFValue::from_value(value);
+        #[cfg(feature = "commit-residency-diagnostics")]
+        let _io = crate::util_lib::db_io_probe::QueryProbe::begin(self.tx());
         self.tx().execute(
             "INSERT OR REPLACE INTO __fork_storage (value_hash, value) VALUES (?1, ?2)",
             &[&to_hex(&marf_value.to_vec()), value],
@@ -849,19 +931,31 @@ impl<'a, C: Clone, T: MarfTrieId> IndexDBTx<'a, C, T> {
         assert_eq!(keys.len(), values.len());
         match self.block_linkage {
             None => {
+                #[cfg(feature = "commit-residency-diagnostics")]
+                let _begin = stacks_profiler::diagnostic_span!("Headers index: Begin");
                 self.index_mut().begin(parent_header_hash, header_hash)?;
                 self.block_linkage = Some((parent_header_hash.clone(), header_hash.clone()));
             }
             Some(_) => panic!("Tried to put_indexed_all twice!"),
         }
 
+        #[cfg(feature = "commit-residency-diagnostics")]
+        let _values = stacks_profiler::diagnostic_span!("Headers index: Store values SQL");
         let mut marf_values = Vec::with_capacity(values.len());
         for value in values.iter() {
             let marf_value = self.store_indexed(value)?;
             marf_values.push(marf_value);
         }
 
+        #[cfg(feature = "commit-residency-diagnostics")]
+        drop(_values);
+        #[cfg(feature = "commit-residency-diagnostics")]
+        let _insert = stacks_profiler::diagnostic_span!("Headers index: Insert batch");
         self.index_mut().insert_batch(keys, marf_values)?;
+        #[cfg(feature = "commit-residency-diagnostics")]
+        drop(_insert);
+        #[cfg(feature = "commit-residency-diagnostics")]
+        let _seal = stacks_profiler::diagnostic_span!("Headers index: Seal");
         let root_hash = self.index_mut().seal()?;
         Ok(root_hash)
     }
@@ -900,11 +994,63 @@ impl<C: Clone, T: MarfTrieId> Drop for IndexDBTx<'_, C, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{assert_matches, fs};
+
+    use rstest::rstest;
 
     use rusqlite::OpenFlags;
 
     use super::*;
+
+    #[rstest]
+    #[case::unix_absolute("/tmp/marf-squash/index.sqlite", "/tmp/marf-squash/index.sqlite")]
+    #[case::windows_drive_letter("C:/Users/test/index.sqlite", "C:/Users/test/index.sqlite")]
+    #[case::unreserved_chars_pass_through("/abc-DEF_123.~", "/abc-DEF_123.~")]
+    #[case::space_and_uri_structurals("/tmp/has space/file?x#y", "/tmp/has%20space/file%3Fx%23y")]
+    #[case::percent_literal_encoded("/tmp/100%/x", "/tmp/100%25/x")]
+    // `é` is U+00E9 = 0xC3 0xA9 in UTF-8; non-ASCII bytes always encode.
+    #[case::non_ascii_as_utf8_bytes("/tmp/café", "/tmp/caf%C3%A9")]
+    fn sqlite_readonly_uri_encodes_paths(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(
+            sqlite_readonly_uri(Path::new(input), false).unwrap(),
+            format!("file:{expected}?mode=ro")
+        );
+    }
+
+    #[test]
+    fn sqlite_readonly_uri_supports_immutable_mode() {
+        assert_eq!(
+            sqlite_readonly_uri(Path::new("/tmp/source.sqlite"), true).unwrap(),
+            "file:/tmp/source.sqlite?mode=ro&immutable=1"
+        );
+    }
+
+    #[test]
+    fn sqlite_schema_helpers_quote_and_inventory_objects() {
+        assert_eq!(quote_sql_identifier("quoted\"name"), "\"quoted\"\"name\"");
+
+        let connection = Connection::open_in_memory().unwrap();
+        let table = quote_sql_identifier("value\"table");
+        let index = quote_sql_identifier("value\"index");
+        connection
+            .execute_batch(&format!(
+                "CREATE TABLE {table} (value INTEGER); \
+                 CREATE INDEX {index} ON {table}(value);"
+            ))
+            .unwrap();
+
+        let objects = sqlite_schema_objects(&connection, "main").unwrap();
+        assert_eq!(objects.len(), 2);
+        assert_eq!(objects[0].kind, "table");
+        assert_eq!(objects[0].name, "value\"table");
+        assert_eq!(objects[1].kind, "index");
+        assert_eq!(objects[1].table, "value\"table");
+
+        assert_matches!(
+            sqlite_schema_objects(&connection, "main; ATTACH"),
+            Err(sqlite_error::InvalidParameterName(name)) if name == "main; ATTACH"
+        );
+    }
 
     #[test]
     fn test_pragma() {

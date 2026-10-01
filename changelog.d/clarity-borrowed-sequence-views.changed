@@ -1,0 +1,1 @@
+Retain packed Clarity values through sequence callbacks, element projections, optional wrappers, list filters and sequence slices. Compare and search borrowed payloads directly, advance UTF-8 iteration without repeated prefix scans, and preserve existing execution costs and owned compatibility boundaries.

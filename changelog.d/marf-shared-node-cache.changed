@@ -1,0 +1,1 @@
+Share resolved MARF node cache entries across related read-only reopens, with coordinated invalidation and retained node handles usable after releasing the cache lock.

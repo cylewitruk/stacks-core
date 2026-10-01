@@ -306,14 +306,15 @@ mod tests {
     use rand::{thread_rng, RngCore};
 
     use super::*;
-    use crate::client::tests::{generate_signer_config, mock_server_from_config, write_response};
+    use crate::client::tests::{generate_signer_config, mock_server_random, write_response};
     use crate::config::{build_signer_config_tomls, GlobalConfig, Network};
 
     #[test]
     fn send_signer_message_should_succeed() {
+        let (mock_server, mock_server_addr) = mock_server_random().unwrap();
         let signer_config = build_signer_config_tomls(
             &[StacksPrivateKey::random()],
-            "localhost:20443",
+            &mock_server_addr.to_string(),
             Some(Duration::from_millis(128)), // Timeout defaults to 5 seconds. Let's override it to 128 milliseconds.
             &Network::Testnet,
             "1234",
@@ -359,7 +360,6 @@ mod tests {
             metadata: None,
             code: None,
         };
-        let mock_server = mock_server_from_config(&config);
         debug!("Spawning msg sender");
         let sender_thread =
             spawn(move || stackerdb.send_message_with_retry(signer_message).unwrap());

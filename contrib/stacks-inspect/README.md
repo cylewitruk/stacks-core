@@ -140,6 +140,33 @@ validate-block <DATABASE_PATH> [--early-exit] [--ignore-costs] [MODE]
       naka-index-range [START] [END] Validate Nakamoto blocks by index (omit args to show count)
 ```
 
+On this optimized branch, `validate-block` prepares every applicable MARF in
+an **offline, writable disposable chainstate** before opening validation handles.
+It uses the [canonical migrator](../stacks-storage-migrate/README.md) directly:
+legacy tries become compact canonical tries, and Clarity values become a
+partitioned stable-ID store. Generic MARF side tables retain their semantics.
+Direct hash indexes and the colocated Clarity PtrHash base are built before
+validation. No intermediate format databases are produced.
+
+Conversion creates a private sibling destination. The verified replacement and
+its file inventory are durable before cutover begins; old files remain until
+the active replacement verifies. Interrupted file publication rolls forward.
+Incomplete conversion is all-or-nothing and must be inspected/discarded before
+retrying. Already canonical stores receive registration verification. Unknown
+experimental formats fail explicitly. Preparation needs free space for the
+completed destination and scratch and is not part of node-work timing.
+
+### Moving a converted chainstate
+
+Move the complete chainstate with every registered sibling directory. Stable
+value and PtrHash registrations are relative. PtrHash functions use native
+serialization; verify compatibility with the target-built reader before any
+benchmark. If a native rebuild is required, use
+`scripts/rebuild-stable-ptrhash.py` on a disposable clone with a verified
+committed-membership stream. Preserve the original template, and repeat
+validation after rebuilding. Do not use the retired extent-index rebuild path
+for stable-ID storage.
+
 ### Chain State Commands
 
 Chain state queries and replay.

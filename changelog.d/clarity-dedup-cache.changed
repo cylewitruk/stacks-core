@@ -1,0 +1,1 @@
+Cache committed value-extent deduplication hints across related MARF reopens using compact verified prefixes, bounded memory and rollback-safe admission.

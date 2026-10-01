@@ -1,0 +1,15 @@
+[package]
+name = "stable-value-format"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Versioned on-disk codecs for experimental Clarity stable value IDs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

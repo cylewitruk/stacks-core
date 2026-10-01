@@ -1,3 +1,5 @@
+//! Chainstate-backed Clarity database implementations.
+
 use std::ops::{Deref, DerefMut};
 
 use clarity::types::chainstate::TrieHash;
@@ -31,12 +33,15 @@ use crate::chainstate::stacks::db::{ChainstateTx, StacksChainState, StacksDBConn
 use crate::chainstate::stacks::index::marf::{MarfConnection, MARF};
 use crate::chainstate::stacks::index::ClarityMarfTrieId;
 use crate::chainstate::stacks::Error as ChainstateError;
-use crate::clarity_vm::special::handle_contract_call_special_cases;
+use crate::clarity_vm::special::handle_contract_call_special_cases_ref;
 use crate::core::{StacksEpoch, StacksEpochId};
 use crate::util_lib::db::{DBConn, Error as DBError, FromColumn, FromRow};
 
+pub mod binary_value_store;
 pub mod ephemeral;
 pub mod marf;
+pub mod stable_value_store;
+pub mod value_extents;
 
 pub trait GetTenureStartId {
     fn get_tenure_block_id(
@@ -1323,7 +1328,7 @@ impl ClarityBackingStore for MemoryBackingStore {
     }
 
     fn get_cc_special_cases_handler(&self) -> Option<SpecialCaseHandler> {
-        Some(&handle_contract_call_special_cases)
+        Some(&handle_contract_call_special_cases_ref)
     }
 
     fn put_all_data(&mut self, items: Vec<(String, String)>) -> Result<(), VmExecutionError> {

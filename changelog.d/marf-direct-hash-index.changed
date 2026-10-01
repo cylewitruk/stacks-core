@@ -1,0 +1,1 @@
+Prototype an optional direct-addressed confirmed block/root hash index with shared stable mappings, immutable dense-prefix slots, transaction-bound publication, and online extension.

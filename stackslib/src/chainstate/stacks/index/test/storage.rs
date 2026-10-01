@@ -21,6 +21,7 @@ use std::io::{Seek, SeekFrom};
 use tempfile::tempdir;
 
 use super::*;
+use crate::chainstate::stacks::index::test::marf::MarfTestExt;
 use crate::chainstate::stacks::index::*;
 
 fn ptrs_cmp(p1: &[TriePtr], p2: &[TriePtr]) -> bool {
@@ -114,19 +115,44 @@ fn trie_cmp<T: MarfTrieId>(
         // search children
         for ptr in n1_data.ptrs() {
             if ptr.id != TrieNodeID::Empty as u8 && !is_backptr(ptr.id) {
-                let (child_data, child_hash) = t1.read_nodetype(ptr).unwrap();
-                frontier_1.push_back((child_data, child_hash))
+                let (child_data, child_hash) =
+                    t1.read_node(ptr).unwrap().into_owned_node().unwrap();
+                frontier_1.push_back((child_data, child_hash.unwrap()))
             }
         }
         for ptr in n2_data.ptrs() {
             if ptr.id != TrieNodeID::Empty as u8 && !is_backptr(ptr.id) {
-                let (child_data, child_hash) = t2.read_nodetype(ptr).unwrap();
-                frontier_2.push_back((child_data, child_hash))
+                let (child_data, child_hash) =
+                    t2.read_node(ptr).unwrap().into_owned_node().unwrap();
+                frontier_2.push_back((child_data, child_hash.unwrap()))
             }
         }
     }
 
     return true;
+}
+
+#[test]
+fn trie_ram_read_node_returns_borrowed_view() {
+    let block = StacksBlockId([0x11; 32]);
+    let parent = StacksBlockId::sentinel();
+    let mut trie = TrieRAM::new(&block, 1, &parent);
+
+    let node = TrieNodeType::Leaf(TrieLeaf::from_value(&[0xaa, 0xbb], MARFValue::from(7u32)));
+    let hash = TrieHash::from_data(&[0x55; 8]);
+    trie.write_nodetype(0, &node, hash).unwrap();
+
+    let read = trie
+        .read_node(&TriePtr::new(TrieNodeID::Leaf as u8, 0, 0))
+        .unwrap();
+
+    assert_eq!(read.hash, Some(hash));
+    match read.backing {
+        ReadNodeBacking::PersistedDecoded(node_ref) => {
+            assert_eq!(node_ref.to_owned_node(), node);
+        }
+        other => panic!("expected borrowed TrieRAM read, got {other:?}"),
+    }
 }
 
 fn load_store_trie_m_n_same_with_compression(m: u64, n: u64, same: bool, compress: bool) {
@@ -213,12 +239,9 @@ fn load_store_trie_m_n_same_with_compression(m: u64, n: u64, same: bool, compres
 
             let path = TrieHash::from_bytes(&path_bytes).unwrap();
 
-            // NOTE: may have been overwritten; just check for presence
-            assert!(
-                MARF::get_path(&mut marf.borrow_storage_backend(), &unconfirmed_tip, &path)
-                    .unwrap()
-                    .is_some()
-            );
+            // NOTE: may have been overwritten; just check for presence. This test helper will panic
+            // if the path is not found, which is what we want to test here.
+            marf.expect_path(&unconfirmed_tip, &path);
         }
 
         // insert new keys
@@ -238,11 +261,7 @@ fn load_store_trie_m_n_same_with_compression(m: u64, n: u64, same: bool, compres
 
             new_inserted.push((path, value.clone()));
 
-            if let Ok(Some(_)) = MARF::get_path(
-                &mut confirmed_marf.borrow_storage_backend(),
-                &confirmed_tip,
-                &path,
-            ) {
+            if let Ok(Some(_)) = marf.get_path(&confirmed_tip, &path) {
             } else {
                 all_new_paths.push(path);
             }
@@ -252,9 +271,7 @@ fn load_store_trie_m_n_same_with_compression(m: u64, n: u64, same: bool, compres
 
         // verify that all new keys are there, off the unconfirmed tip
         for (path, expected_value) in new_inserted.iter() {
-            let value = MARF::get_path(&mut marf.borrow_storage_backend(), &unconfirmed_tip, path)
-                .unwrap()
-                .unwrap();
+            let value = marf.expect_path(&unconfirmed_tip, path);
             assert_eq!(expected_value.data, value.data);
         }
 
@@ -279,18 +296,16 @@ fn load_store_trie_m_n_same_with_compression(m: u64, n: u64, same: bool, compres
     // test rollback
     for path in all_new_paths.iter() {
         eprintln!("path present? {path:?}");
-        assert!(
-            MARF::get_path(&mut marf.borrow_storage_backend(), &unconfirmed_tip, path)
-                .unwrap()
-                .is_some()
-        );
+        // This will panic if the path is not found, which is what we want to test here.
+        marf.expect_path(&unconfirmed_tip, path);
     }
 
     marf.drop_unconfirmed();
 
     for path in all_new_paths.iter() {
         eprintln!("path absent?  {path:?}");
-        assert!(MARF::get_path(&mut marf.borrow_storage_backend(), &confirmed_tip, path).is_err());
+        marf.get_path(&confirmed_tip, path)
+            .expect_err("path should not be found after dropping unconfirmed trie");
     }
 }
 
@@ -413,7 +428,9 @@ fn dump_consume_large_offset_sets_u64_ptr_bit() {
         .truncate(true)
         .open(&path)
         .expect("create temp trie dump");
-    let end_offset = trie.dump_consume(&mut file).expect("dump large trie");
+    let end_offset = trie
+        .dump_consume(&mut file, super::super::record::NodeRecordFormat::Legacy)
+        .expect("dump large trie");
     assert!(end_offset > u64::from(u32::MAX));
     // child-before-parent order: the last two nodes in the file are the shallowest
     // non-root nodes of the linear chain. Both have children at offsets
@@ -587,14 +604,14 @@ fn test_dump_compressed_consume_cow_and_amendment_patches() {
                 .as_ref()
                 .expect("uncommitted writes should exist");
             let trie_ram = uncommitted.1.trie_ram_ref();
-            let patch_count = trie_ram
+            let amendment_patch_source_count = trie_ram
                 .data()
                 .iter()
-                .filter(|(node, _)| !node.is_leaf() && !node.get_patches().is_empty())
+                .filter(|(node, _)| !node.is_leaf() && node.last_patch_source().is_some())
                 .count();
             assert!(
-                patch_count > 0,
-                "expected at least one non-leaf patched node before block C commit, got 0"
+                amendment_patch_source_count > 0,
+                "expected at least one non-leaf amendment patch source before block C commit, got 0"
             );
         }
 
@@ -614,13 +631,13 @@ fn test_dump_compressed_consume_cow_and_amendment_patches() {
                 .unwrap();
             if i < 8 {
                 assert_eq!(
-                    leaf.data.to_vec()[0],
+                    leaf.data.as_ref().expect("resolved test leaf").to_vec()[0],
                     (i + 200) as u8,
                     "key {i} should have block C value"
                 );
             } else {
                 assert_eq!(
-                    leaf.data.to_vec()[0],
+                    leaf.data.as_ref().expect("resolved test leaf").to_vec()[0],
                     i as u8,
                     "key {i} should have block A value"
                 );
