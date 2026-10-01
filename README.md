@@ -19,7 +19,7 @@ Stacks is a layer-2 blockchain that uses Bitcoin as a base layer for security an
 
 ### 1. Download and install Rust
 
-_For building on Windows, follow the rustup installer instructions at https://rustup.rs/._
+_For building on Windows, follow the rustup installer instructions at <https://rustup.rs/>._
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -33,7 +33,7 @@ rustup component add rustfmt
 rustup update
 ```
 
-### 2. Clone the source repository:
+### 2. Clone the source repository
 
 ```bash
 git clone --depth=1 https://github.com/stacks-network/stacks-core.git
@@ -51,13 +51,13 @@ cargo build --profile release-lite
 
 _Note on building_: you may set `RUSTFLAGS` to build binaries for your native cpu:
 
-```
+```bash
 RUSTFLAGS="-Ctarget-cpu=native"
 ```
 
 or uncomment these lines in `./cargo/config.toml`:
 
-```
+```toml
 # [build]
 # rustflags = ["-Ctarget-cpu=native"]
 ```
