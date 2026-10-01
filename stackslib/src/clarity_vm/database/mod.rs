@@ -10,29 +10,29 @@ use clarity::vm::database::sqlite::{
     sqlite_insert_metadata,
 };
 use clarity::vm::database::{
-    BurnStateDB, ClarityBackingStore, ClarityDatabase, HeadersDB, NULL_BURN_STATE_DB,
-    NULL_HEADER_DB, SpecialCaseHandler, SqliteConnection,
+    BurnStateDB, ClarityBackingStore, ClarityDatabase, HeadersDB, SpecialCaseHandler,
+    SqliteConnection, NULL_BURN_STATE_DB, NULL_HEADER_DB,
 };
 use clarity::vm::errors::{RuntimeError, VmExecutionError};
 use clarity::vm::types::{QualifiedContractIdentifier, TupleData};
-use rusqlite::{Connection, OptionalExtension, Row, params};
-use stacks_common::types::Address;
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use stacks_common::types::chainstate::{
     BlockHeaderHash, BurnchainHeaderHash, ConsensusHash, SortitionId, StacksAddress, StacksBlockId,
     TenureBlockId, VRFSeed,
 };
+use stacks_common::types::Address;
 use stacks_common::util::vrf::VRFProof;
 
 use crate::chainstate::burn::db::sortdb::{
-    SortitionDB, SortitionHandle, SortitionHandleConn, SortitionHandleTx, get_ancestor_sort_id,
+    get_ancestor_sort_id, SortitionDB, SortitionHandle, SortitionHandleConn, SortitionHandleTx,
 };
-use crate::chainstate::nakamoto::{StacksDBIndexed, keys as nakamoto_keys};
-use crate::chainstate::stacks::Error as ChainstateError;
+use crate::chainstate::nakamoto::{keys as nakamoto_keys, StacksDBIndexed};
 use crate::chainstate::stacks::boot::PoxStartCycleInfo;
 use crate::chainstate::stacks::db::accounts::MinerReward;
 use crate::chainstate::stacks::db::{ChainstateTx, StacksChainState, StacksDBConn, StacksDBTx};
+use crate::chainstate::stacks::index::marf::{MarfConnection, MARF};
 use crate::chainstate::stacks::index::ClarityMarfTrieId;
-use crate::chainstate::stacks::index::marf::{MARF, MarfConnection};
+use crate::chainstate::stacks::Error as ChainstateError;
 use crate::clarity_vm::special::handle_contract_call_special_cases_ref;
 use crate::core::{StacksEpoch, StacksEpochId};
 use crate::util_lib::db::{DBConn, Error as DBError, FromColumn, FromRow};
@@ -40,8 +40,8 @@ use crate::util_lib::db::{DBConn, Error as DBError, FromColumn, FromRow};
 pub mod binary_value_store;
 pub mod ephemeral;
 pub mod marf;
+pub mod stable_value_store;
 pub mod value_extents;
-pub mod value_extents_migration;
 
 pub trait GetTenureStartId {
     fn get_tenure_block_id(

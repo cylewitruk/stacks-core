@@ -370,3 +370,8 @@ The data directory can be overridden in three ways (highest priority first):
 3. **Default:** `~/.stacks-bench`
 
 Using a fixed home-relative path means benchmark data is shared across worktrees, making cross-branch comparisons straightforward.
+
+## Explicit stateful traffic
+
+See [TRAFFIC.md](TRAFFIC.md) for signed workload manifests, preparation calls,
+10-transaction load ramps, whole-block timing and paired semantic/read-profile audits.

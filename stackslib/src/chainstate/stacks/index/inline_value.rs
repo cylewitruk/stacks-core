@@ -4,12 +4,12 @@ use std::io::{self, Write};
 use std::ops::Range;
 use std::sync::Arc;
 
-use super::{Error, FileMapping, ValueExtent};
+use super::{Error, FileMapping};
 
 /// Bytes used by the independent record and descriptor lengths.
 pub const LENGTH_BYTES: usize = 2;
-/// Writer threshold that does not exceed the existing physical extent locator.
-pub const INLINE_BYTES: usize = ValueExtent::ENCODED_SIZE - LENGTH_BYTES;
+/// Maximum combined packed payload and descriptor bytes admitted by the writer.
+pub const INLINE_BYTES: usize = 30;
 /// Largest payload accepted by the two one-byte length fields.
 pub const MAX_BYTES: usize = 2 * u8::MAX as usize;
 

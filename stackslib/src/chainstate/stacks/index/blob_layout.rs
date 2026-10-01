@@ -27,7 +27,7 @@
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use stacks_common::types::chainstate::{
-    BLOCK_HEADER_HASH_ENCODED_SIZE, TRIEHASH_ENCODED_SIZE, TrieHash,
+    TrieHash, BLOCK_HEADER_HASH_ENCODED_SIZE, TRIEHASH_ENCODED_SIZE,
 };
 
 use super::node::TrieNodeID;
@@ -65,23 +65,8 @@ pub(super) struct BlobHeader<T> {
     pub root_hash: TrieHash,
 }
 
-impl<T: MarfTrieId> BlobHeader<T> {
-    /// Parse the first [`READER_PREFIX_LEN`] bytes of a trie blob.
-    pub(super) fn parse(buf: &[u8; READER_PREFIX_LEN]) -> BlobHeader<T> {
-        let mut parent_bytes = [0u8; BLOCK_HEADER_HASH_ENCODED_SIZE];
-        parent_bytes.copy_from_slice(&buf[..BLOCK_HEADER_HASH_ENCODED_SIZE]);
-        let mut root_bytes = [0u8; TRIEHASH_ENCODED_SIZE];
-        root_bytes
-            .copy_from_slice(&buf[ROOT_NODE_OFFSET..ROOT_NODE_OFFSET + TRIEHASH_ENCODED_SIZE]);
-        BlobHeader {
-            parent_hash: T::from_bytes(parent_bytes),
-            root_hash: TrieHash(root_bytes),
-        }
-    }
-}
-
 /// Version tag checked only after database metadata selects the type-first format.
-const TYPE_FIRST_TAG: [u8; 4] = *b"MRF\x01";
+const TYPE_FIRST_TAG: [u8; 4] = *b"MRF\x06";
 
 /// Largest prefix needed to read a parent identity and stored root hash.
 pub const MAX_READER_PREFIX_LEN: usize = READER_PREFIX_LEN + 1;
@@ -91,11 +76,7 @@ impl NodeRecordFormat {
     pub const fn reader_prefix_len(self) -> usize {
         match self {
             Self::Legacy => READER_PREFIX_LEN,
-            Self::TypeFirstV1
-            | Self::TypeFirstV2
-            | Self::TypeFirstV3
-            | Self::TypeFirstV4
-            | Self::TypeFirstV41 => MAX_READER_PREFIX_LEN,
+            Self::Optimized => MAX_READER_PREFIX_LEN,
         }
     }
 
@@ -108,11 +89,7 @@ impl NodeRecordFormat {
         writer.write_all(parent.as_bytes())?;
         writer.write_all(&match self {
             Self::Legacy => [0; 4],
-            Self::TypeFirstV1 => TYPE_FIRST_TAG,
-            Self::TypeFirstV2 => *b"MRF\x02",
-            Self::TypeFirstV3 => *b"MRF\x03",
-            Self::TypeFirstV4 => *b"MRF\x04",
-            Self::TypeFirstV41 => *b"MRF\x29",
+            Self::Optimized => TYPE_FIRST_TAG,
         })?;
         Ok(())
     }
@@ -193,15 +170,14 @@ mod format_tests {
             BlobHeader::<StacksBlockId>::parse_format(NodeRecordFormat::Legacy, &bytes).unwrap();
         assert_eq!(header.root_hash, TrieHash([9; 32]));
         assert!(
-            BlobHeader::<StacksBlockId>::parse_format(NodeRecordFormat::TypeFirstV1, &bytes)
-                .is_err()
+            BlobHeader::<StacksBlockId>::parse_format(NodeRecordFormat::Optimized, &bytes).is_err()
         );
     }
 
     /// Versioned headers retain the root's node offset while shifting its stored hash by one byte.
     #[test]
     fn versioned_root_prefix_is_checked() {
-        let format = NodeRecordFormat::TypeFirstV1;
+        let format = NodeRecordFormat::Optimized;
         let parent = StacksBlockId([2; 32]);
         let mut bytes = Vec::new();
         format.write_trie_header(&mut bytes, &parent).unwrap();

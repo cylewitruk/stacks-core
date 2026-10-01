@@ -201,7 +201,7 @@ impl MarfReadState {
                 TrieNodeRef::Leaf(TrieLeafRef {
                     path: n.path.as_slice(),
                     data: n.data.as_ref(),
-                    extent: n.extent,
+                    value_id: n.value_id,
                     inline: n.inline.as_ref(),
                 })
             }

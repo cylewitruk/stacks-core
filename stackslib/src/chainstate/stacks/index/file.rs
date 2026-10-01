@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -21,11 +23,21 @@ use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
+use std::sync::{Arc, RwLock};
+
+use memmap2::{Mmap, MmapOptions};
 use std::{env, fs, io};
+
+#[cfg(test)]
+thread_local! {
+    static PREAD_FALLBACKS: Cell<u64> = const { Cell::new(0) };
+}
 
 /// Positional read: reads bytes from a file at a given offset without modifying the
 /// file cursor. Maps to `pread(2)` on Unix and `seek_read` on Windows.
 fn pread(fd: &fs::File, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+    #[cfg(test)]
+    PREAD_FALLBACKS.with(|count| count.set(count.get() + 1));
     #[cfg(unix)]
     {
         use std::os::unix::fs::FileExt;
@@ -233,6 +245,8 @@ pub struct TrieFileDisk {
     mmap_enabled: bool,
     /// Shared blob mapping retained by this handle and its reopened views.
     mmap: Option<FileMapping>,
+    /// Published partial EOF page plus overlap for nodes crossing the mapped prefix.
+    tail: Arc<RwLock<Option<(u64, Arc<Mmap>)>>>,
     /// Cached mapping from block_id → trie file offset. Interior-mutable so that
     /// read methods can populate the cache while taking `&self`.
     trie_offsets: RefCell<TrieIdOffsets>,
@@ -244,16 +258,42 @@ impl TrieFileDisk {
         if !self.mmap_enabled {
             return Ok(());
         }
-        if self.fd.metadata()?.len() == 0 {
+        let file_len = self.fd.metadata()?.len();
+        if file_len == 0 {
+            *self
+                .tail
+                .write()
+                .map_err(|_| io::Error::other("trie tail lock poisoned"))? = None;
             return Ok(());
-        } else if let Some(mapping) = &mut self.mmap {
+        }
+        if let Some(mapping) = &mut self.mmap {
             // SAFETY: Trie blobs are append-only; shared readers retain immutable prefix pages.
-            unsafe {
-                mapping.refresh(&self.fd)?;
-            }
+            unsafe { mapping.refresh(&self.fd)? };
         } else {
             // SAFETY: The first synchronized append establishes an immutable prefix.
             self.mmap = Some(unsafe { FileMapping::map(&self.fd)? });
+        }
+        let prefix = self.mmap.as_ref().map_or(0, |mapping| mapping.len()) as u64;
+        if prefix < file_len {
+            // The maximum serialized trie node is much smaller than this page-aligned overlap.
+            let start = prefix.saturating_sub(64 * 1024);
+            // SAFETY: only synchronized, append-only bytes are exposed to readers.
+            let mapping = unsafe {
+                MmapOptions::new()
+                    .offset(start)
+                    .len(usize::try_from(file_len - start).map_err(io::Error::other)?)
+                    .map(&self.fd)?
+            };
+            *self
+                .tail
+                .write()
+                .map_err(|_| io::Error::other("trie tail lock poisoned"))? =
+                Some((start, Arc::new(mapping)));
+        } else {
+            *self
+                .tail
+                .write()
+                .map_err(|_| io::Error::other("trie tail lock poisoned"))? = None;
         }
         Ok(())
     }
@@ -317,6 +357,7 @@ impl TrieFile {
             path: path.to_string(),
             mmap_enabled: false,
             mmap: None,
+            tail: Arc::new(RwLock::new(None)),
             trie_offsets: RefCell::new(TrieIdOffsets::new()),
         }))
     }
@@ -348,14 +389,17 @@ impl TrieFile {
             // Conventional mmap cannot map an empty file and remains deferred.
             unsafe { FileMapping::map(&fd).ok() }
         };
-        Ok(TrieFile::Disk(TrieFileDisk {
+        let mut disk = TrieFileDisk {
             record_context: RecordContext::default(),
             fd,
             path: path.to_string(),
             mmap_enabled: true,
             mmap,
+            tail: Arc::new(RwLock::new(None)),
             trie_offsets: RefCell::new(TrieIdOffsets::new()),
-        }))
+        };
+        disk.refresh_mapping()?;
+        Ok(TrieFile::Disk(disk))
     }
 
     /// Open an independent read-only descriptor while retaining the shared mapping.
@@ -376,6 +420,7 @@ impl TrieFile {
                         path: disk.path.clone(),
                         mmap_enabled: disk.mmap_enabled,
                         mmap: disk.mmap.clone(),
+                        tail: disk.tail.clone(),
                         trie_offsets: RefCell::new(TrieIdOffsets::new()),
                     }))
                 }
@@ -696,7 +741,6 @@ impl TrieFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chainstate::stacks::index::blob_layout;
 
     fn remove_if_exists(path: &str) {
         match fs::remove_file(path) {
@@ -727,6 +771,7 @@ mod tests {
             vec![2; page]
         );
         assert!(file.mmap_slice_at((2 * page) as u64, 3).is_none());
+        PREAD_FALLBACKS.with(|count| count.set(0));
         let mut tail = [0; 6];
         assert_eq!(
             file.read_bytes_at(&mut tail, (2 * page - 3) as u64)
@@ -734,6 +779,7 @@ mod tests {
             6
         );
         assert_eq!(tail, [2; 6]);
+        assert_eq!(PREAD_FALLBACKS.with(Cell::get), 0);
         file.sync_data().unwrap();
         assert_eq!(file.mmap_slice_at(0, page).unwrap().as_ptr(), original);
     }
@@ -767,12 +813,14 @@ mod tests {
             vec![5; page]
         );
         assert!(sibling.mmap_slice_at((page * 2) as u64, 1).is_none());
+        PREAD_FALLBACKS.with(|count| count.set(0));
         let mut tail = [0];
         assert_eq!(
             sibling.read_bytes_at(&mut tail, (page * 2) as u64).unwrap(),
             1
         );
         assert_eq!(tail, [5]);
+        assert_eq!(PREAD_FALLBACKS.with(Cell::get), 0);
         drop(writer);
         assert_eq!(reader.mmap_slice_at(0, page).unwrap().as_ptr(), original);
         drop(reader);
@@ -810,6 +858,7 @@ mod tests {
         assert!(trie_file.mmap_slice_at(4, 1).is_none());
         assert!(trie_file.mmap_slice_at(2, 4).is_none());
 
+        PREAD_FALLBACKS.with(|count| count.set(0));
         let mut exact_eof = [0; 4];
         let n = trie_file.read_bytes_at(&mut exact_eof, 4).unwrap();
         assert_eq!(n, 4);
@@ -819,6 +868,7 @@ mod tests {
         let n = trie_file.read_bytes_at(&mut straddling, 2).unwrap();
         assert_eq!(n, 4);
         assert_eq!(&straddling, b"cdef");
+        assert!(PREAD_FALLBACKS.with(Cell::get) > 0);
 
         remove_if_exists(&blob_path);
     }
@@ -939,11 +989,28 @@ impl TrieFile {
                         return Ok(buf.len());
                     }
 
-                    // Mmap doesn't cover this full range; fall through to pread.
-                    //
-                    // Reopened views share coverage, but independent storage opens may
-                    // still have stale mappings. The partial EOF page is also read here.
+                    // A synchronized partial EOF page is covered by the retained tail map.
                 }
+                {
+                    let tail_view = disk
+                        .tail
+                        .read()
+                        .map_err(|_| Error::IOError(io::Error::other("trie tail lock poisoned")))?;
+                    if let Some((base, tail)) = tail_view.as_ref() {
+                        if let Some(start) = offset
+                            .checked_sub(*base)
+                            .and_then(|n| usize::try_from(n).ok())
+                        {
+                            if let Some(src) = tail.get(start..) {
+                                if let Some(src) = src.get(..buf.len()) {
+                                    buf.copy_from_slice(src);
+                                    return Ok(buf.len());
+                                }
+                            }
+                        }
+                    }
+                }
+                // Only a disabled or stale view reaches positioned I/O.
                 let mut total = 0;
                 while total < buf.len() {
                     let read_offset = offset
@@ -1170,7 +1237,7 @@ impl TrieFile {
             let leaf = TrieLeaf {
                 path,
                 data: None,
-                extent: None,
+                value_id: None,
                 inline: Some(inline),
             };
             return Ok(Some(MappedTrieItem::Node(ReadTrieNode::from_owned(
@@ -1384,11 +1451,7 @@ mod hash_tail_tests {
         // SAFETY: sysconf returns the process page size and does not dereference pointers.
         let page = unsafe { nix::libc::sysconf(nix::libc::_SC_PAGESIZE) };
         assert!(page > 0);
-        for format in [
-            NodeRecordFormat::TypeFirstV2,
-            NodeRecordFormat::TypeFirstV3,
-            NodeRecordFormat::TypeFirstV4,
-        ] {
+        for format in [NodeRecordFormat::Optimized] {
             let leaf = TrieLeaf::from_value(&[17; 31], MARFValue([7; 40]));
             let expected = bits::get_leaf_hash(&leaf);
             let mut encoded = vec![];

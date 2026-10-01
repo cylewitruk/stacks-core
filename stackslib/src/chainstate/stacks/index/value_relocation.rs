@@ -7,12 +7,12 @@ use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 
 use super::bits;
 use super::blob_layout::ROOT_NODE_OFFSET;
-use super::node::{TrieNodePatch, TrieNodeType, TriePtr, is_backptr, logical_node_id};
+use super::canonical_branch;
+use super::node::{is_backptr, logical_node_id, TrieNodePatch, TrieNodeType, TriePtr};
 use super::packed_branch;
 use super::record::NodeRecordFormat;
 use super::scratch::MarfReadState;
-use super::v41_branch;
-use super::{Error, MARFValue, ReadTrieItemKind, TrieLeaf, ValueExtent};
+use super::{Error, ReadTrieItemKind, TrieLeaf};
 
 /// Deterministic physical offsets for one trie blob, persisted by the migration coordinator.
 #[derive(Debug, Clone)]
@@ -54,19 +54,18 @@ impl Record {
         Ok(())
     }
 
-    /// Exact V4 record size after target relocation, without serializing payload bytes.
+    /// Exact canonical record size after target relocation, without serializing payload bytes.
     fn packed_size(
         &self,
+        destination: NodeRecordFormat,
         mut resolve: impl FnMut(&TriePtr) -> Result<u64, Error>,
         compact: bool,
     ) -> Result<u64, Error> {
         Ok(match self {
-            Self::Node(node) if node.is_leaf() => {
-                NodeRecordFormat::TypeFirstV4.node_len(node, true)
-            }
+            Self::Node(node) if node.is_leaf() => destination.node_len(node, true),
             Self::Node(node) => {
                 33 + if compact {
-                    v41_branch::payload_len_with_targets(node, resolve)?
+                    canonical_branch::payload_len_with_targets(node, resolve)?
                 } else {
                     packed_branch::payload_len_with_targets(node, resolve)?
                 }
@@ -91,7 +90,9 @@ impl Record {
     ) -> Result<Vec<u8>, Error> {
         let hash = match hash.into() {
             Some(hash) => hash,
-            None if matches!(self, Self::Node(TrieNodeType::Leaf(leaf)) if format.is_type_first() && (leaf.extent.is_some() || matches!(format, NodeRecordFormat::TypeFirstV2 | NodeRecordFormat::TypeFirstV3 | NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41))) => {
+            None if matches!(self, Self::Node(TrieNodeType::Leaf(_)))
+                && format == NodeRecordFormat::Optimized =>
+            {
                 TrieHash([0; 32])
             }
             None => return Err(corrupt("destination requires an unavailable node hash")),
@@ -132,109 +133,19 @@ fn read_record(
 }
 
 impl BlobRelocation {
-    /// Plan compact value leaves and branch directories with worst-case pointer widths.
-    /// Padding makes offsets independent of ancestor traversal order and pointer widening.
-    pub fn plan(
-        bytes: &[u8],
-        mut has_extent: impl FnMut(&MARFValue) -> Result<bool, Error>,
-    ) -> Result<Self, Error> {
-        Self::plan_with_pointer_width(
-            bytes,
-            NodeRecordFormat::Legacy,
-            NodeRecordFormat::TypeFirstV1,
-            |leaf| {
-                leaf.extent = has_extent(leaf.value()?)?.then_some(ValueExtent {
-                    store_id: [0; 16],
-                    offset: 0,
-                    length: 0,
-                });
-                Ok(())
-            },
-            u64::MAX,
-        )
-    }
-
-    /// Plan exact four-byte offsets; all referenced trie plans must pass the same bound.
-    pub fn plan_narrow(
-        bytes: &[u8],
-        mut has_extent: impl FnMut(&MARFValue) -> Result<bool, Error>,
-    ) -> Result<Self, Error> {
-        Self::plan_format(
-            bytes,
-            NodeRecordFormat::Legacy,
-            NodeRecordFormat::TypeFirstV1,
-            |leaf| {
-                leaf.extent = has_extent(leaf.value()?)?.then_some(ValueExtent {
-                    store_id: [0; 16],
-                    offset: 0,
-                    length: 0,
-                });
-                Ok(())
-            },
-        )
-    }
-
-    /// Plan a codec upgrade with four-byte pointers and a deterministic leaf transformation.
-    pub fn plan_format(
+    /// Plan exact canonical records, including a deterministic leaf conversion.
+    pub fn plan_packed_format(
         bytes: &[u8],
         source: NodeRecordFormat,
         destination: NodeRecordFormat,
-        transform: impl FnMut(&mut TrieLeaf) -> Result<(), Error>,
+        mut resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
+        mut transform: impl FnMut(&mut TrieLeaf) -> Result<(), Error>,
     ) -> Result<Self, Error> {
-        if destination.version() < source.version() {
-            return Err(corrupt("trie codec downgrade is unsupported"));
-        }
-        if matches!(
-            destination,
-            NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41
-        ) {
+        if destination != NodeRecordFormat::Optimized {
             return Err(corrupt(
-                "packed relocation requires resolved ancestor plans",
+                "relocation requires the canonical destination format",
             ));
         }
-        source.validate_trie_header(bytes)?;
-        let plan = Self::plan_with_pointer_width(
-            bytes,
-            source,
-            destination,
-            transform,
-            u64::from(u32::MAX),
-        )?;
-        if plan.length > u64::from(u32::MAX) {
-            return Err(corrupt("trie exceeds narrow relocation limit"));
-        }
-        Ok(plan)
-    }
-
-    /// Plan exact packed records using finalized ancestor offsets and monotone local refinement.
-    /// Ancestor plans must precede this trie; the callback also handles patch base references.
-    pub fn plan_packed(
-        bytes: &[u8],
-        source: NodeRecordFormat,
-        mut resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
-    ) -> Result<Self, Error> {
-        Self::plan_packed_format(bytes, source, &mut resolve_backptr, false)
-    }
-
-    /// Plan V4.1 records using compact Node256 metadata and finalized ancestor offsets.
-    pub fn plan_packed_v41(
-        bytes: &[u8],
-        source: NodeRecordFormat,
-        mut resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
-    ) -> Result<Self, Error> {
-        if source != NodeRecordFormat::TypeFirstV4 {
-            return Err(corrupt("V4.1 migration requires a V4 source"));
-        }
-        Self::plan_packed_format(bytes, source, &mut resolve_backptr, true)
-    }
-
-    /// Plan either V4 or V4.1 packed records with a shared fixed-point algorithm.
-    fn plan_packed_format(
-        bytes: &[u8],
-        source: NodeRecordFormat,
-        mut resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
-        compact: bool,
-    ) -> Result<Self, Error> {
         source.validate_trie_header(bytes)?;
         if bytes.len() <= ROOT_NODE_OFFSET {
             return Err(corrupt("missing trie root"));
@@ -260,7 +171,9 @@ impl BlobRelocation {
                 }
                 Ok(())
             })?;
-            // Leaves are unchanged by pointer packing; no extent contents are needed.
+            if let Record::Node(TrieNodeType::Leaf(leaf)) = &mut record {
+                transform(leaf)?;
+            }
             records.insert(old, (source_end, record));
         }
         let mut previous_end = ROOT_NODE_OFFSET as u64;
@@ -276,13 +189,14 @@ impl BlobRelocation {
             for (old, (_, record)) in &records {
                 offsets.push((*old, length));
                 let size = record.packed_size(
+                    destination,
                     |ptr| {
                         if ptr.is_empty() || is_backptr(ptr.id()) {
                             return Ok(ptr.ptr());
                         }
                         previous.map_or(Ok(u64::MAX), |plan| plan.resolve(ptr.ptr()))
                     },
-                    previous.is_some() && compact,
+                    previous.is_some(),
                 )?;
                 length = length.checked_add(size).ok_or(Error::OverflowError)?;
             }
@@ -308,86 +222,12 @@ impl BlobRelocation {
         Err(corrupt("packed relocation did not converge"))
     }
 
-    /// Inventory records with a chosen physical pointer-width reservation.
-    fn plan_with_pointer_width(
-        bytes: &[u8],
-        source: NodeRecordFormat,
-        destination: NodeRecordFormat,
-        mut transform: impl FnMut(&mut TrieLeaf) -> Result<(), Error>,
-        widest_pointer: u64,
-    ) -> Result<Self, Error> {
-        if bytes.len() <= ROOT_NODE_OFFSET {
-            return Err(corrupt("missing trie root"));
-        }
-        let mut input = Cursor::new(bytes);
-        input.set_position(ROOT_NODE_OFFSET as u64);
-        let mut scratch = MarfReadState::new();
-        let mut records = BTreeMap::new();
-        let mut pending = vec![ROOT_NODE_OFFSET as u64];
-        while let Some(old) = pending.pop() {
-            if records.contains_key(&old) {
-                continue;
-            }
-            input.set_position(old);
-            let (mut record, hash) = read_record(&mut input, &mut scratch, source)?;
-            let source_end = input.position();
-            record.map_pointers(|ptr| {
-                if !ptr.is_empty() {
-                    if !is_backptr(ptr.id()) {
-                        pending.push(ptr.ptr());
-                    }
-                    ptr.ptr = widest_pointer;
-                }
-                Ok(())
-            })?;
-            if let Record::Node(TrieNodeType::Leaf(leaf)) = &mut record {
-                transform(leaf)?;
-            }
-            records.insert(
-                old,
-                (source_end, record.encode(hash, destination)?.len() as u64),
-            );
-        }
-        let mut offsets = Vec::with_capacity(records.len());
-        let mut length = ROOT_NODE_OFFSET as u64;
-        let mut previous_end = ROOT_NODE_OFFSET as u64;
-        for (old, (end, size)) in records {
-            if old < previous_end || end > bytes.len() as u64 {
-                return Err(corrupt("overlapping or out-of-bounds trie records"));
-            }
-            offsets.push((old, length));
-            length = length.checked_add(size).ok_or(Error::OverflowError)?;
-            previous_end = end;
-        }
-        Ok(Self { offsets, length })
-    }
-
     /// Resolve an original node offset, rejecting pointers into record interiors.
     pub fn resolve(&self, offset: u64) -> Result<u64, Error> {
         self.offsets
             .binary_search_by_key(&offset, |entry| entry.0)
             .map(|index| self.offsets[index].1)
             .map_err(|_| corrupt("pointer does not identify a source record"))
-    }
-
-    /// Rewrite all records while preserving hashes, patch depth and block identities.
-    /// `resolve_backptr` maps offsets in other blobs; `locate_value` supplies content locators.
-    pub fn rewrite(
-        &self,
-        bytes: &[u8],
-        resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
-        mut locate_value: impl FnMut(&MARFValue) -> Result<Option<ValueExtent>, Error>,
-    ) -> Result<Vec<u8>, Error> {
-        self.rewrite_format(
-            bytes,
-            NodeRecordFormat::Legacy,
-            NodeRecordFormat::TypeFirstV1,
-            resolve_backptr,
-            |leaf| {
-                leaf.extent = locate_value(leaf.value()?)?;
-                Ok(())
-            },
-        )
     }
 
     /// Apply a matching format plan, retaining hashes and physical backpointer identities.
@@ -400,15 +240,6 @@ impl BlobRelocation {
         transform: impl FnMut(&mut TrieLeaf) -> Result<(), Error>,
     ) -> Result<Vec<u8>, Error> {
         rewrite_plan_format(self, bytes, source, destination, resolve_backptr, transform)
-    }
-
-    /// Rewrite a V4 trie under its exact V4.1 plan and compact Node256 metadata.
-    pub fn rewrite_v41(
-        &self,
-        bytes: &[u8],
-        resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
-    ) -> Result<Vec<u8>, Error> {
-        rewrite_plan_v41(self, bytes, resolve_backptr)
     }
 }
 
@@ -453,22 +284,6 @@ impl RelocationPlan for BlobRelocation {
     }
 }
 
-/// Rewrite a V4 trie using its exact V4.1 relocation plan.
-pub fn rewrite_plan_v41(
-    plan: &impl RelocationPlan,
-    bytes: &[u8],
-    resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
-) -> Result<Vec<u8>, Error> {
-    rewrite_plan_format(
-        plan,
-        bytes,
-        NodeRecordFormat::TypeFirstV4,
-        NodeRecordFormat::TypeFirstV41,
-        resolve_backptr,
-        |_| Ok(()),
-    )
-}
-
 /// Rewrite through either an owned plan or an immutable mmap-backed relocation index.
 pub fn rewrite_plan_format(
     plan: &impl RelocationPlan,
@@ -478,8 +293,10 @@ pub fn rewrite_plan_format(
     mut resolve_backptr: impl FnMut(u32, u64) -> Result<u64, Error>,
     mut transform: impl FnMut(&mut TrieLeaf) -> Result<(), Error>,
 ) -> Result<Vec<u8>, Error> {
-    if destination.version() < source.version() {
-        return Err(corrupt("trie codec downgrade is unsupported"));
+    if destination != NodeRecordFormat::Optimized {
+        return Err(corrupt(
+            "relocation requires the canonical destination format",
+        ));
     }
     source.validate_trie_header(bytes)?;
     let size = usize::try_from(plan.length()).map_err(|_| Error::OverflowError)?;
@@ -531,12 +348,7 @@ pub fn rewrite_plan_format(
         } else {
             plan.length()
         };
-        if end > limit
-            || (matches!(
-                destination,
-                NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41
-            ) && end != limit)
-        {
+        if end != limit {
             return Err(corrupt("relocated record does not match reserved space"));
         }
         output
@@ -555,8 +367,8 @@ fn corrupt(message: &str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chainstate::stacks::index::TrieLeaf;
     use crate::chainstate::stacks::index::node::{TrieNode4, TrieNodeID};
+    use crate::chainstate::stacks::index::{MARFValue, TrieLeaf};
 
     /// Decode the new output format without requiring compact leaves to store hashes.
     fn read_output(
@@ -567,7 +379,7 @@ mod tests {
         let item = bits::read_trie_item_at_head_ref_format(
             input,
             super::super::node::logical_node_id(id),
-            NodeRecordFormat::TypeFirstV1,
+            NodeRecordFormat::Optimized,
             scratch,
         )
         .unwrap();
@@ -645,14 +457,27 @@ mod tests {
                 .encode(TrieHash([2; 32]), NodeRecordFormat::Legacy)
                 .unwrap(),
         );
-        let plan = BlobRelocation::plan(&source, |_| Ok(true)).unwrap();
-        let extent = ValueExtent {
-            store_id: [5; 16],
-            offset: 48,
-            length: 100,
+        let transform = |leaf: &mut TrieLeaf| {
+            leaf.value_id = Some(7);
+            Ok(())
         };
+        let resolve = |_: u32, offset: u64| Ok(offset + 1000);
+        let plan = BlobRelocation::plan_packed_format(
+            &source,
+            NodeRecordFormat::Legacy,
+            NodeRecordFormat::Optimized,
+            resolve,
+            transform,
+        )
+        .unwrap();
         let output = plan
-            .rewrite(&source, |_, ptr| Ok(ptr + 1000), |_| Ok(Some(extent)))
+            .rewrite_format(
+                &source,
+                NodeRecordFormat::Legacy,
+                NodeRecordFormat::Optimized,
+                resolve,
+                transform,
+            )
             .unwrap();
         let mut input = Cursor::new(output.as_slice());
         let mut scratch = MarfReadState::new();
@@ -668,7 +493,7 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(leaf.extent, Some(extent));
+        assert_eq!(leaf.value_id, Some(7));
         assert_eq!(stored_hash, None);
         assert_eq!(leaf.data, None);
         let mut resolved = leaf;
@@ -681,127 +506,93 @@ mod tests {
         assert_eq!(patch.ptr.ptr(), 1036);
         assert_eq!(patch.ptr_diff[0].ptr(), plan.resolve(leaf_offset).unwrap());
         assert!(plan.resolve(leaf_offset + 1).is_err());
-
-        // A second physical rewrite accepts both raw values and unresolved v1 locators.
-        for external_value in [false, true] {
-            let initial = BlobRelocation::plan_narrow(&source, |_| Ok(external_value)).unwrap();
-            let v1 = initial
-                .rewrite(
-                    &source,
-                    |_, ptr| Ok(ptr),
-                    |_| Ok(external_value.then_some(extent)),
-                )
-                .unwrap();
-            let next = BlobRelocation::plan_format(
-                &v1,
-                NodeRecordFormat::TypeFirstV1,
-                NodeRecordFormat::TypeFirstV2,
-                |_| Ok(()),
-            )
-            .unwrap();
-            let v2 = next
-                .rewrite_format(
-                    &v1,
-                    NodeRecordFormat::TypeFirstV1,
-                    NodeRecordFormat::TypeFirstV2,
-                    |_, ptr| Ok(ptr),
-                    |_| Ok(()),
-                )
-                .unwrap();
-            assert!(
-                NodeRecordFormat::TypeFirstV2
-                    .validate_trie_header(&v2)
-                    .is_ok()
-            );
-            assert!(
-                NodeRecordFormat::TypeFirstV1
-                    .validate_trie_header(&v2)
-                    .is_err()
-            );
-            let offset = next.resolve(initial.resolve(leaf_offset).unwrap()).unwrap();
-            let record = NodeRecordFormat::TypeFirstV2
-                .parse(&v2[offset as usize..])
-                .unwrap();
-            let (TrieNodeType::Leaf(leaf), _) = record.decode_node(TrieNodeID::Leaf as u8).unwrap()
-            else {
-                panic!()
-            };
-            assert_eq!(leaf.extent, external_value.then_some(extent));
-            if !external_value {
-                assert_eq!(leaf.value().unwrap(), &MARFValue::from(7));
-                assert_eq!(bits::get_leaf_hash(&leaf), hash);
-                assert!(v2.len() < v1.len());
-            }
-            if external_value {
-                use crate::chainstate::stacks::index::inline_value::InlineValue;
-                let inline = InlineValue::from_parts(&[1, 2, 3], &[4, 5]).unwrap();
-                let transform = |leaf: &mut TrieLeaf| {
-                    if leaf.extent.is_some() {
-                        leaf.extent = None;
-                        leaf.inline = Some(inline.clone());
-                    }
-                    Ok(())
-                };
-                let next = BlobRelocation::plan_format(
-                    &v2,
-                    NodeRecordFormat::TypeFirstV2,
-                    NodeRecordFormat::TypeFirstV3,
-                    transform,
-                )
-                .unwrap();
-                let v3 = next
-                    .rewrite_format(
-                        &v2,
-                        NodeRecordFormat::TypeFirstV2,
-                        NodeRecordFormat::TypeFirstV3,
-                        |_, ptr| Ok(ptr),
-                        transform,
-                    )
-                    .unwrap();
-                let pos = next.resolve(offset).unwrap() as usize;
-                let record = NodeRecordFormat::TypeFirstV3.parse(&v3[pos..]).unwrap();
-                let (TrieNodeType::Leaf(leaf), _) =
-                    record.decode_node(TrieNodeID::Leaf as u8).unwrap()
-                else {
-                    panic!("expected inline")
-                };
-                assert_eq!(leaf.inline, Some(inline));
-                assert_eq!(leaf.extent, None);
-                assert_eq!(leaf.data, None);
-                assert!(v3.len() < v2.len());
-                assert!(
-                    BlobRelocation::plan_format(
-                        &v3,
-                        NodeRecordFormat::TypeFirstV3,
-                        NodeRecordFormat::TypeFirstV2,
-                        |_| Ok(())
-                    )
-                    .is_err()
-                );
-            }
-            assert!(
-                BlobRelocation::plan_format(
-                    &v2,
-                    NodeRecordFormat::TypeFirstV2,
-                    NodeRecordFormat::TypeFirstV1,
-                    |_| Ok(())
-                )
-                .is_err()
-            );
-        }
     }
 }
 
 #[cfg(test)]
 mod packed_tests {
     use super::*;
-    use crate::chainstate::stacks::index::node::{TrieNode, TrieNode48, TrieNode256, TrieNodeID};
+    use crate::chainstate::stacks::index::node::{TrieNode, TrieNode256, TrieNode48, TrieNodeID};
+    use crate::chainstate::stacks::index::MARFValue;
+
+    /// A legacy value leaf becomes a four-byte stable ID without reserving padding.
+    #[test]
+    fn canonical_relocation_sizes_stable_id_leaves_exactly() {
+        let source_format = NodeRecordFormat::Legacy;
+        let destination = NodeRecordFormat::Optimized;
+        let child_offset = 1024;
+        let mut root = super::super::node::TrieNode4::new(&[]);
+        root.ptrs[0] = TriePtr::new(TrieNodeID::Leaf as u8, 2, child_offset);
+        let leaf = TrieLeaf::from_value(&[3], MARFValue::from_value("stable-id"));
+        let mut source = Vec::new();
+        source_format
+            .write_trie_header(&mut source, &StacksBlockId([2; 32]))
+            .unwrap();
+        source_format
+            .write_node(
+                &mut source,
+                &TrieNodeType::Node4(root),
+                TrieHash([3; 32]),
+                true,
+            )
+            .unwrap();
+        source.resize(child_offset as usize, 0);
+        source_format
+            .write_node(
+                &mut source,
+                &TrieNodeType::Leaf(leaf),
+                TrieHash([0; 32]),
+                true,
+            )
+            .unwrap();
+        let convert = |leaf: &mut TrieLeaf| {
+            leaf.value_id = Some(7);
+            Ok(())
+        };
+        let plan = BlobRelocation::plan_packed_format(
+            &source,
+            source_format,
+            destination,
+            |_, _| Err(corrupt("unexpected ancestor")),
+            convert,
+        )
+        .unwrap();
+        let rewritten = plan
+            .rewrite_format(
+                &source,
+                source_format,
+                destination,
+                |_, _| Err(corrupt("unexpected ancestor")),
+                convert,
+            )
+            .unwrap();
+        assert_eq!(rewritten.len() as u64, plan.length);
+        assert!(rewritten.len() < source.len());
+        destination.validate_trie_header(&rewritten).unwrap();
+        let mut cursor = Cursor::new(rewritten.as_slice());
+        let mut scratch = MarfReadState::new();
+        cursor.set_position(ROOT_NODE_OFFSET as u64);
+        let (Record::Node(TrieNodeType::Node4(root)), _) =
+            read_record(&mut cursor, &mut scratch, destination).unwrap()
+        else {
+            panic!("expected relocated branch")
+        };
+        assert_eq!(root.ptrs[0].ptr(), plan.resolve(child_offset).unwrap());
+        cursor.set_position(root.ptrs[0].ptr());
+        let (Record::Node(TrieNodeType::Leaf(leaf)), _) =
+            read_record(&mut cursor, &mut scratch, destination).unwrap()
+        else {
+            panic!("expected relocated leaf")
+        };
+        assert_eq!(leaf.value_id, Some(7));
+        assert_eq!(cursor.position(), plan.length);
+    }
 
     /// Compact all records exactly, including large historical patch-base pointers.
     #[test]
     fn packed_relocation_resolves_ancestors_and_removes_all_record_gaps() {
-        let source_format = NodeRecordFormat::TypeFirstV3;
-        let destination = NodeRecordFormat::TypeFirstV4;
+        let source_format = NodeRecordFormat::Legacy;
+        let destination = NodeRecordFormat::Optimized;
         let mut root = TrieNode256::empty();
         root.ptrs[0] = TriePtr::new(TrieNodeID::Leaf as u8, 0, 1000);
         root.ptrs[0].back_block = 42; // Inline squash annotation must not invoke ancestor lookup.
@@ -854,7 +645,14 @@ mod packed_tests {
                 assert!([9, 10].contains(&block));
                 Ok(target)
             };
-            let plan = BlobRelocation::plan_packed(&source, source_format, resolve).unwrap();
+            let plan = BlobRelocation::plan_packed_format(
+                &source,
+                source_format,
+                destination,
+                resolve,
+                |_| Ok(()),
+            )
+            .unwrap();
             let bytes = plan
                 .rewrite_format(&source, source_format, destination, resolve, |_| Ok(()))
                 .unwrap();
@@ -894,28 +692,33 @@ mod packed_tests {
             assert!(plan.resolve(1001).is_err());
             let mut padded = plan.clone();
             padded.length += 1;
-            assert!(
-                padded
-                    .rewrite_format(&source, source_format, destination, resolve, |_| Ok(()))
-                    .is_err()
-            );
+            assert!(padded
+                .rewrite_format(&source, source_format, destination, resolve, |_| Ok(()))
+                .is_err());
         }
-        assert!(
-            BlobRelocation::plan_packed(&source, source_format, |_, _| Err(corrupt(
-                "missing ancestor"
-            )))
-            .is_err()
-        );
-        assert!(
-            BlobRelocation::plan_format(&source, source_format, destination, |_| Ok(())).is_err()
-        );
+        assert!(BlobRelocation::plan_packed_format(
+            &source,
+            source_format,
+            destination,
+            |_, _| Err(corrupt("missing ancestor")),
+            |_| Ok(())
+        )
+        .is_err());
+        assert!(BlobRelocation::plan_packed_format(
+            &source,
+            source_format,
+            NodeRecordFormat::Legacy,
+            |_, p| Ok(p),
+            |_| Ok(())
+        )
+        .is_err());
     }
 
     /// A versioned V4.1 rewrite preserves logical records and relocated pointers.
     #[test]
     fn compact_v41_relocation_roundtrips_node256_metadata() {
-        let source_format = NodeRecordFormat::TypeFirstV4;
-        let destination = NodeRecordFormat::TypeFirstV41;
+        let source_format = NodeRecordFormat::Legacy;
+        let destination = NodeRecordFormat::Optimized;
         let mut root = TrieNode256::empty();
         root.ptrs[0] = TriePtr::new(TrieNodeID::Node48 as u8, 0, 1000);
         root.ptrs[1] = TriePtr::new_backptr(TrieNodeID::Leaf as u8, 1, 5000, 7);
@@ -957,8 +760,17 @@ mod packed_tests {
                 assert_eq!((block, offset), (7, 5000));
                 Ok(77)
             };
-            let plan = BlobRelocation::plan_packed_v41(&source, source_format, resolve).unwrap();
-            let output = plan.rewrite_v41(&source, resolve).unwrap();
+            let plan = BlobRelocation::plan_packed_format(
+                &source,
+                source_format,
+                destination,
+                resolve,
+                |_| Ok(()),
+            )
+            .unwrap();
+            let output = plan
+                .rewrite_format(&source, source_format, destination, resolve, |_| Ok(()))
+                .unwrap();
             assert_eq!(output.len() as u64, plan.length);
             assert!(output.len() < source.len());
             destination.validate_trie_header(&output).unwrap();

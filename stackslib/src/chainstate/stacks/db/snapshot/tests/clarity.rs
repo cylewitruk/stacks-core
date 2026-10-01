@@ -31,7 +31,7 @@ use tempfile::tempdir;
 
 use super::super::clarity::assert_source_tables_classified;
 use super::super::copy_clarity_side_tables;
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MARF};
+use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MARF};
 use crate::chainstate::stacks::index::storage::TrieHashCalculationMode;
 use crate::chainstate::stacks::index::{ClarityMarfTrieId as _, Error, MARFValue};
 use crate::clarity_vm::clarity::ClarityMarfStoreTransaction as _;
@@ -59,6 +59,16 @@ fn build_clarity_marf(
     contract_name: &str,
     value_suffix: &str,
 ) -> Vec<StacksBlockId> {
+    // These fixtures exercise retained BinaryV1 SQL stores; fresh-store defaults are canonical.
+    std::fs::create_dir_all(dir).unwrap();
+    let legacy = MARF::<StacksBlockId>::from_path(
+        dir.join("marf.sqlite").to_str().unwrap(),
+        MARFOpenOpts::default(),
+    )
+    .unwrap();
+    SqliteConnection::initialize_conn(legacy.sqlite_conn()).unwrap();
+    binary_value_store::initialize_empty(legacy.sqlite_conn()).unwrap();
+    drop(legacy);
     let mut kv = MarfedKV::open(dir.to_str().unwrap(), None, None).unwrap();
 
     let blocks: Vec<StacksBlockId> = (1..=num_blocks)
@@ -621,7 +631,7 @@ fn test_unclassified_source_table_is_rejected() {
 
 /// Squashing direct-value state retains physical locators and exports their immutable generation.
 #[test]
-fn extent_snapshot_reads_without_sqlite_values() {
+fn canonical_snapshot_reads_without_sqlite_values() {
     let source = tempdir().unwrap();
     let destination = tempdir().unwrap();
     let b1 = StacksBlockId([81; 32]);
@@ -634,7 +644,7 @@ fn extent_snapshot_reads_without_sqlite_values() {
     ] {
         let mut store = kv.begin(&parent, &block);
         store
-            .put_all_data(vec![("key".into(), value.into())])
+            .put_all_data(vec![("key".into(), value.repeat(128))])
             .unwrap();
         store.commit_to_processed_block(&block).unwrap();
     }
@@ -667,13 +677,13 @@ fn extent_snapshot_reads_without_sqlite_values() {
             .get_data("key")
             .unwrap()
             .as_deref(),
-        Some("two")
+        Some("two".repeat(128).as_str())
     );
     let b3 = StacksBlockId([83; 32]);
     let mut original = MarfedKV::open(source.path().to_str().unwrap(), Some(&b2), None).unwrap();
     for store in [&mut original, &mut restored] {
         let mut tx = store.begin(&b2, &b3);
-        tx.put_all_data(vec![("key".into(), "three".into())])
+        tx.put_all_data(vec![("key".into(), "three".repeat(128))])
             .unwrap();
         tx.commit_to_processed_block(&b3).unwrap();
     }
@@ -687,6 +697,6 @@ fn extent_snapshot_reads_without_sqlite_values() {
             .get_data("key")
             .unwrap()
             .as_deref(),
-        Some("three")
+        Some("three".repeat(128).as_str())
     );
 }

@@ -1,15 +1,30 @@
-# Extent PtrHash prototype
+# Canonical value PtrHash index
 
-Build only on an offline disposable clone:
+Build on an offline disposable clone:
 
 ```text
-build-extent-ptrhash CLONE_DB NEW_INDEX_DIRECTORY
+build-stable-ptrhash CLONE_DB NEW_SIBLING_INDEX_DIRECTORY
 ```
 
-The builder holds the SQLite writer transaction, streams the ordered historical index in 256 digest-prefix partitions, and verifies every serialized key-to-location lookup. A partition is limited to two million keys. This bounds buffered input, not the allocator's RSS. It syncs immutable generation files and their directory before atomically renaming the directory and committing the database activation marker and empty delta. Failed builds can leave unreferenced files; they never activate a partial generation. The old index remains as a reference.
+The builder holds the SQLite writer transaction, partitions historical commitments
+by their first byte, and verifies every serialized key-to-ID lookup. Each of the
+256 shards is limited to two million keys. Generation files are synced before
+the database activates the new base. A failed build never selects a partial base.
 
-Readers retain the compact functions in memory and map the fixed 16-byte location records on demand. A slot fingerprint rejects most nonmembers. The caller must verify the full 40-byte commitment from the extent header before accepting a candidate. New values go into the writer's existing SQLite transaction through `clarity_extent_delta`; rollback/savepoint handling is unchanged.
+Readers share the compact functions and map eight-byte ID/fingerprint slots.
+A fingerprint only filters candidates: the caller verifies the complete
+commitment from the referenced value record. New memberships remain in the
+transactional SQLite delta. Values and IDs are never rewritten by this builder.
 
-The manifest binds the value generation, file watermark, partition sizes and artifact checksums. Function checksums and slot lengths are verified on open. The larger slot-file checksums are archived for offline auditing, not rescanned at every open. Native epserde functions are trusted local artifacts pinned to this implementation, not a portable or untrusted import format.
+Registrations use sibling directory names and move with the owning Clarity MARF.
+The manifest binds the value generation, directory watermark and artifact hashes.
+Native function serialization is architecture-dependent. Validate imported functions
+with the destination-built reader before benchmarking. If a native rebuild is needed,
+use `contrib/stacks-inspect/scripts/rebuild-stable-ptrhash.py` on an offline disposable
+clone with an empty delta and the exact exported committed-membership stream. The
+helper does not merge later delta writes. See `docs/canonical-marf-storage.md` and the
+migration README for transfer and export requirements.
 
-This first prototype does not implement online delta compaction or index-generation replacement. A base built beside its database is registered by sibling directory name and moves with that database; legacy absolute registrations remain supported. Do not remove a published generation while a database references it. The native serialized function is not portable across CPU architectures: rebuild that base on the destination host from the retained historical SQLite extent index before using a transferred chainstate. Corruption recovery and bounded online rebuilding remain production integration work.
+These are trusted, locally built index artifacts. Online base replacement and
+delta compaction are not implemented; retain every generation still referenced
+by a database or reader.

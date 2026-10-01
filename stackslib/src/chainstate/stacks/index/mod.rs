@@ -25,7 +25,7 @@ use sha2::{Digest, Sha512_256 as TrieHasher};
 #[cfg(test)]
 use stacks_common::types::chainstate::BlockHeaderHash;
 use stacks_common::types::chainstate::{
-    BurnchainHeaderHash, SortitionId, StacksBlockId, TRIEHASH_ENCODED_SIZE, TrieHash,
+    BurnchainHeaderHash, SortitionId, StacksBlockId, TrieHash, TRIEHASH_ENCODED_SIZE,
 };
 
 use self::packed_branch::BranchView;
@@ -48,6 +48,7 @@ use self::inline_value::InlineValue;
 mod mapped_file;
 mod raw_leaf;
 pub use self::mapped_file::FileMapping;
+pub mod canonical_branch;
 pub mod mapped_node;
 pub mod marf;
 pub mod node;
@@ -60,15 +61,14 @@ pub mod squash;
 pub mod storage;
 pub mod trie;
 pub mod trie_sql;
-pub mod v41_branch;
 pub mod value_relocation;
 
 #[cfg(test)]
 pub mod test;
 
 use crate::chainstate::stacks::index::node::{
-    CursorError, ParkedNodeHandle, TrieCursor, TrieLeafRef, TrieNodeID, TrieNodePatch, TrieNodeRef,
-    TrieNodeTransientMeta, TrieNodeType, TriePtr, clear_backptr, is_backptr,
+    clear_backptr, is_backptr, CursorError, ParkedNodeHandle, TrieCursor, TrieLeafRef, TrieNodeID,
+    TrieNodePatch, TrieNodeRef, TrieNodeTransientMeta, TrieNodeType, TriePtr,
 };
 
 #[derive(Debug)]
@@ -220,60 +220,26 @@ impl fmt::Debug for NodePath {
     }
 }
 
-/// Physical address of an immutable value record in a database's extent file.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ValueExtent {
-    /// Identity binding this locator to one immutable extent-file generation.
-    pub store_id: [u8; 16],
-    /// Absolute byte offset of the record envelope.
-    pub offset: u64,
-    /// Complete envelope and payload length.
-    pub length: u64,
-}
-
-impl ValueExtent {
-    /// Fixed physical locator width; never included in a MARF commitment.
-    pub const ENCODED_SIZE: usize = 32;
-
-    /// Write the physical locator in its version-one fixed-width representation.
-    pub fn write_to<W: io::Write>(&self, writer: &mut W) -> Result<(), io::Error> {
-        writer.write_all(&self.store_id)?;
-        writer.write_all(&self.offset.to_le_bytes())?;
-        writer.write_all(&self.length.to_le_bytes())
-    }
-
-    /// Read a complete physical locator without trusting its bounds or file identity.
-    pub fn read_from<R: io::Read>(reader: &mut R) -> Result<Self, io::Error> {
-        let mut store_id = [0; 16];
-        let mut offset = [0; 8];
-        let mut length = [0; 8];
-        reader.read_exact(&mut store_id)?;
-        reader.read_exact(&mut offset)?;
-        reader.read_exact(&mut length)?;
-        Ok(Self {
-            store_id,
-            offset: u64::from_le_bytes(offset),
-            length: u64::from_le_bytes(length),
-        })
-    }
-}
-
 /// Leaf of a Trie.
 #[derive(Clone)]
 pub struct TrieLeaf {
     pub path: NodePath,
     /// Logical value, absent until an extent-backed leaf needs hashing or a proof.
     pub data: Option<MARFValue>,
-    /// Optional physical locator excluded from logical commitments.
-    pub extent: Option<ValueExtent>,
+    /// Stable value identifier for a canonical external leaf.
+    pub value_id: Option<u32>,
     /// Inline value bytes retaining their immutable backing owner.
     pub inline: Option<InlineValue>,
 }
 
 /// Resolves logical commitments for physical leaves without coupling the index to a value codec.
-pub trait ValueExtentResolver: Send + Sync {
-    /// Reconstruct the canonical value commitment from an immutable extent record.
-    fn commitment(&self, extent: ValueExtent) -> Result<MARFValue, Error>;
+pub trait ValueResolver: Send + Sync {
+    /// Resolve a stable ID through its owning value generation.
+    fn commitment_by_id(&self, _value_id: u32) -> Result<MARFValue, Error> {
+        Err(Error::CorruptionError(
+            "Stable value ID resolver unavailable".into(),
+        ))
+    }
     /// Reconstruct an inline value commitment only when explicitly requested.
     fn inline_commitment(&self, _value: &InlineValue) -> Result<MARFValue, Error> {
         Err(Error::CorruptionError(
@@ -556,19 +522,27 @@ impl<'a> BorrowedNodeBytes<'a> {
 
     /// Borrow a compact leaf's path and copy only its small physical locator.
     pub fn mapped_leaf(&self) -> Result<Option<TrieLeafRef<'a>>, Error> {
-        if !self.format.is_type_first() || self.marker != Some(TrieNodeID::ValueLeaf as u8) {
+        if !self.format.is_type_first() || self.marker != Some(TrieNodeID::StableIdLeaf as u8) {
             return Ok(None);
         }
         let path = mapped_node::path_prefix(self.payload)?;
-        let mut remaining = self
+        let remaining = self
             .payload
             .get(1 + path.len()..)
             .ok_or(Error::OverflowError)?;
-        let extent = ValueExtent::read_from(&mut remaining)?;
+        let bytes: [u8; 4] = remaining
+            .get(..4)
+            .ok_or_else(|| Error::CorruptionError("Truncated stable value ID".into()))?
+            .try_into()
+            .expect("checked stable ID width");
+        let value_id = u32::from_le_bytes(bytes);
+        if value_id == 0 {
+            return Err(Error::CorruptionError("Zero stable value ID".into()));
+        }
         Ok(Some(TrieLeafRef {
             path,
             data: None,
-            extent: Some(extent),
+            value_id: Some(value_id),
             inline: None,
         }))
     }
@@ -1279,7 +1253,7 @@ impl<'a> ReadTrieNode<'a> {
                     TrieNodeType::Leaf(leaf) => Some(TrieLeafRef {
                         path: leaf.path.as_slice(),
                         data: leaf.data.as_ref(),
-                        extent: leaf.extent,
+                        value_id: leaf.value_id,
                         inline: leaf.inline.as_ref(),
                     }),
                     _ => None,

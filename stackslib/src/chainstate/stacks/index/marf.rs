@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 use super::record::NodeRecordFormat;
-use super::ValueExtentResolver;
+use super::ValueResolver;
 use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(any(test, feature = "testing"))]
@@ -2290,13 +2290,18 @@ impl<T: MarfTrieId> MARF<T> {
     }
 
     /// Attach the immutable source for locator-only leaf commitments and proofs.
-    pub fn set_value_extent_resolver(&mut self, resolver: Arc<dyn ValueExtentResolver>) {
-        self.storage.set_value_extent_resolver(resolver);
+    pub fn set_value_resolver(&mut self, resolver: Arc<dyn ValueResolver>) {
+        self.storage.set_value_resolver(resolver);
     }
 
     /// Select a layout already published in the database metadata.
     pub fn set_record_format(&mut self, format: NodeRecordFormat) {
         self.storage.set_record_format(format);
+    }
+
+    /// Return the physical layout selected by the opened MARF database.
+    pub fn record_format(&self) -> NodeRecordFormat {
+        self.storage.record_format()
     }
 
     /// Access internal storage.
@@ -2423,7 +2428,7 @@ impl<T: MarfTrieId> MARF<T> {
     {
         storage.open_block(block_hash)?;
         let (cur_block, cur_id) = storage.get_cur_block_and_id();
-        let value_resolver = storage.value_extent_resolver();
+        let value_resolver = storage.value_resolver();
         let root_read = Trie::read_root(storage, decode_scratch)?;
 
         let mut leaf_count = 0u64;
@@ -2493,7 +2498,7 @@ impl<T: MarfTrieId> MARF<T> {
     /// returned by `read_node_for_ptr`.
     fn process_leaf_walk_node<F>(
         node: &ReadTrieNode<'_>,
-        value_resolver: Option<&dyn ValueExtentResolver>,
+        value_resolver: Option<&dyn ValueResolver>,
         prefix: Vec<u8>,
         block_hash: T,
         block_id: Option<u32>,
@@ -2516,11 +2521,18 @@ impl<T: MarfTrieId> MARF<T> {
                 .ok_or_else(|| Error::CorruptionError("Failed to decode leaf path".to_string()))?;
             let value = match leaf.data {
                 Some(value) => value.clone(),
-                None => value_resolver
-                    .ok_or_else(|| Error::CorruptionError("Leaf walk needs value resolver".into()))?
-                    .commitment(leaf.extent.ok_or_else(|| {
-                        Error::CorruptionError("Leaf lacks value locator".into())
-                    })?)?,
+                None => {
+                    let resolver = value_resolver.ok_or_else(|| {
+                        Error::CorruptionError("Leaf walk needs value resolver".into())
+                    })?;
+                    if let Some(inline) = leaf.inline {
+                        resolver.inline_commitment(inline)?
+                    } else if let Some(value_id) = leaf.value_id {
+                        resolver.commitment_by_id(value_id)?
+                    } else {
+                        return Err(Error::CorruptionError("Leaf lacks value locator".into()));
+                    }
+                }
             };
             handle_leaf(path, value)?;
             Ok(true)

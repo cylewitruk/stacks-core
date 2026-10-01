@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use tempfile::tempdir;
 
@@ -11,20 +11,21 @@ use super::*;
 use crate::chainstate::stacks::index::direct_hash_index;
 use crate::chainstate::stacks::index::inline_value::InlineValue;
 use crate::chainstate::stacks::index::record::NodeRecordFormat;
-use crate::chainstate::stacks::index::{ClarityMarfTrieId, ValueExtent, ValueExtentResolver};
+use crate::chainstate::stacks::index::{ClarityMarfTrieId, ValueResolver};
 
-/// Count requests to reconstruct the commitment of a known immutable extent.
+/// Count requests to reconstruct the commitment of a known stable-ID value.
 struct CountingResolver {
     /// Number of explicit commitment requests.
     calls: AtomicUsize,
 }
 
-impl ValueExtentResolver for CountingResolver {
+impl ValueResolver for CountingResolver {
     fn inline_commitment(&self, _: &InlineValue) -> Result<MARFValue, Error> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         Ok(MARFValue::from_value("value"))
     }
-    fn commitment(&self, _: ValueExtent) -> Result<MARFValue, Error> {
+    fn commitment_by_id(&self, id: u32) -> Result<MARFValue, Error> {
+        assert_eq!(id, 7);
         self.calls.fetch_add(1, Ordering::Relaxed);
         Ok(MARFValue::from_value("value"))
     }
@@ -33,18 +34,19 @@ impl ValueExtentResolver for CountingResolver {
 /// A locator lookup must not hash the value; logical reads and mutable loading may resolve it.
 #[test]
 fn compact_leaf_reads_and_unconfirmed_reopens() {
-    compact_leaf_reopens(false, NodeRecordFormat::TypeFirstV1);
+    compact_leaf_reopens(false, false);
 }
 
 /// Optional direct hashes preserve compact extent reads and unconfirmed fallback behavior.
 #[test]
 fn compact_leaf_direct_hash_reads_and_unconfirmed_reopens() {
-    compact_leaf_reopens(true, NodeRecordFormat::TypeFirstV1);
+    compact_leaf_reopens(true, false);
 }
 
 /// Run mapped and ordinary compact-leaf reads against the requested index configuration.
-fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
-    for external in [false, true] {
+fn compact_leaf_reopens(indexed: bool, inline: bool) {
+    let format = NodeRecordFormat::Optimized;
+    for external in [true] {
         if indexed && !external {
             continue;
         }
@@ -60,22 +62,12 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
                 let resolver = Arc::new(CountingResolver {
                     calls: AtomicUsize::new(0),
                 });
-                let extent = ValueExtent {
-                    store_id: [3; 16],
-                    offset: 48,
-                    length: 200,
-                };
                 let value_leaf = || {
                     let mut leaf = TrieLeaf::from_value(&[], MARFValue::from_value("value"));
-                    if matches!(
-                        format,
-                        NodeRecordFormat::TypeFirstV3
-                            | NodeRecordFormat::TypeFirstV4
-                            | NodeRecordFormat::TypeFirstV41
-                    ) {
+                    if inline {
                         leaf.inline = Some(InlineValue::from_parts(b"value", &[]).unwrap());
                     } else {
-                        leaf.extent = Some(extent);
+                        leaf.value_id = Some(7);
                     }
                     leaf
                 };
@@ -83,7 +75,7 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
                 let mut marf = MARF::<StacksBlockId>::from_path(path, opts.clone()).unwrap();
                 format.publish(marf.sqlite_conn()).unwrap();
                 marf.set_record_format(format);
-                marf.set_value_extent_resolver(resolver.clone());
+                marf.set_value_resolver(resolver.clone());
                 {
                     let mut tx = marf.begin_tx().unwrap();
                     tx.begin(&StacksBlockId::sentinel(), &block).unwrap();
@@ -101,22 +93,16 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
                 let mut marf = MARF::<StacksBlockId>::from_storage(
                     TrieFileStorage::open_readonly(path, opts.clone()).unwrap(),
                 );
-                marf.set_value_extent_resolver(resolver.clone());
+                marf.set_value_resolver(resolver.clone());
                 resolver.calls.store(0, Ordering::Relaxed);
                 let leaf = marf
                     .get_leaf(&block, &TrieHash::from_key("key"))
                     .unwrap()
                     .unwrap();
-                if matches!(
-                    format,
-                    NodeRecordFormat::TypeFirstV3
-                        | NodeRecordFormat::TypeFirstV4
-                        | NodeRecordFormat::TypeFirstV41
-                ) {
+                if inline {
                     assert_eq!(leaf.inline.as_ref().unwrap().record(), b"value");
-                    assert_eq!(leaf.extent, None);
                 } else {
-                    assert_eq!(leaf.extent, Some(extent));
+                    assert_eq!(leaf.value_id, Some(7));
                 }
                 assert_eq!(leaf.data, None);
                 assert_eq!(resolver.calls.load(Ordering::Relaxed), 0);
@@ -129,7 +115,7 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
 
                 let mut unconfirmed =
                     MARF::<StacksBlockId>::from_path_unconfirmed(path, opts.clone()).unwrap();
-                unconfirmed.set_value_extent_resolver(resolver.clone());
+                unconfirmed.set_value_resolver(resolver.clone());
                 let tip = {
                     let mut tx = unconfirmed.begin_tx().unwrap();
                     let tip = tx.begin_unconfirmed(&block).unwrap();
@@ -141,7 +127,7 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
                 drop(unconfirmed);
                 let mut reopened =
                     MARF::<StacksBlockId>::from_path_unconfirmed(path, opts).unwrap();
-                reopened.set_value_extent_resolver(resolver);
+                reopened.set_value_resolver(resolver);
                 {
                     let mut tx = reopened.begin_tx().unwrap();
                     assert_eq!(tx.begin_unconfirmed(&block).unwrap(), tip);
@@ -162,27 +148,13 @@ fn compact_leaf_reopens(indexed: bool, format: NodeRecordFormat) {
     }
 }
 
-/// Compact raw ancestry mappings coexist with locator leaves across reopens and proofs.
-#[test]
-fn compact_raw_leaf_reads_and_unconfirmed_reopens() {
-    compact_leaf_reopens(false, NodeRecordFormat::TypeFirstV2);
-    compact_leaf_reopens(true, NodeRecordFormat::TypeFirstV2);
-}
-
 /// Physical leaf widths must not change any committed root or serialized proof across forks.
 #[test]
 fn compact_raw_roots_and_proofs_match_legacy() {
     for mmap in [false, true] {
         for compression in [false, true] {
             let mut expected = None;
-            for format in [
-                NodeRecordFormat::Legacy,
-                NodeRecordFormat::TypeFirstV1,
-                NodeRecordFormat::TypeFirstV2,
-                NodeRecordFormat::TypeFirstV3,
-                NodeRecordFormat::TypeFirstV4,
-                NodeRecordFormat::TypeFirstV41,
-            ] {
+            for format in [NodeRecordFormat::Legacy, NodeRecordFormat::Optimized] {
                 let directory = tempdir().unwrap();
                 let path = directory.path().join("marf.sqlite");
                 let mut opts = MARFOpenOpts::default()
@@ -244,112 +216,42 @@ fn compact_raw_roots_and_proofs_match_legacy() {
     }
 }
 
-/// Version metadata rejects older writers, incomplete conversion, and mismatched blob tags.
+/// Retired and incomplete markers cannot be read or accidentally republished.
 #[test]
-fn compact_raw_metadata_guards() {
+fn canonical_metadata_and_header_guards() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("guard.sqlite");
     let marf =
         MARF::<StacksBlockId>::from_path(path.to_str().unwrap(), MARFOpenOpts::default()).unwrap();
     let db = marf.sqlite_conn();
-    NodeRecordFormat::TypeFirstV1.publish(db).unwrap();
-    NodeRecordFormat::TypeFirstV2.publish(db).unwrap();
-    assert_eq!(
-        NodeRecordFormat::from_database(db).unwrap(),
-        NodeRecordFormat::TypeFirstV2
-    );
-    assert!(NodeRecordFormat::TypeFirstV1.publish(db).is_err());
-    db.execute("UPDATE marf_record_format SET version=-2", [])
+    let format = NodeRecordFormat::Optimized;
+    format.publish(db).unwrap();
+    assert_eq!(NodeRecordFormat::from_database(db).unwrap(), format);
+    assert!(NodeRecordFormat::Legacy.publish(db).is_err());
+    for version in [1, 2, 3, 4, 5, 41, -1, -2, -3, -4, -5, -41, 999] {
+        db.execute("UPDATE marf_record_format SET version=?1", [version])
+            .unwrap();
+        assert!(NodeRecordFormat::from_database(db).is_err());
+        assert!(format.publish(db).is_err());
+    }
+    db.execute("UPDATE marf_record_format SET version=-6", [])
         .unwrap();
     assert!(NodeRecordFormat::from_database(db).is_err());
-    NodeRecordFormat::TypeFirstV2.publish(db).unwrap();
+    format.publish(db).unwrap();
     let mut header = Vec::new();
-    NodeRecordFormat::TypeFirstV1
+    format
         .write_trie_header(&mut header, &StacksBlockId::sentinel())
         .unwrap();
-    assert!(
-        NodeRecordFormat::TypeFirstV2
-            .validate_trie_header(&header)
-            .is_err()
-    );
-    db.execute("UPDATE marf_record_format SET version=999", [])
-        .unwrap();
-    assert!(NodeRecordFormat::from_database(db).is_err());
-    assert!(NodeRecordFormat::TypeFirstV2.publish(db).is_err());
+    format.validate_trie_header(&header).unwrap();
+    for version in [1, 2, 3, 4, 5, 41, 255] {
+        header[35] = version;
+        assert!(format.validate_trie_header(&header).is_err());
+    }
 }
 
-/// Inline owners survive external/SQL reads, indexed lookups and persisted unconfirmed reopens.
+/// Inline owners survive mapped/buffered reads, direct indexes and unconfirmed reopens.
 #[test]
 fn inline_leaf_reads_and_unconfirmed_reopens() {
-    compact_leaf_reopens(false, NodeRecordFormat::TypeFirstV3);
-    compact_leaf_reopens(true, NodeRecordFormat::TypeFirstV3);
-}
-
-/// V3 rejects downgrade attempts and cannot be read through an earlier blob header codec.
-#[test]
-fn inline_metadata_and_header_guards() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("guard.sqlite");
-    let marf =
-        MARF::<StacksBlockId>::from_path(path.to_str().unwrap(), MARFOpenOpts::default()).unwrap();
-    let db = marf.sqlite_conn();
-    NodeRecordFormat::TypeFirstV3.publish(db).unwrap();
-    assert_eq!(
-        NodeRecordFormat::from_database(db).unwrap(),
-        NodeRecordFormat::TypeFirstV3
-    );
-    for old in [
-        NodeRecordFormat::Legacy,
-        NodeRecordFormat::TypeFirstV1,
-        NodeRecordFormat::TypeFirstV2,
-    ] {
-        assert!(old.publish(db).is_err());
-        let mut header = Vec::new();
-        NodeRecordFormat::TypeFirstV3
-            .write_trie_header(&mut header, &StacksBlockId::sentinel())
-            .unwrap();
-        if old.is_type_first() {
-            assert!(old.validate_trie_header(&header).is_err());
-        }
-    }
-}
-
-/// Packed columns preserve inline values across every backend and mutable reopen mode.
-#[test]
-fn packed_columns_reads_and_unconfirmed_reopens() {
-    compact_leaf_reopens(false, NodeRecordFormat::TypeFirstV4);
-    compact_leaf_reopens(true, NodeRecordFormat::TypeFirstV4);
-}
-
-/// Compact metadata retains inline values, proofs and unconfirmed reopens on every backend.
-#[test]
-fn compact_node256_reads_and_unconfirmed_reopens() {
-    compact_leaf_reopens(false, NodeRecordFormat::TypeFirstV41);
-    compact_leaf_reopens(true, NodeRecordFormat::TypeFirstV41);
-}
-
-/// Published V4.1 storage cannot be opened through an earlier physical format.
-#[test]
-fn compact_node256_metadata_and_header_guards() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("guard.sqlite");
-    let marf =
-        MARF::<StacksBlockId>::from_path(path.to_str().unwrap(), MARFOpenOpts::default()).unwrap();
-    let db = marf.sqlite_conn();
-    let latest = NodeRecordFormat::TypeFirstV41;
-    latest.publish(db).unwrap();
-    assert_eq!(NodeRecordFormat::from_database(db).unwrap(), latest);
-    let mut header = Vec::new();
-    latest
-        .write_trie_header(&mut header, &StacksBlockId::sentinel())
-        .unwrap();
-    for old in [
-        NodeRecordFormat::TypeFirstV1,
-        NodeRecordFormat::TypeFirstV2,
-        NodeRecordFormat::TypeFirstV3,
-        NodeRecordFormat::TypeFirstV4,
-    ] {
-        assert!(old.publish(db).is_err());
-        assert!(old.validate_trie_header(&header).is_err());
-    }
+    compact_leaf_reopens(false, true);
+    compact_leaf_reopens(true, true);
 }

@@ -830,6 +830,10 @@ fn execute_segment(
                 "WRITEBACK_COUNTERS {}",
                 serde_json::json!({"txid": tx.txid().to_string(), "block_id": block.block_id().to_string(), "counts": stacks_profiler::diagnostics::snapshot()})
             );
+            eprintln!(
+                "WRITEBACK_WALL_NS {}",
+                serde_json::json!({"txid": tx.txid().to_string(), "block_id": block.block_id().to_string(), "estimated_inclusive_ns": stacks_profiler::diagnostics::wall_snapshot(), "samples": stacks_profiler::diagnostics::wall_sample_snapshot()})
+            );
         }
         let success = match res {
             TransactionResult::Success(ref s) => s,

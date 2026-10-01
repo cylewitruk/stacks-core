@@ -18,7 +18,6 @@
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 
 use sha2::{Digest, Sha512_256 as TrieHasher};
-use stacks_common::codec::StacksMessageCodec;
 use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 use stacks_common::util::hash::to_hex;
 
@@ -109,7 +108,8 @@ pub fn get_sparse_ptrs_bitmap_size(id: u8) -> Option<usize> {
         TrieNodeID::Patch
         | TrieNodeID::ValueLeaf
         | TrieNodeID::RawLeaf
-        | TrieNodeID::InlineLeaf => None,
+        | TrieNodeID::InlineLeaf
+        | TrieNodeID::StableIdLeaf => None,
     }
 }
 
@@ -216,7 +216,11 @@ pub fn decode_nodetype_from_slice_at_head(
             let (node, consumed) = TrieNode256::from_bytes(bytes)?;
             Ok((TrieNodeType::Node256(Box::new(node)), consumed))
         }
-        TrieNodeID::Leaf | TrieNodeID::ValueLeaf | TrieNodeID::RawLeaf | TrieNodeID::InlineLeaf => {
+        TrieNodeID::Leaf
+        | TrieNodeID::ValueLeaf
+        | TrieNodeID::RawLeaf
+        | TrieNodeID::InlineLeaf
+        | TrieNodeID::StableIdLeaf => {
             let (node, consumed) = TrieLeaf::from_bytes(bytes)?;
             Ok((TrieNodeType::Leaf(node), consumed))
         }
@@ -810,7 +814,7 @@ pub fn get_node_max_byte_len(id: u8, u64_ptr_offsets: bool) -> Result<usize, Err
     };
     let path_max = get_path_byte_len(&[0u8; TRIEHASH_ENCODED_SIZE]);
     let body = match TrieNodeID::from_u8(clear_ctrl_bits(id)) {
-        Some(TrieNodeID::Leaf) => 1 + path_max + MARF_VALUE_ENCODED_SIZE as usize + 32,
+        Some(TrieNodeID::Leaf) => <TrieLeaf as TrieNode>::MAX_BODY_BYTE_LEN,
         Some(TrieNodeID::Node4) => get_ptrs_byte_len(&[ptr; 4]) + path_max,
         Some(TrieNodeID::Node16) => get_ptrs_byte_len(&[ptr; 16]) + path_max,
         Some(TrieNodeID::Node48) => get_ptrs_byte_len(&[ptr; 48]) + 256 + path_max,
@@ -949,7 +953,6 @@ mod tests {
     use crate::chainstate::stacks::index::node::{
         set_backptr, set_compressed, TrieLeafRef, TrieNode, TrieNode4, TrieNodeRef,
     };
-    use crate::chainstate::stacks::index::record::NodeRecordFormat;
     use crate::chainstate::stacks::index::scratch::MarfReadState;
     use crate::chainstate::stacks::index::ReadTrieItemKind;
     use crate::codec::StacksMessageCodec;
@@ -1160,7 +1163,7 @@ mod tests {
 
         assert_eq!(
             <TrieLeaf as TrieNode>::MAX_BODY_BYTE_LEN,
-            1 + path_max_len + MARF_VALUE_ENCODED_SIZE as usize + 32
+            1 + path_max_len + MARF_VALUE_ENCODED_SIZE as usize
         );
         assert_eq!(
             <TrieNode4 as TrieNode>::MAX_BODY_BYTE_LEN,

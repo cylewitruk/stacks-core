@@ -17,7 +17,9 @@
 
 use std::fs;
 
-use clarity::vm::database::{DataStoreEntry, DataStoreValue, StoredValue, TypedValueData};
+use clarity::vm::database::{
+    DataStoreEntry, DataStoreValue, SqliteConnection, StoredValue, TypedValueData,
+};
 use clarity::vm::types::{StacksAddressExtensions, TupleData, TypeSignature, Value};
 use clarity::vm::{ClarityName, ContractName};
 use pinny::tag;
@@ -36,7 +38,7 @@ use crate::chainstate::nakamoto::miner::{MinerTenureInfoCause, NakamotoBlockBuil
 use crate::chainstate::nakamoto::tests::node::TestStacker;
 use crate::chainstate::nakamoto::{NakamotoBlock, NakamotoChainState};
 use crate::chainstate::stacks::db::StacksChainState;
-use crate::chainstate::stacks::index::marf::MARFOpenOpts;
+use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MARF};
 use crate::chainstate::stacks::index::storage::TrieHashCalculationMode;
 use crate::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
 use crate::chainstate::stacks::miner::{
@@ -49,6 +51,7 @@ use crate::chainstate::stacks::{
 };
 use crate::clarity::vm::database::ClarityBackingStore;
 use crate::clarity_vm::clarity::ClarityMarfStoreTransaction;
+use crate::clarity_vm::database::binary_value_store;
 use crate::clarity_vm::database::marf::MarfedKV;
 use crate::config::DEFAULT_MAX_TENURE_BYTES;
 use crate::net::test::TestEventObserver;
@@ -288,6 +291,15 @@ fn test_ephemeral_binary_store_uses_database_local_shape_ids() {
     if fs::metadata(&path).is_ok() {
         fs::remove_dir_all(&path).unwrap();
     }
+
+    // This regression concerns an existing SQL-backed store, not the canonical fresh default.
+    fs::create_dir_all(&path).unwrap();
+    let legacy =
+        MARF::<StacksBlockId>::from_path(&format!("{path}/marf.sqlite"), MARFOpenOpts::default())
+            .unwrap();
+    SqliteConnection::initialize_conn(legacy.sqlite_conn()).unwrap();
+    binary_value_store::initialize_empty(legacy.sqlite_conn()).unwrap();
+    drop(legacy);
 
     let mut marfed_kv = MarfedKV::open(
         &path,

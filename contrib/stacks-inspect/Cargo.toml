@@ -5,10 +5,7 @@ edition = "2024"
 
 [dependencies]
 stackslib = { package = "stackslib", path = "../../stackslib", default-features = false }
-stacks-trie-format-v2 = { path = "../stacks-trie-format-v2" }
-stacks-trie-format-v3 = { path = "../stacks-trie-format-v3" }
-stacks-trie-format-v4 = { path = "../stacks-trie-format-v4" }
-stacks-trie-format-v41 = { path = "../stacks-trie-format-v41" }
+stacks-storage-migrate = { path = "../stacks-storage-migrate" }
 extent-ptrhash = { path = "../../crates/extent-ptrhash" }
 clarity = { path = "../../clarity", default-features = false }
 clarity-cli = { path = "../clarity-cli", default-features = false }

@@ -64,8 +64,8 @@ pub fn load(leaf: &mut TrieLeaf, payload: &[u8]) -> Result<usize, Error> {
     let mut value = [0; 40];
     value[..bytes.len()].copy_from_slice(bytes);
     leaf.data = Some(MARFValue(value));
-    leaf.extent = None;
     leaf.inline = None;
+    leaf.value_id = None;
     Ok(consumed)
 }
 
@@ -78,10 +78,20 @@ mod tests {
     use crate::chainstate::stacks::index::node::{TrieNodeID, TrieNodeType};
     use crate::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
 
+    /// Scratch reuse must not retain a stable locator when decoding an ancestry mapping.
+    #[test]
+    fn raw_load_clears_previous_stable_id() {
+        let mut leaf = TrieLeaf::from_value(&[], MARFValue::from(7));
+        leaf.value_id = Some(123);
+        load(&mut leaf, &[0x40, 9, 0, 0, 0]).unwrap();
+        assert_eq!(leaf.value_id, None);
+        assert_eq!(leaf.value().unwrap(), &MARFValue::from(9));
+    }
+
     /// Every path length and value width preserves all forty bytes and the logical hash.
     #[test]
     fn raw_widths_roundtrip_and_preserve_commitments() {
-        let format = NodeRecordFormat::TypeFirstV2;
+        let format = NodeRecordFormat::Optimized;
         for path_len in 0..=32 {
             for last_nonzero in 0..=40 {
                 let mut value = [0; 40];
@@ -112,7 +122,10 @@ mod tests {
                     (TrieNodeID::Leaf, hash)
                 );
                 assert_eq!(input.stream_position().unwrap(), bytes.len() as u64);
-                assert!(NodeRecordFormat::TypeFirstV1.parse(&bytes).is_err());
+                assert!(NodeRecordFormat::Legacy
+                    .parse(&bytes)
+                    .and_then(|record| record.decode_node(TrieNodeID::Leaf as u8))
+                    .is_err());
                 for end in 0..bytes.len() {
                     assert!(format
                         .parse(&bytes[..end])

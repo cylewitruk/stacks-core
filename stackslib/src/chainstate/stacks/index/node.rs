@@ -15,7 +15,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::inline_value::{self, InlineValue};
-use super::ValueExtent;
 #[cfg(feature = "marf-read-bench-counters")]
 use crate::chainstate::stacks::index::read_bench;
 
@@ -76,7 +75,8 @@ define_u8_enum!(TrieNodeID {
     Patch = 6,
     ValueLeaf = 7,
     RawLeaf = 8,
-    InlineLeaf = 9
+    InlineLeaf = 9,
+    StableIdLeaf = 10
 });
 
 impl TrieNodeID {
@@ -91,7 +91,8 @@ impl TrieNodeID {
                 1 + NODE_PATH_MAX_BYTE_LEN + inline_value::LENGTH_BYTES + inline_value::MAX_BYTES,
             ),
             TrieNodeID::RawLeaf => Some(1 + NODE_PATH_MAX_BYTE_LEN + 40),
-            TrieNodeID::ValueLeaf => Some(1 + NODE_PATH_MAX_BYTE_LEN + ValueExtent::ENCODED_SIZE),
+            TrieNodeID::ValueLeaf => None,
+            TrieNodeID::StableIdLeaf => Some(1 + NODE_PATH_MAX_BYTE_LEN + 4),
             TrieNodeID::Node4 => Some(<TrieNode4 as TrieNode>::MAX_BODY_BYTE_LEN),
             TrieNodeID::Node16 => Some(<TrieNode16 as TrieNode>::MAX_BODY_BYTE_LEN),
             TrieNodeID::Node48 => Some(<TrieNode48 as TrieNode>::MAX_BODY_BYTE_LEN),
@@ -175,7 +176,7 @@ pub fn clear_ctrl_bits(id: u8) -> u8 {
 
 /// Normalize physical value leaves to the historical leaf ID while retaining control bits.
 pub fn logical_node_id(id: u8) -> u8 {
-    if matches!(clear_ctrl_bits(id), x if x == TrieNodeID::ValueLeaf as u8 || x == TrieNodeID::RawLeaf as u8 || x == TrieNodeID::InlineLeaf as u8)
+    if matches!(clear_ctrl_bits(id), x if x == TrieNodeID::ValueLeaf as u8 || x == TrieNodeID::RawLeaf as u8 || x == TrieNodeID::InlineLeaf as u8 || x == TrieNodeID::StableIdLeaf as u8)
     {
         (id & 0xf0) | TrieNodeID::Leaf as u8
     } else {
@@ -1423,14 +1424,14 @@ impl PartialEq for TrieLeaf {
         self.path == other.path
             && match (&self.data, &other.data) {
                 (Some(left), Some(right)) => left == right,
-                (None, None) => self.extent == other.extent && self.inline == other.inline,
+                (None, None) => self.value_id == other.value_id && self.inline == other.inline,
                 _ => false,
             }
     }
 }
 
 impl TrieLeaf {
-    /// Return an already available commitment; unresolved extents require a storage resolver.
+    /// Return an already available commitment; unresolved stable IDs require a storage resolver.
     pub fn value(&self) -> Result<&MARFValue, Error> {
         self.data.as_ref().ok_or_else(|| {
             Error::CorruptionError("Leaf commitment requires extent resolution".into())
@@ -1452,7 +1453,7 @@ impl TrieLeaf {
         TrieLeaf {
             path: NodePath::from_slice(path).expect("node path exceeds 32 bytes"),
             data: Some(MARFValue(bytes)),
-            extent: None,
+            value_id: None,
             inline: None,
         }
     }
@@ -1461,7 +1462,7 @@ impl TrieLeaf {
         TrieLeaf {
             path: NodePath::from_slice(path).expect("node path exceeds 32 bytes"),
             data: Some(value),
-            extent: None,
+            value_id: None,
             inline: None,
         }
     }
@@ -1471,10 +1472,10 @@ impl fmt::Debug for TrieLeaf {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "TrieLeaf(path={} data={:?} extent={:?})",
+            "TrieLeaf(path={} data={:?} value_id={:?})",
             &to_hex(&self.path),
             &self.data,
-            &self.extent
+            &self.value_id
         )
     }
 }
@@ -1508,7 +1509,7 @@ impl StacksMessageCodec for TrieLeaf {
         Ok(TrieLeaf {
             path,
             data: Some(data),
-            extent: None,
+            value_id: None,
             inline: None,
         })
     }
@@ -2543,8 +2544,7 @@ impl TrieNode for TrieNode256 {
 }
 
 impl TrieNode for TrieLeaf {
-    const MAX_BODY_BYTE_LEN: usize =
-        1 + NODE_PATH_MAX_BYTE_LEN + MARF_VALUE_ENCODED_SIZE as usize + ValueExtent::ENCODED_SIZE;
+    const MAX_BODY_BYTE_LEN: usize = 1 + NODE_PATH_MAX_BYTE_LEN + MARF_VALUE_ENCODED_SIZE as usize;
 
     fn id(&self) -> u8 {
         TrieNodeID::Leaf as u8
@@ -2559,19 +2559,14 @@ impl TrieNode for TrieLeaf {
     }
 
     fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), Error> {
-        if self.inline.is_some() {
+        if self.inline.is_some() || self.value_id.is_some() {
             return Err(Error::CorruptionError(
-                "Inline leaves require format version 3".into(),
+                "Physical value leaves require the canonical record writer".into(),
             ));
         }
-        // 0x10 is physical header metadata. Leaf pointers retain the ordinary Leaf ID.
-        let id = self.id() | if self.extent.is_some() { 0x10 } else { 0 };
-        w.write_all(&[id])?;
+        w.write_all(&[self.id()])?;
         bits::write_path_to_bytes(&self.path, w)?;
         w.write_all(&self.value()?.0)?;
-        if let Some(extent) = self.extent {
-            extent.write_to(w)?;
-        }
         Ok(())
     }
 
@@ -2580,13 +2575,7 @@ impl TrieNode for TrieLeaf {
     }
 
     fn byte_len(&self) -> usize {
-        1 + bits::get_path_byte_len(&self.path)
-            + MARF_VALUE_ENCODED_SIZE as usize
-            + if self.extent.is_some() {
-                ValueExtent::ENCODED_SIZE
-            } else {
-                0
-            }
+        1 + bits::get_path_byte_len(&self.path) + MARF_VALUE_ENCODED_SIZE as usize
     }
 
     fn byte_len_compressed(&self) -> usize {
@@ -2595,13 +2584,20 @@ impl TrieNode for TrieLeaf {
 
     fn load_from_parts(&mut self, marker: u8, body: &[u8]) -> Result<usize, Error> {
         let physical_id = clear_ctrl_bits(marker);
+        if physical_id == TrieNodeID::ValueLeaf as u8
+            || (physical_id == TrieNodeID::Leaf as u8 && marker & 0x10 != 0)
+        {
+            return Err(Error::CorruptionError(
+                "Retired physical extent leaf".into(),
+            ));
+        }
         if !is_leaf_id(marker) {
             return Err(Error::CorruptionError(format!(
                 "Leaf: bad ID 0x{marker:02x}"
             )));
         }
-        if (physical_id == TrieNodeID::ValueLeaf as u8
-            || physical_id == TrieNodeID::InlineLeaf as u8)
+        if (physical_id == TrieNodeID::InlineLeaf as u8
+            || physical_id == TrieNodeID::StableIdLeaf as u8)
             && marker != physical_id
         {
             return Err(Error::CorruptionError(
@@ -2617,32 +2613,32 @@ impl TrieNode for TrieLeaf {
         let path_consumed = bits::path_from_bytes_slice_into(body, &mut self.path)?;
         let remaining = body.get(path_consumed..).ok_or(Error::OverflowError)?;
         self.inline = None;
+        self.value_id = None;
         if physical_id == TrieNodeID::InlineLeaf as u8 {
             let (inline, consumed) = InlineValue::decode(remaining)?;
             self.data = None;
-            self.extent = None;
             self.inline = Some(inline);
             return Ok(path_consumed + consumed);
         }
-        if physical_id == TrieNodeID::ValueLeaf as u8 {
+        if physical_id == TrieNodeID::StableIdLeaf as u8 {
+            let id_bytes = remaining
+                .get(..4)
+                .ok_or_else(|| Error::CorruptionError("Truncated stable value ID".into()))?;
+            let value_id = u32::from_le_bytes(id_bytes.try_into().expect("checked ID length"));
+            if value_id == 0 {
+                return Err(Error::CorruptionError("Zero stable value ID".into()));
+            }
             self.data = None;
-            self.extent = Some(ValueExtent::read_from(&mut &remaining[..])?);
-            return Ok(path_consumed + ValueExtent::ENCODED_SIZE);
+            self.value_id = Some(value_id);
+            return Ok(path_consumed + 4);
         }
-        let (data_bytes, remaining) = remaining
+        let (data_bytes, _) = remaining
             .split_at_checked(MARF_VALUE_ENCODED_SIZE as usize)
             .ok_or_else(|| Error::CorruptionError("Leaf: truncated MARF value".into()))?;
         self.data = Some(MARFValue(
             data_bytes.try_into().expect("checked value length"),
         ));
-        self.extent = if marker & 0x10 != 0 {
-            Some(ValueExtent::read_from(&mut &remaining[..])?)
-        } else {
-            None
-        };
-        Ok(path_consumed
-            + MARF_VALUE_ENCODED_SIZE as usize
-            + self.extent.map_or(0, |_| ValueExtent::ENCODED_SIZE))
+        Ok(path_consumed + MARF_VALUE_ENCODED_SIZE as usize)
     }
 
     fn insert(&mut self, _ptr: &TriePtr) -> bool {
@@ -2691,8 +2687,8 @@ pub enum TrieNodeType {
 pub struct TrieLeafRef<'a> {
     pub path: &'a [u8],
     pub data: Option<&'a MARFValue>,
-    /// Physical value locator retained across borrowed node reads.
-    pub extent: Option<ValueExtent>,
+    /// Stable value ID retained across borrowed reads.
+    pub value_id: Option<u32>,
     /// Inline bytes borrowed from a retained leaf owner.
     pub inline: Option<&'a InlineValue>,
 }
@@ -2703,7 +2699,7 @@ impl TrieLeafRef<'_> {
         TrieLeaf {
             path: NodePath::from_slice(self.path).expect("validated leaf path"),
             data: self.data.cloned(),
-            extent: self.extent,
+            value_id: self.value_id,
             inline: self.inline.cloned(),
         }
     }
@@ -2851,7 +2847,7 @@ impl<'a> TrieNodeRef<'a> {
             Self::Leaf(leaf) => TrieNodeType::Leaf(TrieLeaf {
                 path: NodePath::from_slice(leaf.path).expect("node path exceeds 32 bytes"),
                 data: leaf.data.cloned(),
-                extent: leaf.extent,
+                value_id: leaf.value_id,
                 inline: leaf.inline.cloned(),
             }),
         }
@@ -2895,7 +2891,7 @@ impl<'a> From<&'a TrieNodeType> for TrieNodeRef<'a> {
             TrieNodeType::Leaf(data) => Self::Leaf(TrieLeafRef {
                 path: data.path.as_slice(),
                 data: data.data.as_ref(),
-                extent: data.extent,
+                value_id: data.value_id,
                 inline: data.inline.as_ref(),
             }),
         }

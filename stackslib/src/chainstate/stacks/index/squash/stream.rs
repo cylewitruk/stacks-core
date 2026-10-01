@@ -24,10 +24,10 @@ use super::node_store::{CountingWriter, NodeStore};
 use crate::chainstate::stacks::index::bits::{
     get_leaf_hash, is_inline_child_ptr, reserved_root_size, resolve_inline_child_offsets,
 };
-use crate::chainstate::stacks::index::node::{TrieNodeID, TrieNodeType, is_backptr};
+use crate::chainstate::stacks::index::node::{is_backptr, TrieNodeID, TrieNodeType};
 use crate::chainstate::stacks::index::packed_branch;
 use crate::chainstate::stacks::index::record::NodeRecordFormat;
-use crate::chainstate::stacks::index::{BlockMap, Error, MarfTrieId, TrieHasher, blob_layout};
+use crate::chainstate::stacks::index::{blob_layout, BlockMap, Error, MarfTrieId, TrieHasher};
 
 /// Recompute content hashes in reverse NodeStore order.
 ///
@@ -122,10 +122,7 @@ pub(crate) fn stream_squash_blob<T: MarfTrieId, F: Write + Seek>(
     let header_size = blob_layout::ROOT_NODE_OFFSET as u64;
 
     let root_node = store.read_node(0)?;
-    let root_reserved_size = if matches!(
-        format,
-        NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41
-    ) {
+    let root_reserved_size = if matches!(format, NodeRecordFormat::Optimized) {
         // Bound the complete image without an additional pass over the temporary node file.
         let bound = (n as u64)
             .checked_mul(format.max_record_len(TrieNodeID::Node256 as u8)? as u64)

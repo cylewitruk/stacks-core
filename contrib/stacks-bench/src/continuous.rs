@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::env;
+use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -24,6 +25,9 @@ use stacks_common::util::hash::Hash160;
 
 use super::growth::{self, Account, Fixture};
 use super::{SegmentExecutionInput, TxSegment, execute_segment};
+
+#[path = "traffic_manifest.rs"]
+mod traffic_manifest;
 
 /// Select the byte allowance for generated continuous benchmark blocks only.
 pub fn tenure_byte_limit(capacity: bool, continuous: bool) -> u64 {
@@ -200,6 +204,9 @@ pub fn run(
     sortdb: &SortitionDB,
     block: &NakamotoBlock,
 ) -> Result<()> {
+    if let Some(path) = env::var_os("STACKS_MIX_MANIFEST") {
+        return traffic_manifest::run(chainstate, sortdb, block, Path::new(&path));
+    }
     let dose = setting("STACKS_MIX_DOSE", 16, 4096)?;
     let blocks = setting("STACKS_MIX_BLOCKS", 2, 40)?;
     let warm_blocks = 2;

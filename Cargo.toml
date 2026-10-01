@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "stackslib",
     "crates/extent-ptrhash",
+    "crates/stable-value-format",
     "stacks-common",
     "stacks-marf",
     "stacks-codec",
@@ -19,14 +20,10 @@ members = [
     "stacks-profiler-macros",
     "contrib/stacks-bench",
     "contrib/stacks-inspect",
-    "contrib/stacks-trie-format-v2",
-    "contrib/stacks-trie-format-v3",
-    "contrib/stacks-trie-format-v4",
-    "contrib/stacks-trie-format-v41",
+    "contrib/stacks-storage-migrate",
     "contrib/clarity-cli",
     "contrib/stacks-cli",
     "contrib/marf-squash",
-    "contrib/clarity-value-storage-migrate",
 ]
 
 exclude = ["contrib/tools/config-docs-generator"]

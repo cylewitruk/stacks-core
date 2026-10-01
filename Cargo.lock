@@ -985,14 +985,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clarity-value-storage-migrate"
-version = "0.1.0"
-dependencies = [
- "clap",
- "stackslib 0.0.1",
-]
-
-[[package]]
 name = "cliclack"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1821,6 +1813,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "stable-value-format",
  "stacks-profiler",
  "tempfile",
 ]
@@ -5270,6 +5263,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "stable-value-format"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+]
+
+[[package]]
 name = "stacker"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5416,10 +5417,7 @@ dependencies = [
  "serde_json",
  "slog",
  "stacks-common 4.0.3",
- "stacks-trie-format-v2",
- "stacks-trie-format-v3",
- "stacks-trie-format-v4",
- "stacks-trie-format-v41",
+ "stacks-storage-migrate",
  "stackslib 0.0.1",
  "tempfile",
  "tikv-jemallocator",
@@ -5579,6 +5577,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "stacks-storage-migrate"
+version = "0.1.0"
+dependencies = [
+ "clarity 0.0.1",
+ "extent-ptrhash",
+ "libc",
+ "memmap2",
+ "rand 0.8.5",
+ "reflink-copy",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "stable-value-format",
+ "stacks-common 4.0.3",
+ "stackslib 0.0.1",
+ "tempfile",
+]
+
+[[package]]
 name = "stacks-transactions"
 version = "0.1.0"
 dependencies = [
@@ -5587,58 +5605,6 @@ dependencies = [
  "proptest",
  "stacks-codec",
  "stacks-common 4.0.3",
-]
-
-[[package]]
-name = "stacks-trie-format-v2"
-version = "0.1.0"
-dependencies = [
- "clarity 0.0.1",
- "memmap2",
- "rusqlite",
- "sha2 0.10.9",
- "stacks-common 4.0.3",
- "stackslib 0.0.1",
- "tempfile",
-]
-
-[[package]]
-name = "stacks-trie-format-v3"
-version = "0.1.0"
-dependencies = [
- "clarity 0.0.1",
- "memmap2",
- "rusqlite",
- "sha2 0.10.9",
- "stacks-common 4.0.3",
- "stackslib 0.0.1",
- "tempfile",
-]
-
-[[package]]
-name = "stacks-trie-format-v4"
-version = "0.1.0"
-dependencies = [
- "clarity 0.0.1",
- "memmap2",
- "rusqlite",
- "sha2 0.10.9",
- "stacks-common 4.0.3",
- "stackslib 0.0.1",
- "tempfile",
-]
-
-[[package]]
-name = "stacks-trie-format-v41"
-version = "0.1.0"
-dependencies = [
- "clarity 0.0.1",
- "memmap2",
- "rusqlite",
- "sha2 0.10.9",
- "stacks-common 4.0.3",
- "stackslib 0.0.1",
- "tempfile",
 ]
 
 [[package]]
@@ -5681,6 +5647,7 @@ dependencies = [
  "sha2 0.10.9",
  "siphasher",
  "slog",
+ "stable-value-format",
  "stacks-codec",
  "stacks-common 4.0.3",
  "stacks-profiler",

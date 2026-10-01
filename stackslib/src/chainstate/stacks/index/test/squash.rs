@@ -1003,7 +1003,7 @@ fn test_compute_node_hash_matches_bits_get_node_hash() {
 
     // Leaf: no children
     let leaf = TrieLeaf {
-        extent: None,
+        value_id: None,
         inline: None,
         path: NodePath::from_slice(&[0xab, 0xcd]).unwrap(),
         data: Some(MARFValue([7u8; 40])),
@@ -1033,7 +1033,7 @@ fn make_test_leaf(path: &[u8], value_byte: u8) -> TrieNodeType {
     let mut data = [0u8; 40];
     data[0] = value_byte;
     TrieNodeType::Leaf(TrieLeaf {
-        extent: None,
+        value_id: None,
         inline: None,
         path: NodePath::from_slice(path).unwrap(),
         data: Some(MARFValue(data)),
@@ -2268,7 +2268,7 @@ fn test_squash_extend_many_keys_patch_backptr_regression() {
         let mut data = [0u8; 40];
         data[0] = val;
         TrieLeaf {
-            extent: None,
+            value_id: None,
             inline: None,
             path: NodePath::from_slice(&[]).unwrap(),
             data: Some(MARFValue(data)),

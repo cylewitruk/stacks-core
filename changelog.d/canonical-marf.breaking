@@ -1,0 +1,1 @@
+Canonical optimized MARFs combine compact Node256 records with stable-ID Clarity values. Use `stacks-storage-migrate` on an offline upstream legacy chainstate before opening it as canonical storage; retired experimental trie formats require their original tools. New Clarity stores use the canonical format, and upstream binaries cannot open these optimized files.

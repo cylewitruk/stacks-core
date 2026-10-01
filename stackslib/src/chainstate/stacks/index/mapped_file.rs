@@ -29,6 +29,25 @@ pub enum FileMapping {
 }
 
 impl FileMapping {
+    /// Reserve a caller-bounded append-only address range before mapping its current prefix.
+    ///
+    /// # Safety
+    /// The file must never shrink or modify bytes exposed through the mapping.
+    pub unsafe fn map_with_capacity(file: &File, capacity: u64) -> io::Result<Self> {
+        let length = file.metadata()?.len();
+        if length > capacity {
+            return Err(io::Error::other("file exceeds requested mapping capacity"));
+        }
+        #[cfg(all(unix, target_pointer_width = "64"))]
+        if let Ok(capacity) = usize::try_from(capacity) {
+            if let Ok(mapping) = unsafe { ReservedMapping::new_prefix(file, capacity, length) } {
+                return Ok(Self::Stable(Arc::new(mapping)));
+            }
+        }
+        // SAFETY: the caller's immutable-prefix contract also applies to a conventional map.
+        unsafe { Self::map_prefix(file, length) }
+    }
+
     /// Map an immutable file prefix, retaining room for future appends where supported.
     ///
     /// # Safety

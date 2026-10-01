@@ -12,13 +12,13 @@
 use std::io::Write;
 
 use super::bits;
+use super::canonical_branch;
 use super::mapped_node;
 use super::node::{
-    TrieNode, TrieNode4, TrieNode16, TrieNode48, TrieNode256, TrieNodeID, TrieNodeType, TriePtr,
-    clear_ctrl_bits, is_backptr,
+    clear_ctrl_bits, is_backptr, TrieNode, TrieNode16, TrieNode256, TrieNode4, TrieNode48,
+    TrieNodeID, TrieNodeType, TriePtr,
 };
 use super::record::NodeRecordFormat;
-use super::v41_branch;
 use super::{Error, NodePath};
 
 /// Checked metadata and mmap-backed pointer columns for one branch.
@@ -579,55 +579,39 @@ mod tests {
         let view = PackedBranch::parse(TrieNodeID::Node4, &bytes).unwrap();
         assert!(view.child(255).is_err());
     }
-
-    /// Packing reduces actual emitted bytes without per-child reservation padding.
-    #[test]
-    fn compact_columns_reduce_record_sizes() {
-        for slots in [4, 16, 48, 256] {
-            let node = sample(slots, 2, 4000, 1024);
-            assert!(payload_len(&node) < mapped_node::payload_len(&node));
-        }
-    }
 }
 
-/// Borrowed branch dispatch retaining support for earlier directory records.
+/// Borrowed dispatch for the canonical packed branch encodings.
 #[derive(Clone, Copy, Debug)]
 pub enum BranchView<'a> {
-    /// TypeFirstV1–V3 per-child offset directory.
-    Directory(mapped_node::MappedBranch<'a>),
-    /// TypeFirstV4 fixed-width pointer columns.
+    /// Fixed-width pointer columns.
     Packed(PackedBranch<'a>),
-    /// CompactMetadata compact columns over otherwise V4-compatible trie blobs.
-    CompactMetadata(v41_branch::BranchView<'a>),
+    /// Compact Node256 metadata with fixed-width pointer columns.
+    CompactMetadata(canonical_branch::BranchView<'a>),
 }
 
 impl<'a> BranchView<'a> {
     /// Select the database's explicitly versioned branch codec.
     pub fn parse(format: NodeRecordFormat, id: TrieNodeID, bytes: &'a [u8]) -> Result<Self, Error> {
         match format {
-            NodeRecordFormat::TypeFirstV4 | NodeRecordFormat::TypeFirstV41 => {
+            NodeRecordFormat::Optimized => {
                 let path = mapped_node::path_prefix(bytes)?;
                 if bytes
                     .get(1 + path.len())
                     .is_some_and(|widths| widths & 0x80 != 0)
                 {
-                    if format != NodeRecordFormat::TypeFirstV41 {
-                        return Err(invalid("V4.1 branch in V4 trie"));
-                    }
-                    v41_branch::BranchView::parse_prefix(id, bytes).map(Self::CompactMetadata)
+                    canonical_branch::BranchView::parse_prefix(id, bytes).map(Self::CompactMetadata)
                 } else {
                     PackedBranch::parse(id, bytes).map(Self::Packed)
                 }
             }
             NodeRecordFormat::Legacy => Err(invalid("Legacy branch has no type-first view")),
-            _ => mapped_node::MappedBranch::parse(id, bytes).map(Self::Directory),
         }
     }
 
     /// Select one child without materializing either branch representation.
     pub fn child(&self, edge: u8) -> Result<Option<TriePtr>, Error> {
         match self {
-            Self::Directory(v) => v.child(edge),
             Self::Packed(v) => v.child(edge),
             Self::CompactMetadata(v) => v.child(edge),
         }
@@ -636,7 +620,6 @@ impl<'a> BranchView<'a> {
     /// Encoded branch payload size.
     pub fn byte_len(&self) -> usize {
         match self {
-            Self::Directory(v) => v.byte_len(),
             Self::Packed(v) => v.byte_len(),
             Self::CompactMetadata(v) => v.byte_len(),
         }
@@ -645,7 +628,6 @@ impl<'a> BranchView<'a> {
     /// Reconstruct logical slots when mutation or proof generation requires them.
     pub fn to_owned_node(&self) -> Result<TrieNodeType, Error> {
         match self {
-            Self::Directory(v) => v.to_owned_node(),
             Self::Packed(v) => v.to_owned_node(),
             Self::CompactMetadata(v) => v.to_owned_node(),
         }
@@ -673,13 +655,7 @@ mod record_tests {
                 back_block: 0xffffff,
             };
             let node = TrieNodeType::Node16(branch);
-            for format in [
-                NodeRecordFormat::TypeFirstV1,
-                NodeRecordFormat::TypeFirstV2,
-                NodeRecordFormat::TypeFirstV3,
-                NodeRecordFormat::TypeFirstV4,
-                NodeRecordFormat::TypeFirstV41,
-            ] {
+            for format in [NodeRecordFormat::Optimized] {
                 let mut bytes = vec![];
                 format
                     .write_node(&mut bytes, &node, TrieHash([17; 32]), true)

@@ -16,9 +16,9 @@
 //! Clarity side-store copying for chainstate snapshots.
 
 use std::collections::HashSet;
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Component, Path};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -37,10 +37,20 @@ use super::fork_storage::{
 };
 use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection as _, MARF};
 use crate::chainstate::stacks::index::storage::{TrieFileStorage, TrieHashCalculationMode};
-use crate::chainstate::stacks::index::{trie_sql, Error, ValueExtentResolver, MARF_SQLITE_TABLES};
+use crate::chainstate::stacks::index::{trie_sql, Error, ValueResolver, MARF_SQLITE_TABLES};
 use crate::clarity_vm::database::binary_value_store::{self, ValueStorageFormat};
-use crate::clarity_vm::database::value_extents::ValueExtentStore;
+use crate::clarity_vm::database::value_extents::ValueBackend;
 use crate::util_lib::db::sqlite_open;
+
+/// Canonical registration and transactional membership copied without renumbering IDs.
+const STABLE_TABLES: &[&str] = &[
+    "clarity_stable_format",
+    "clarity_stable_value_index",
+    "clarity_stable_descriptor_index",
+    "clarity_stable_ptrhash_base",
+    "clarity_stable_value_delta",
+    "clarity_stable_value_high",
+];
 
 /// Clarity side-storage tables copied by [`copy_clarity_side_tables`].
 const CLARITY_SIDE_TABLES: &[&str] = &[DATA_TABLE_NAME, METADATA_TABLE_NAME];
@@ -49,7 +59,7 @@ const CLARITY_SIDE_TABLES: &[&str] = &[DATA_TABLE_NAME, METADATA_TABLE_NAME];
 fn known_clarity_tables() -> Vec<&'static str> {
     binary_value_store::table_names()
         .iter()
-        .chain([&"clarity_extent_format", &"clarity_extent_index"])
+        .chain(STABLE_TABLES)
         .chain(MARF_SQLITE_TABLES)
         .copied()
         .collect()
@@ -88,9 +98,9 @@ pub fn copy_clarity_side_tables(
     assert_source_tables_classified(&src_conn)?;
     let side_store_format = binary_value_store::detect(&src_conn)
         .map_err(|error| Error::CorruptionError(error.to_string()))?;
-    let extent_mode: bool = src_conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='clarity_extent_format')", [], |row| row.get(0))?;
+    let extent_mode: bool = src_conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='clarity_stable_format')", [], |row| row.get(0))?;
     if extent_mode {
-        copy_extent_generation(src_db_path, dst_db_path)?;
+        copy_stable_generations(&src_conn, src_db_path, dst_db_path)?;
     }
 
     // Walk the squashed trie before opening dst for writes. we need
@@ -131,18 +141,20 @@ pub fn copy_clarity_side_tables(
             };
             clone_schemas_from_source(conn, side_tables)?;
             if extent_mode {
-                clone_schemas_from_source(
-                    conn,
-                    &["clarity_extent_format", "clarity_extent_index"],
-                )?;
-                conn.execute(
-                    "INSERT INTO clarity_extent_index SELECT * FROM src.clarity_extent_index",
-                    [],
-                )?;
-                conn.execute(
-                    "INSERT INTO clarity_extent_format SELECT * FROM src.clarity_extent_format",
-                    [],
-                )?;
+                for table in STABLE_TABLES {
+                    let present: bool = src_conn.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                        [table],
+                        |row| row.get(0),
+                    )?;
+                    if present {
+                        clone_schemas_from_source(conn, &[*table])?;
+                        conn.execute(
+                            &format!("INSERT INTO {table} SELECT * FROM src.{table}"),
+                            [],
+                        )?;
+                    }
+                }
             }
 
             if side_store_format == ValueStorageFormat::BinaryV1 {
@@ -209,13 +221,11 @@ fn open_readonly_clarity_db(path: &str) -> Result<Connection, Error> {
 }
 
 /// Open the registered immutable value generation for offline Clarity trie operations.
-pub fn open_clarity_value_resolver(
-    db_path: &str,
-) -> Result<Option<Arc<dyn ValueExtentResolver>>, Error> {
+pub fn open_clarity_value_resolver(db_path: &str) -> Result<Option<Arc<dyn ValueResolver>>, Error> {
     let db = open_readonly_clarity_db(db_path)?;
-    let store = ValueExtentStore::open_registered(&db, Path::new(db_path), false)
+    let store = ValueBackend::open_registered(&db, Path::new(db_path))
         .map_err(|error| Error::CorruptionError(error.to_string()))?;
-    Ok(store.map(|store| Arc::new(Mutex::new(store)) as Arc<dyn ValueExtentResolver>))
+    Ok(store.map(|store| Arc::new(Mutex::new(store)) as Arc<dyn ValueResolver>))
 }
 
 /// Open the MARF at `db_path` strictly read-only: contract probes must
@@ -226,7 +236,7 @@ fn open_readonly_marf(db_path: &str) -> Result<MARF<StacksBlockId>, Error> {
     let storage = TrieFileStorage::open_readonly(db_path, open_opts)?;
     let mut marf = MARF::from_storage(storage);
     if let Some(resolver) = open_clarity_value_resolver(db_path)? {
-        marf.set_value_extent_resolver(resolver);
+        marf.set_value_resolver(resolver);
     }
     Ok(marf)
 }
@@ -341,23 +351,87 @@ pub struct ClaritySideTableStats {
     pub metadata_table_rows: u64,
 }
 
-/// Preserve immutable value offsets when exporting a squashed trie. Reclamation is separate.
-fn copy_extent_generation(source_db: &str, destination_db: &str) -> Result<(), Error> {
-    let source = File::open(format!("{source_db}.values"))?;
-    let length = source.metadata()?.len();
-    let destination = format!("{destination_db}.values");
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&destination)?;
-    if io::copy(&mut source.take(length), &mut output)? != length {
+/// Copy whole stable generations without changing IDs; value reclamation is separate.
+fn copy_stable_generations(
+    db: &Connection,
+    source_db: &str,
+    destination_db: &str,
+) -> Result<(), Error> {
+    let source_parent = Path::new(source_db)
+        .parent()
+        .ok_or_else(|| Error::CorruptionError("source parent missing".into()))?;
+    let target_parent = Path::new(destination_db)
+        .parent()
+        .ok_or_else(|| Error::CorruptionError("destination parent missing".into()))?;
+    for table in ["clarity_stable_format", "clarity_stable_ptrhash_base"] {
+        let present: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name=?1)",
+            [table],
+            |row| row.get(0),
+        )?;
+        if !present {
+            continue;
+        }
+        let name: String = db.query_row(
+            &format!("SELECT path FROM {table} WHERE singleton=1"),
+            [],
+            |row| row.get(0),
+        )?;
+        let component = Path::new(&name);
+        if component.components().count() != 1
+            || !matches!(component.components().next(), Some(Component::Normal(_)))
+        {
+            return Err(Error::CorruptionError(
+                "stable snapshot path must name a sibling directory".into(),
+            ));
+        }
+        copy_immutable_directory(
+            &source_parent.join(component),
+            &target_parent.join(component),
+        )?;
+    }
+    File::open(target_parent)?.sync_all()?;
+    Ok(())
+}
+
+/// Copy an immutable generation with exclusive destinations and no symlink traversal.
+fn copy_immutable_directory(source: &Path, destination: &Path) -> Result<(), Error> {
+    if !fs::symlink_metadata(source)?.is_dir() {
         return Err(Error::CorruptionError(
-            "source extent generation was truncated".into(),
+            "generation source is not a real directory".into(),
         ));
     }
-    output.sync_all()?;
-    if let Some(parent) = Path::new(&destination).parent() {
-        File::open(parent)?.sync_all()?;
+    fs::create_dir(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let target = destination.join(entry.file_name());
+        if kind.is_dir() {
+            copy_immutable_directory(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            let mut input = File::open(entry.path())?;
+            let before = input.metadata()?;
+            let mut output = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(target)?;
+            let count = io::copy(&mut (&mut input).take(before.len()), &mut output)?;
+            let after = input.metadata()?;
+            if count != before.len()
+                || before.len() != after.len()
+                || before.modified()? != after.modified()?
+            {
+                return Err(Error::CorruptionError(
+                    "generation changed during snapshot copy".into(),
+                ));
+            }
+            output.sync_all()?;
+        } else {
+            return Err(Error::CorruptionError(
+                "generation contains a symlink or special file".into(),
+            ));
+        }
     }
+    File::open(destination)?.sync_all()?;
     Ok(())
 }

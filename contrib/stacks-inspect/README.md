@@ -140,42 +140,32 @@ validate-block <DATABASE_PATH> [--early-exit] [--ignore-costs] [MODE]
       naka-index-range [START] [END] Validate Nakamoto blocks by index (omit args to show count)
 ```
 
-On this optimized branch, `validate-block` first prepares the chainstate at
-`DATABASE_PATH/chainstate`. A legacy Clarity database is converted to the
-extent-backed side store, then to the published V4 trie format. Missing
-direct-addressed MARF hash indexes and the Clarity PtrHash base are built
-before validation opens the chainstate. Each conversion uses a resumable
-sibling directory and only replaces the active Clarity directory after its
-output is verified. Preparation needs substantial free space and an offline,
-writable chainstate copy; a failed step stops validation rather than falling
-back to legacy storage.
+On this optimized branch, `validate-block` prepares every applicable MARF in
+an **offline, writable disposable chainstate** before opening validation handles.
+It uses the [canonical migrator](../stacks-storage-migrate/README.md) directly:
+legacy tries become compact canonical tries, and Clarity values become a
+partitioned stable-ID store. Generic MARF side tables retain their semantics.
+Direct hash indexes and the colocated Clarity PtrHash base are built before
+validation. No intermediate format databases are produced.
 
-### Relocating an already converted Clarity chainstate
+Conversion creates a private sibling destination. The verified replacement and
+its file inventory are durable before cutover begins; old files remain until
+the active replacement verifies. Interrupted file publication rolls forward.
+Incomplete conversion is all-or-nothing and must be inspected/discarded before
+retrying. Already canonical stores receive registration verification. Unknown
+experimental formats fail explicitly. Preparation needs free space for the
+completed destination and scratch and is not part of node-work timing.
 
-New PtrHash generations built beside `chainstate/vm/clarity/marf.sqlite` record
-their sibling directory name, so the database and index can move together.
-Older snapshots may register an absolute path. The PtrHash function files also
-use native serialization and must be rebuilt when moving from another CPU
-architecture. Neither case requires rewriting the migrated tries or values.
+### Moving a converted chainstate
 
-On an **offline, disposable destination snapshot** that retains the complete
-`clarity_extent_index` and has an empty `clarity_extent_delta`, run:
-
-```bash
-cargo build --release -p extent-ptrhash --bin build-extent-ptrhash
-python3 contrib/stacks-inspect/scripts/rebuild-portable-ptrhash.py \
-  --db /path/to/snapshot/chainstate/vm/clarity/marf.sqlite \
-  --builder target/release/build-extent-ptrhash \
-  --expected-keys EXPECTED_HISTORICAL_KEY_COUNT \
-  --audit /path/to/ptrhash-rebuild-audit.json
-```
-
-The helper checks the value generation and full historical key count before
-removing the imported PtrHash registration. It then builds a new native index
-beside the database and verifies the relative registration. Stop all readers
-and writers first. If the delta is nonempty, the helper refuses to run; those
-entries need a merge-aware rebuild. Do not run it on an original source or on
-a chainstate actively used by a node.
+Move the complete chainstate with every registered sibling directory. Stable
+value and PtrHash registrations are relative. PtrHash functions use native
+serialization; verify compatibility with the target-built reader before any
+benchmark. If a native rebuild is required, use
+`scripts/rebuild-stable-ptrhash.py` on a disposable clone with a verified
+committed-membership stream. Preserve the original template, and repeat
+validation after rebuilding. Do not use the retired extent-index rebuild path
+for stable-ID storage.
 
 ### Chain State Commands
 

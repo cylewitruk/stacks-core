@@ -22,7 +22,6 @@
 #![deny(missing_docs)]
 
 mod metadata;
-mod migration;
 mod schema;
 
 use std::collections::HashMap;
@@ -39,16 +38,12 @@ use clarity::vm::types::codec::packed::{
 };
 use clarity::vm::types::{PrincipalData, QualifiedContractIdentifier, TypeSignature, Value};
 use rusqlite::types::ValueRef;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use stacks_common::types::StacksEpochId;
 use stacks_common::util::hash::{hex_bytes, to_hex};
 
 pub use self::metadata::{MetadataBlockId, MetadataRow};
-pub use self::migration::{
-    DEFAULT_CACHE_MIB, DataMigrationStats, IntegrityLevel, MAX_CACHE_MIB, MigrationConfig,
-    MigrationEvent, MigrationMode, MigrationPhase, MigrationReport, ShapeCacheStats, migrate,
-    prepare_extent_destination,
-};
+
 use self::schema::{
     AUDIT_DATA, FORMAT_TABLE, GET_GENERIC, GET_SHAPE_ID, GET_TYPED, INSERT_DATA, INSERT_SHAPE,
     RECORD_VERSION,
@@ -1124,8 +1119,8 @@ fn storage_error(message: impl Into<String>) -> VmExecutionError {
 
 #[cfg(test)]
 mod tests {
-    use clarity::vm::types::TypeSignature;
     use clarity::vm::types::codec::packed::PackedRecordError;
+    use clarity::vm::types::TypeSignature;
     use stacks_common::types::StacksEpochId;
     use stacks_common::util::hash::to_hex;
 

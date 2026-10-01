@@ -17,6 +17,7 @@ path = "src/lib.rs"
 
 [dependencies]
 extent-ptrhash = { path = "../crates/extent-ptrhash" }
+stable-value-format = { path = "../crates/stable-value-format" }
 stacks-profiler.workspace = true
 rapidhash = { workspace = true }
 rand = { workspace = true }

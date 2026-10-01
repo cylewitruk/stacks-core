@@ -8,19 +8,18 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension};
 use stacks_common::codec::StacksMessageCodec;
-use stacks_common::types::chainstate::{TRIEHASH_ENCODED_SIZE, TrieHash};
+use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 
 use super::bits;
-use super::inline_value::{self, InlineValue};
-use super::mapped_node;
+use super::canonical_branch;
+use super::inline_value;
 use super::node::{
-    TrieNode, TrieNode4, TrieNode16, TrieNode48, TrieNode256, TrieNodeID, TrieNodePatch,
-    TrieNodeType, clear_ctrl_bits, logical_node_id,
+    clear_ctrl_bits, logical_node_id, TrieNode, TrieNode16, TrieNode256, TrieNode4, TrieNode48,
+    TrieNodeID, TrieNodePatch, TrieNodeType,
 };
 use super::packed_branch::{self, BranchView};
 use super::trie_sql::SQL_MARF_TYPE_FIRST_SCHEMA_VERSION;
-use super::v41_branch;
-use super::{Error, NodeDecodeScratch, TrieLeaf, ValueExtent, ValueExtentResolver};
+use super::{Error, NodeDecodeScratch, TrieLeaf, ValueResolver};
 
 /// Disk layout selected explicitly by the database format metadata.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -28,16 +27,8 @@ pub enum NodeRecordFormat {
     /// Historical hash followed by the node marker and payload.
     #[default]
     Legacy,
-    /// Marker first; locator leaves omit both logical value and leaf hash.
-    TypeFirstV1,
-    /// Type-first branches and extents with compact, hashless raw leaves.
-    TypeFirstV2,
-    /// Compact raw leaves plus owner-backed inline value records.
-    TypeFirstV3,
-    /// Inline leaves with directly addressed packed branch-pointer columns.
-    TypeFirstV4,
-    /// CompactMetadataly compacted V4 branch columns with an explicit incompatible format tag.
-    TypeFirstV41,
+    /// Canonical A branches with V5 stable-ID values (incompatible format 6).
+    Optimized,
 }
 
 /// Physical record layout and shared source for explicitly requested leaf commitments.
@@ -46,7 +37,7 @@ pub struct RecordContext {
     /// Database-selected physical record layout.
     pub format: NodeRecordFormat,
     /// Immutable value source; unused by ordinary locator lookups.
-    pub value_resolver: Option<Arc<dyn ValueExtentResolver>>,
+    pub value_resolver: Option<Arc<dyn ValueResolver>>,
 }
 
 impl RecordContext {
@@ -75,7 +66,7 @@ impl RecordContext {
                 reader.read_exact(&mut bytes[lengths + 2..count])?;
                 count
             }
-            TrieNodeID::ValueLeaf | TrieNodeID::RawLeaf => {
+            TrieNodeID::RawLeaf | TrieNodeID::StableIdLeaf => {
                 reader.read_exact(&mut bytes[1..2])?;
                 let payload_len = if physical == TrieNodeID::RawLeaf {
                     super::raw_leaf::payload_len(bytes[1])?
@@ -83,7 +74,7 @@ impl RecordContext {
                     if bytes[1] > 32 {
                         return Err(Error::CorruptionError("Invalid leaf path length".into()));
                     }
-                    1 + usize::from(bytes[1]) + ValueExtent::ENCODED_SIZE
+                    1 + usize::from(bytes[1]) + 4
                 };
                 let count = 1 + payload_len;
                 reader.read_exact(&mut bytes[2..count])?;
@@ -106,11 +97,10 @@ impl RecordContext {
             })?;
             leaf.data = Some(if let Some(value) = &leaf.inline {
                 resolver.inline_commitment(value)?
+            } else if let Some(value_id) = leaf.value_id {
+                resolver.commitment_by_id(value_id)?
             } else {
-                let extent = leaf
-                    .extent
-                    .ok_or_else(|| Error::CorruptionError("Hashless leaf has no value".into()))?;
-                resolver.commitment(extent)?
+                return Err(Error::CorruptionError("Hashless leaf has no value".into()));
             });
         }
         Ok(())
@@ -155,11 +145,7 @@ impl NodeRecordFormat {
     pub const fn version(self) -> u8 {
         match self {
             Self::Legacy => 0,
-            Self::TypeFirstV1 => 1,
-            Self::TypeFirstV2 => 2,
-            Self::TypeFirstV3 => 3,
-            Self::TypeFirstV4 => 4,
-            Self::TypeFirstV41 => 41,
+            Self::Optimized => 6,
         }
     }
 
@@ -172,30 +158,18 @@ impl NodeRecordFormat {
                 "Invalid physical node marker".into(),
             ));
         }
-        if physical == TrieNodeID::ValueLeaf && (!self.is_type_first() || marker != physical as u8)
-        {
+        if physical == TrieNodeID::ValueLeaf {
             return Err(Error::CorruptionError(
-                "Unsupported locator-leaf encoding".into(),
+                "Retired physical extent leaf".into(),
             ));
         }
-        if physical == TrieNodeID::RawLeaf
-            && !matches!(
-                self,
-                Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
-            )
+        if matches!(
+            physical,
+            TrieNodeID::RawLeaf | TrieNodeID::InlineLeaf | TrieNodeID::StableIdLeaf
+        ) && self != Self::Optimized
         {
             return Err(Error::CorruptionError(
-                "Unsupported compact raw-leaf encoding".into(),
-            ));
-        }
-        if physical == TrieNodeID::InlineLeaf
-            && !matches!(
-                self,
-                Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
-            )
-        {
-            return Err(Error::CorruptionError(
-                "Unsupported inline-leaf encoding".into(),
+                "Optimized leaf in legacy storage".into(),
             ));
         }
         Ok(physical)
@@ -220,13 +194,12 @@ impl NodeRecordFormat {
             ));
         }
         match version {
-            1 => Ok(Self::TypeFirstV1),
-            2 => Ok(Self::TypeFirstV2),
-            3 => Ok(Self::TypeFirstV3),
-            4 => Ok(Self::TypeFirstV4),
-            41 => Ok(Self::TypeFirstV41),
+            6 => Ok(Self::Optimized),
+            1..=5 | 41 => Err(Error::CorruptionError(
+                "Retired experimental MARF format; use its frozen migration tooling".into(),
+            )),
             _ => Err(Error::CorruptionError(
-                "Unsupported MARF record format version".into(),
+                "Unsupported or incomplete MARF format".into(),
             )),
         }
     }
@@ -246,9 +219,9 @@ impl NodeRecordFormat {
                 |row| row.get(0),
             )
             .optional()?;
-        if previous.is_some_and(|version| version > i64::from(self.version())) {
+        if previous.is_some_and(|version| version != -6 && version != 6) {
             return Err(Error::CorruptionError(
-                "Record format downgrade is unsupported".into(),
+                "Unsupported source format for canonical publication".into(),
             ));
         }
 
@@ -280,7 +253,10 @@ impl NodeRecordFormat {
         let physical = self.physical_id(marker)?;
         let hashless = matches!(
             physical,
-            TrieNodeID::ValueLeaf | TrieNodeID::RawLeaf | TrieNodeID::InlineLeaf
+            TrieNodeID::ValueLeaf
+                | TrieNodeID::RawLeaf
+                | TrieNodeID::InlineLeaf
+                | TrieNodeID::StableIdLeaf
         );
         let (hash, prefix_len) = if hashless {
             (None, 1)
@@ -312,58 +288,35 @@ impl NodeRecordFormat {
     pub fn max_record_len(self, expected_id: u8) -> Result<usize, Error> {
         let id = TrieNodeID::from_u8(clear_ctrl_bits(expected_id))
             .ok_or_else(|| Error::CorruptionError("Unknown expected node type".into()))?;
-        if self.is_type_first()
-            && matches!(
+        if self == Self::Optimized {
+            if matches!(
                 id,
                 TrieNodeID::Node4 | TrieNodeID::Node16 | TrieNodeID::Node48 | TrieNodeID::Node256
-            )
-        {
-            return Ok(1
-                + TRIEHASH_ENCODED_SIZE
-                + if matches!(self, Self::TypeFirstV4 | Self::TypeFirstV41) {
-                    packed_branch::max_payload_len(id)?
-                } else {
-                    mapped_node::max_payload_len(id)?
-                });
-        }
-        if matches!(
-            self,
-            Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
-        ) && clear_ctrl_bits(logical_node_id(expected_id)) == TrieNodeID::Leaf as u8
-        {
-            return Ok(1 + 33 + inline_value::LENGTH_BYTES + inline_value::MAX_BYTES);
+            ) {
+                return Ok(1 + TRIEHASH_ENCODED_SIZE + packed_branch::max_payload_len(id)?);
+            }
+            if clear_ctrl_bits(logical_node_id(expected_id)) == TrieNodeID::Leaf as u8 {
+                return Ok(1 + 33 + inline_value::LENGTH_BYTES + inline_value::MAX_BYTES);
+            }
         }
         bits::get_read_node_max_byte_len(expected_id)
     }
 
     /// Encoded length including the physical envelope.
     pub fn node_len(self, node: &TrieNodeType, compressed: bool) -> usize {
-        if self.is_type_first() {
+        if self == Self::Optimized {
             if let TrieNodeType::Leaf(leaf) = node {
                 if let Some(inline) = &leaf.inline {
                     return 1 + bits::get_path_byte_len(&leaf.path) + inline.encoded_len();
                 }
-                if leaf.extent.is_some() {
-                    return 1 + bits::get_path_byte_len(&leaf.path) + ValueExtent::ENCODED_SIZE;
+                if leaf.value_id.is_some() {
+                    return 1 + bits::get_path_byte_len(&leaf.path) + 4;
                 }
-                if matches!(
-                    self,
-                    Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
-                ) {
-                    return 2
-                        + leaf.path.len()
-                        + leaf.data.as_ref().map_or(40, super::raw_leaf::value_width);
-                }
+                return 2
+                    + leaf.path.len()
+                    + leaf.data.as_ref().map_or(40, super::raw_leaf::value_width);
             }
-        }
-        if self.is_type_first() && !node.is_leaf() {
-            return 1
-                + TRIEHASH_ENCODED_SIZE
-                + match self {
-                    Self::TypeFirstV4 => packed_branch::payload_len(node),
-                    Self::TypeFirstV41 => v41_branch::payload_len(node),
-                    _ => mapped_node::payload_len(node),
-                };
+            return 1 + TRIEHASH_ENCODED_SIZE + canonical_branch::payload_len(node);
         }
         TRIEHASH_ENCODED_SIZE
             + if compressed {
@@ -373,7 +326,7 @@ impl NodeRecordFormat {
             }
     }
 
-    /// Write a node, retaining its logical hash only when the physical layout stores it.
+    /// Write directly from logical pointers and final leaf representations.
     pub fn write_node<W: Write>(
         self,
         writer: &mut W,
@@ -382,61 +335,44 @@ impl NodeRecordFormat {
         compressed: bool,
     ) -> Result<(), Error> {
         if let TrieNodeType::Leaf(leaf) = node {
-            if let Some(inline) = &leaf.inline {
-                if !matches!(
-                    self,
-                    Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
-                ) || leaf.extent.is_some()
-                {
-                    return Err(Error::CorruptionError(
-                        "Invalid inline leaf format or conflicting locator".into(),
-                    ));
+            if leaf.inline.is_some() && leaf.value_id.is_some() {
+                return Err(Error::CorruptionError(
+                    "Retired or conflicting leaf locator".into(),
+                ));
+            }
+            if self == Self::Legacy && (leaf.inline.is_some() || leaf.value_id.is_some()) {
+                return Err(Error::CorruptionError(
+                    "Optimized value in legacy storage".into(),
+                ));
+            }
+            if self == Self::Optimized {
+                if let Some(inline) = &leaf.inline {
+                    writer.write_all(&[TrieNodeID::InlineLeaf as u8])?;
+                    bits::write_path_to_bytes(&leaf.path, writer)?;
+                    return Ok(inline.write_to(writer)?);
                 }
-                writer.write_all(&[TrieNodeID::InlineLeaf as u8])?;
-                bits::write_path_to_bytes(&leaf.path, writer)?;
-                return Ok(inline.write_to(writer)?);
+                if let Some(value_id) = leaf.value_id {
+                    if value_id == 0 {
+                        return Err(Error::CorruptionError("Zero stable value ID".into()));
+                    }
+                    writer.write_all(&[TrieNodeID::StableIdLeaf as u8])?;
+                    bits::write_path_to_bytes(&leaf.path, writer)?;
+                    return Ok(writer.write_all(&value_id.to_le_bytes())?);
+                }
+                writer.write_all(&[TrieNodeID::RawLeaf as u8])?;
+                return super::raw_leaf::write(leaf, writer);
             }
         }
-        if self.is_type_first() {
-            if let TrieNodeType::Leaf(leaf) = node {
-                if let Some(extent) = leaf.extent {
-                    writer.write_all(&[TrieNodeID::ValueLeaf as u8])?;
-                    bits::write_path_to_bytes(&leaf.path, writer)?;
-                    return Ok(extent.write_to(writer)?);
-                }
-                if matches!(
-                    self,
-                    Self::TypeFirstV2 | Self::TypeFirstV3 | Self::TypeFirstV4 | Self::TypeFirstV41
-                ) {
-                    writer.write_all(&[TrieNodeID::RawLeaf as u8])?;
-                    return super::raw_leaf::write(leaf, writer);
-                }
-            }
-            if !node.is_leaf() {
-                writer.write_all(&[node.id()])?;
-                writer.write_all(hash.as_ref())?;
-                return match self {
-                    Self::TypeFirstV4 => packed_branch::write_payload(writer, node),
-                    Self::TypeFirstV41 => v41_branch::write_payload(writer, node),
-                    _ => mapped_node::write_payload(writer, node),
-                };
-            }
-            let mut writer = HashAfterMarker {
-                writer,
-                hash: Some(hash),
-            };
-            if compressed {
-                node.write_bytes_compressed(&mut writer)
-            } else {
-                node.write_bytes(&mut writer)
-            }
-        } else {
+        if self == Self::Optimized {
+            writer.write_all(&[node.id()])?;
             writer.write_all(hash.as_ref())?;
-            if compressed {
-                node.write_bytes_compressed(writer)
-            } else {
-                node.write_bytes(writer)
-            }
+            return canonical_branch::write_payload(writer, node);
+        }
+        writer.write_all(hash.as_ref())?;
+        if compressed {
+            node.write_bytes_compressed(writer)
+        } else {
+            node.write_bytes(writer)
         }
     }
 
@@ -585,8 +521,8 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
-    use crate::chainstate::stacks::index::MARFValue;
     use crate::chainstate::stacks::index::node::TriePtr;
+    use crate::chainstate::stacks::index::MARFValue;
 
     /// Branch payloads and logical encodings survive both envelope layouts and compression modes.
     #[test]
@@ -610,7 +546,7 @@ mod tests {
         ];
         for node in nodes {
             for compressed in [false, true] {
-                for format in [NodeRecordFormat::Legacy, NodeRecordFormat::TypeFirstV1] {
+                for format in [NodeRecordFormat::Legacy, NodeRecordFormat::Optimized] {
                     let mut bytes = Vec::new();
                     let hash = TrieHash([0xab; 32]);
                     format
@@ -632,65 +568,31 @@ mod tests {
         }
     }
 
-    /// Compact leaves carry no commitment or stored hash and retain their logical parent ID.
+    /// Retired extent markers cannot be decoded by either supported format.
     #[test]
-    fn locator_leaf_is_72_bytes_smaller_and_unresolved() {
-        let mut leaf = TrieLeaf::from_value(&[2, 3, 4], MARFValue([0xab; 40]));
-        let extent = ValueExtent {
-            store_id: [5; 16],
-            offset: 8192,
-            length: 300,
-        };
-        leaf.extent = Some(extent);
-        let logical_hash = bits::get_leaf_hash(&leaf);
-        let node = TrieNodeType::Leaf(leaf.clone());
-        let mut legacy = Vec::new();
-        NodeRecordFormat::Legacy
-            .write_node(&mut legacy, &node, logical_hash, false)
-            .unwrap();
-        let mut compact = Vec::new();
-        NodeRecordFormat::TypeFirstV1
-            .write_node(&mut compact, &node, logical_hash, false)
-            .unwrap();
-        assert_eq!(legacy.len() - compact.len(), 72);
-        assert_eq!(
-            compact.len(),
-            1 + 1 + leaf.path.len() + ValueExtent::ENCODED_SIZE
-        );
-        assert_eq!(compact[0], TrieNodeID::ValueLeaf as u8);
-        let record = NodeRecordFormat::TypeFirstV1.parse(&compact).unwrap();
-        assert_eq!(record.hash, None);
-        assert_eq!(record.logical_type(), TrieNodeID::Leaf);
-        let (decoded, consumed) = record.decode_node(TrieNodeID::Leaf as u8).unwrap();
-        assert_eq!(consumed, compact.len());
-        let TrieNodeType::Leaf(mut decoded) = decoded else {
-            panic!("expected leaf")
-        };
-        assert_eq!(decoded.data, None);
-        assert_eq!(decoded.extent, Some(extent));
-        assert!(decoded.value().is_err());
-        decoded.data = leaf.data;
-        assert_eq!(bits::get_leaf_hash(&decoded), logical_hash);
-        assert!(record.decode_node(TrieNodeID::Node4 as u8).is_err());
-        for end in 0..compact.len() {
-            let result = NodeRecordFormat::TypeFirstV1
-                .parse(&compact[..end])
-                .and_then(|r| r.decode_node(TrieNodeID::Leaf as u8));
-            assert!(result.is_err(), "accepted truncated locator at {end}");
+    fn retired_locator_leaf_is_rejected() {
+        for format in [NodeRecordFormat::Legacy, NodeRecordFormat::Optimized] {
+            let mut bytes = vec![0; 128];
+            bytes[if format == NodeRecordFormat::Legacy {
+                32
+            } else {
+                0
+            }] = TrieNodeID::ValueLeaf as u8;
+            assert!(format.parse(&bytes).is_err());
         }
     }
 
-    /// Plain system leaves retain their inline value and hash in type-first databases.
+    /// System leaves retain all forty value bytes and reconstruct their leaf hash.
     #[test]
     fn inline_leaf_preserves_value() {
         let node = TrieNodeType::Leaf(TrieLeaf::from_value(&[], MARFValue([6; 40])));
         let mut bytes = Vec::new();
-        NodeRecordFormat::TypeFirstV1
+        NodeRecordFormat::Optimized
             .write_node(&mut bytes, &node, TrieHash([8; 32]), true)
             .unwrap();
-        let record = NodeRecordFormat::TypeFirstV1.parse(&bytes).unwrap();
-        assert_eq!(record.marker, TrieNodeID::Leaf as u8);
-        assert_eq!(record.hash, Some(TrieHash([8; 32])));
+        let record = NodeRecordFormat::Optimized.parse(&bytes).unwrap();
+        assert_eq!(record.marker, TrieNodeID::RawLeaf as u8);
+        assert_eq!(record.hash, None);
         assert_eq!(record.decode_node(node.id()).unwrap().0, node);
     }
 
@@ -701,7 +603,7 @@ mod tests {
             ptr: TriePtr::new_backptr(TrieNodeID::Node256 as u8, 10, 1000, 9),
             ptr_diff: vec![TriePtr::new(TrieNodeID::Leaf as u8, 20, 2000)],
         };
-        for format in [NodeRecordFormat::Legacy, NodeRecordFormat::TypeFirstV1] {
+        for format in [NodeRecordFormat::Legacy, NodeRecordFormat::Optimized] {
             let mut bytes = Vec::new();
             format
                 .write_patch(&mut bytes, &patch, TrieHash([3; 32]))
@@ -724,15 +626,11 @@ mod tests {
         use crate::chainstate::stacks::index::{BorrowedNodeBytes, ReadTrieItemKind, ReadTrieNode};
         use std::io::{Cursor, Seek};
 
-        let extent = ValueExtent {
-            store_id: [4; 16],
-            offset: 100,
-            length: 150,
-        };
+        let value_id = 7;
         let mut leaf = TrieLeaf::from_value(&[3, 9], MARFValue([1; 40]));
-        leaf.extent = Some(extent);
+        leaf.value_id = Some(value_id);
         let mut bytes = vec![0; 11];
-        NodeRecordFormat::TypeFirstV1
+        NodeRecordFormat::Optimized
             .write_node(
                 &mut bytes,
                 &TrieNodeType::Leaf(leaf),
@@ -741,13 +639,16 @@ mod tests {
             )
             .unwrap();
         let end = bytes.len() as u64;
-        let record = NodeRecordFormat::TypeFirstV1.parse(&bytes[11..]).unwrap();
+        let record = NodeRecordFormat::Optimized.parse(&bytes[11..]).unwrap();
         let borrowed =
             ReadTrieNode::from_stable_bytes(BorrowedNodeBytes::from_record(record), record.hash);
         assert!(borrowed.is_leaf().unwrap());
         assert_eq!(borrowed.hash, None);
         assert_eq!(borrowed.as_leaf().unwrap().unwrap().data, None);
-        assert_eq!(borrowed.as_leaf().unwrap().unwrap().extent, Some(extent));
+        assert_eq!(
+            borrowed.as_leaf().unwrap().unwrap().value_id,
+            Some(value_id)
+        );
 
         let mut input = Cursor::new(bytes);
         input.set_position(11);
@@ -755,7 +656,7 @@ mod tests {
         let read = bits::read_trie_item_at_head_ref_format(
             &mut input,
             TrieNodeID::Leaf as u8,
-            NodeRecordFormat::TypeFirstV1,
+            NodeRecordFormat::Optimized,
             &mut scratch,
         )
         .unwrap();
@@ -763,7 +664,7 @@ mod tests {
         let ReadTrieItemKind::Node(node) = read.kind else {
             panic!("expected node")
         };
-        assert_eq!(node.as_leaf().unwrap().unwrap().extent, Some(extent));
+        assert_eq!(node.as_leaf().unwrap().unwrap().value_id, Some(value_id));
         assert_eq!(input.stream_position().unwrap(), end);
     }
 
@@ -771,7 +672,7 @@ mod tests {
     #[test]
     fn invalid_envelopes_fail_closed() {
         for marker in [0, 15, 0x17, 0x87] {
-            assert!(NodeRecordFormat::TypeFirstV1.parse(&[marker; 100]).is_err());
+            assert!(NodeRecordFormat::Optimized.parse(&[marker; 100]).is_err());
         }
         let mut bytes = [0; 100];
         bytes[32] = TrieNodeID::ValueLeaf as u8;
@@ -780,18 +681,84 @@ mod tests {
 }
 
 #[cfg(test)]
-mod inline_tests {
-    use std::io::{Cursor, Seek};
+mod stable_id_tests {
+    use std::sync::Arc;
 
     use super::*;
     use crate::chainstate::stacks::index::MARFValue;
 
+    /// Resolver for the canonical stable-ID leaf codec.
+    struct Resolver(MARFValue);
+
+    impl ValueResolver for Resolver {
+        fn commitment_by_id(&self, id: u32) -> Result<MARFValue, Error> {
+            if id == 7 {
+                Ok(self.0.clone())
+            } else {
+                Err(Error::CorruptionError("Unknown ID".into()))
+            }
+        }
+    }
+
+    /// A stable-ID leaf has a four-byte ID but the same logical MARF hash.
+    #[test]
+    fn stable_id_leaf_preserves_commitment_and_rejects_old_formats() {
+        let value = MARFValue::from_value("stable-value-seven");
+        let mut leaf = TrieLeaf::from_value(&[2, 3], value.clone());
+        leaf.value_id = Some(7);
+        let hash = bits::get_leaf_hash(&leaf);
+        let node = TrieNodeType::Leaf(leaf);
+        let mut bytes = Vec::new();
+        NodeRecordFormat::Optimized
+            .write_node(&mut bytes, &node, hash, false)
+            .unwrap();
+        assert_eq!(bytes.len(), 1 + 1 + 2 + 4);
+        assert_eq!(bytes[0], TrieNodeID::StableIdLeaf as u8);
+        assert_eq!(&bytes[4..], &7u32.to_le_bytes());
+        assert!(NodeRecordFormat::Legacy.parse(&bytes).is_err());
+        assert!(NodeRecordFormat::Legacy
+            .write_node(&mut Vec::new(), &node, hash, false)
+            .is_err());
+        let record = NodeRecordFormat::Optimized.parse(&bytes).unwrap();
+        let (TrieNodeType::Leaf(decoded), used) =
+            record.decode_node(TrieNodeID::Leaf as u8).unwrap()
+        else {
+            panic!("leaf expected")
+        };
+        assert_eq!(used, bytes.len());
+        assert_eq!(decoded.value_id, Some(7));
+        assert_eq!(decoded.data, None);
+        let context = RecordContext {
+            format: NodeRecordFormat::Optimized,
+            value_resolver: Some(Arc::new(Resolver(value))),
+        };
+        assert_eq!(context.hash(record).unwrap(), hash);
+        for end in 0..bytes.len() {
+            assert!(NodeRecordFormat::Optimized
+                .parse(&bytes[..end])
+                .and_then(|r| r.decode_node(TrieNodeID::Leaf as u8))
+                .is_err());
+        }
+        let mut zero = bytes;
+        zero[4..].fill(0);
+        assert!(NodeRecordFormat::Optimized
+            .parse(&zero)
+            .unwrap()
+            .decode_node(TrieNodeID::Leaf as u8)
+            .is_err());
+    }
+}
+
+#[cfg(test)]
+mod inline_tests {
+    use std::io::{Cursor, Seek};
+
+    use super::*;
+    use crate::chainstate::stacks::index::{InlineValue, MARFValue};
+
     /// Test resolver isolates physical framing from the Clarity adapter.
     struct Resolver;
-    impl ValueExtentResolver for Resolver {
-        fn commitment(&self, _extent: ValueExtent) -> Result<MARFValue, Error> {
-            Err(Error::CorruptionError("unexpected extent".into()))
-        }
+    impl ValueResolver for Resolver {
         fn inline_commitment(&self, value: &InlineValue) -> Result<MARFValue, Error> {
             Ok(MARFValue::from_value(&format!(
                 "{:?}:{:?}",
@@ -804,7 +771,7 @@ mod inline_tests {
     /// Inline records preserve logical hashes, framing and scratch reuse at every path length.
     #[test]
     fn inline_codec_paths_hashes_bounds_and_reuse() {
-        let format = NodeRecordFormat::TypeFirstV3;
+        let format = NodeRecordFormat::Optimized;
         let context = RecordContext {
             format,
             value_resolver: Some(Arc::new(Resolver)),
@@ -834,7 +801,6 @@ mod inline_tests {
                 assert_eq!(used, bytes.len());
                 assert_eq!(decoded.inline, Some(inline));
                 assert_eq!(decoded.data, None);
-                assert_eq!(decoded.extent, None);
                 context.resolve_leaf(&mut decoded).unwrap();
                 assert_eq!(decoded.data, Some(data));
                 let mut cursor = Cursor::new(&bytes);
@@ -844,18 +810,12 @@ mod inline_tests {
                 );
                 assert_eq!(cursor.stream_position().unwrap() as usize, bytes.len());
                 for end in 0..bytes.len() {
-                    assert!(
-                        format
-                            .parse(&bytes[..end])
-                            .and_then(|record| record.decode_node(1))
-                            .is_err()
-                    );
+                    assert!(format
+                        .parse(&bytes[..end])
+                        .and_then(|record| record.decode_node(1))
+                        .is_err());
                 }
-                for old in [
-                    NodeRecordFormat::Legacy,
-                    NodeRecordFormat::TypeFirstV1,
-                    NodeRecordFormat::TypeFirstV2,
-                ] {
+                for old in [NodeRecordFormat::Legacy] {
                     assert!(old.write_node(&mut Vec::new(), &node, hash, true).is_err());
                     if old.is_type_first() {
                         assert!(old.parse(&bytes).is_err());

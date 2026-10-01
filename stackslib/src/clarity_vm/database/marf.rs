@@ -33,11 +33,15 @@ use clarity::vm::database::{
 use clarity::vm::errors::{IncomparableError, RuntimeError, VmExecutionError, VmInternalError};
 use clarity::vm::types::{QualifiedContractIdentifier, TypeSignature};
 use rusqlite::{params, Connection};
+use stable_value_format::ValueId;
 use stacks_common::codec::StacksMessageCodec;
 use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash};
 use stacks_common::types::StacksEpochId;
 
-use super::value_extents::{InlineValueRecord, MappedValueRecord, ValueExtentStore};
+use super::stable_value_store::StableValueStore;
+use super::value_extents::{
+    ExternalValueRef, InlineValueRecord, StableMappedValueRecord, ValueBackend,
+};
 use crate::chainstate::stacks::index::inline_value::{InlineValue, INLINE_BYTES};
 use crate::chainstate::stacks::index::marf::{
     test_override_marf_compression, MARFOpenOpts, MarfConnection, MarfCore, MarfTransaction, MARF,
@@ -72,7 +76,7 @@ pub struct MarfedKV {
     ephemeral_marf: Option<MARF<StacksBlockId>>,
     value_storage_format: ValueStorageFormat,
     /// Extent mappings shared by the parent and its read/write contexts.
-    value_extents: Option<Arc<Mutex<ValueExtentStore>>>,
+    value_extents: Option<Arc<Mutex<ValueBackend>>>,
 }
 
 impl MarfedKV {
@@ -80,7 +84,7 @@ impl MarfedKV {
         path_str: &str,
         unconfirmed: bool,
         marf_opts: Option<MARFOpenOpts>,
-    ) -> Result<(MARF<StacksBlockId>, ValueStorageFormat), VmExecutionError> {
+    ) -> Result<(MARF<StacksBlockId>, ValueStorageFormat, bool), VmExecutionError> {
         let mut path = PathBuf::from(path_str);
 
         std::fs::create_dir_all(&path).map_err(|_| VmInternalError::FailedToCreateDataDirectory)?;
@@ -106,7 +110,11 @@ impl MarfedKV {
 
         if SqliteConnection::check_schema(marf.sqlite_conn()).is_ok() {
             let value_storage_format = binary_value_store::detect(marf.sqlite_conn())?;
-            return Ok((marf, value_storage_format));
+            let pending: bool = marf.sqlite_conn().query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='canonical_clarity_initialization')",
+                [], |row| row.get(0),
+            ).map_err(|error| extent_error(&error.to_string()))?;
+            return Ok((marf, value_storage_format, pending));
         }
 
         let tx = marf
@@ -116,10 +124,12 @@ impl MarfedKV {
         SqliteConnection::initialize_conn(&tx)?;
         let value_storage_format = ValueStorageFormat::BinaryV1;
         binary_value_store::initialize_empty(&tx)?;
+        tx.execute_batch("CREATE TABLE canonical_clarity_initialization(singleton INTEGER PRIMARY KEY CHECK(singleton=1)); INSERT INTO canonical_clarity_initialization VALUES(1)")
+            .map_err(|error| extent_error(&error.to_string()))?;
         tx.commit()
             .map_err(|err| VmInternalError::SqliteError(IncomparableError { err }))?;
 
-        Ok((marf, value_storage_format))
+        Ok((marf, value_storage_format, true))
     }
 
     pub fn open(
@@ -127,20 +137,25 @@ impl MarfedKV {
         miner_tip: Option<&StacksBlockId>,
         marf_opts: Option<MARFOpenOpts>,
     ) -> Result<MarfedKV, VmExecutionError> {
-        let (mut marf, value_storage_format) = MarfedKV::setup_db(path_str, false, marf_opts)?;
+        let (mut marf, value_storage_format, fresh) =
+            MarfedKV::setup_db(path_str, false, marf_opts)?;
         let chain_tip = match miner_tip {
             Some(miner_tip) => miner_tip.clone(),
             None => StacksBlockId::sentinel(),
         };
 
         let value_extents = open_value_extents(&mut marf)?;
-        Ok(MarfedKV {
+        let mut store = MarfedKV {
             marf,
             chain_tip,
             ephemeral_marf: None,
             value_storage_format,
             value_extents,
-        })
+        };
+        if fresh {
+            store.enable_stable_value_ids()?;
+        }
+        Ok(store)
     }
 
     pub fn open_unconfirmed(
@@ -148,20 +163,25 @@ impl MarfedKV {
         miner_tip: Option<&StacksBlockId>,
         marf_opts: Option<MARFOpenOpts>,
     ) -> Result<MarfedKV, VmExecutionError> {
-        let (mut marf, value_storage_format) = MarfedKV::setup_db(path_str, true, marf_opts)?;
+        let (mut marf, value_storage_format, fresh) =
+            MarfedKV::setup_db(path_str, true, marf_opts)?;
         let chain_tip = match miner_tip {
             Some(miner_tip) => miner_tip.clone(),
             None => StacksBlockId::sentinel(),
         };
 
         let value_extents = open_value_extents(&mut marf)?;
-        Ok(MarfedKV {
+        let mut store = MarfedKV {
             marf,
             chain_tip,
             ephemeral_marf: None,
             value_storage_format,
             value_extents,
-        })
+        };
+        if fresh {
+            store.enable_stable_value_ids()?;
+        }
+        Ok(store)
     }
 
     // used by benchmarks
@@ -179,7 +199,7 @@ impl MarfedKV {
                 .expect("FATAL: non-UTF-8 character in filename")
         );
 
-        let (mut marf, value_storage_format) = MarfedKV::setup_db(
+        let (mut marf, value_storage_format, fresh) = MarfedKV::setup_db(
             path.to_str()
                 .expect("Inexplicably non-UTF-8 character in filename"),
             false,
@@ -190,59 +210,88 @@ impl MarfedKV {
         let chain_tip = StacksBlockId::sentinel();
 
         let value_extents = open_value_extents(&mut marf).expect("temporary extent store");
-        MarfedKV {
+        let mut store = MarfedKV {
             marf,
             chain_tip,
             ephemeral_marf: None,
             value_storage_format,
             value_extents,
+        };
+        if fresh {
+            store
+                .enable_stable_value_ids()
+                .expect("initialize temporary canonical values");
         }
+        store
     }
 
-    /// Enable direct value extents on an empty Binary V1 store before executing any blocks.
+    /// Initialize the canonical value store for existing empty-store callers.
     pub fn enable_value_extents(&mut self) -> Result<(), VmExecutionError> {
+        if self.value_extents.is_some() {
+            return Ok(());
+        }
+        self.enable_stable_value_ids()
+    }
+
+    /// Initialize canonical stable values for an empty binary-metadata Clarity MARF.
+    pub fn enable_stable_value_ids(&mut self) -> Result<(), VmExecutionError> {
         if self.value_extents.is_some() {
             return Ok(());
         }
         if !self.value_storage_format.is_binary() {
             return Err(extent_error(
-                "extent activation requires Binary V1 metadata",
+                "Stable IDs require an empty binary-metadata MARF",
             ));
         }
-        let count: i64 = self
-            .marf
-            .sqlite_conn()
-            .query_row("SELECT (SELECT COUNT(*) FROM data_table) + (SELECT COUNT(*) FROM marf_data) + (SELECT COUNT(*) FROM mined_blocks)", [], |row| row.get(0))
-            .map_err(|error| extent_error(&error.to_string()))?;
+        let count: i64 = self.marf.sqlite_conn().query_row(
+            "SELECT (SELECT COUNT(*) FROM data_table) + (SELECT COUNT(*) FROM marf_data) + (SELECT COUNT(*) FROM mined_blocks)",
+            [], |row| row.get(0),
+        ).map_err(|error| extent_error(&error.to_string()))?;
         if count != 0 {
             return Err(extent_error(
-                "existing values require offline extent migration",
+                "Existing MARF requires offline stable-ID conversion",
             ));
         }
-        let store = ValueExtentStore::open(
-            &PathBuf::from(format!("{}.values", self.marf.get_db_path())),
-            true,
-        )?;
+        let db_path = PathBuf::from(self.marf.get_db_path());
+        let identity = rand::random::<[u8; 16]>();
+        let directory_name = format!(
+            "marf.sqlite.stable-{}",
+            stacks_common::util::hash::to_hex(&identity)
+        );
+        let root = db_path
+            .parent()
+            .ok_or_else(|| extent_error("Missing MARF parent"))?
+            .join(&directory_name);
+        let mut store = StableValueStore::create(&root, identity)?;
+        store.sync_unpublished()?;
         let tx = self
             .marf
             .storage_tx()
             .map_err(|error| extent_error(&error.to_string()))?;
-        tx.execute_batch("CREATE TABLE clarity_extent_format (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), version INTEGER NOT NULL CHECK(version = 1), store_id BLOB NOT NULL CHECK(length(store_id) = 16))")
-            .map_err(|error| extent_error(&error.to_string()))?;
-        tx.execute(
-            "INSERT INTO clarity_extent_format VALUES (1, 1, ?1)",
-            params![store.store_id().as_slice()],
+        tx.execute_batch(
+            "CREATE TABLE clarity_stable_format(\
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1),\
+            version INTEGER NOT NULL CHECK(version=1),\
+            path TEXT NOT NULL,\
+            store_id BLOB NOT NULL CHECK(length(store_id)=16))",
         )
         .map_err(|error| extent_error(&error.to_string()))?;
-        ValueExtentStore::initialize_index(&tx)?;
-        NodeRecordFormat::TypeFirstV4
+        tx.execute(
+            "INSERT INTO clarity_stable_format VALUES(1,1,?1,?2)",
+            params![directory_name, store.store_id().as_slice()],
+        )
+        .map_err(|error| extent_error(&error.to_string()))?;
+        StableValueStore::initialize_index(&tx)?;
+        NodeRecordFormat::Optimized
             .publish(&tx)
+            .map_err(|error| extent_error(&error.to_string()))?;
+        tx.execute_batch("DROP TABLE IF EXISTS canonical_clarity_initialization")
             .map_err(|error| extent_error(&error.to_string()))?;
         tx.commit()
             .map_err(|error| extent_error(&error.to_string()))?;
-        self.marf.set_record_format(NodeRecordFormat::TypeFirstV4);
-        let store = Arc::new(Mutex::new(store));
-        self.marf.set_value_extent_resolver(store.clone());
+        self.marf.set_record_format(NodeRecordFormat::Optimized);
+        let store = Arc::new(Mutex::new(ValueBackend::Stable(store)));
+        self.marf.set_value_resolver(store.clone());
         self.value_extents = Some(store);
         Ok(())
     }
@@ -504,7 +553,7 @@ pub struct PersistentWritableMarfStore<'a> {
     /// Immutable physical format selected when the side store opened.
     value_storage_format: ValueStorageFormat,
     /// Extent mappings shared by the parent and its read/write contexts.
-    value_extents: Option<Arc<Mutex<ValueExtentStore>>>,
+    value_extents: Option<Arc<Mutex<ValueBackend>>>,
 }
 
 /// A wrapper around a MARF handle which allows only read access to the MARF's keys off of a given
@@ -517,7 +566,7 @@ pub struct ReadOnlyMarfStore<'a> {
     /// Immutable physical format selected when the side store opened.
     value_storage_format: ValueStorageFormat,
     /// Extent mappings shared by the parent and its read/write contexts.
-    value_extents: Option<Arc<Mutex<ValueExtentStore>>>,
+    value_extents: Option<Arc<Mutex<ValueBackend>>>,
 }
 
 impl ClarityMarfStore for ReadOnlyMarfStore<'_> {}
@@ -991,7 +1040,7 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
                 Error::NotFoundError => Ok(None),
                 _ => Err(e),
             })
-            .map_err(|_| VmInternalError::Expect("ERROR: Unexpected MARF Failure on GET".into()))?
+            .map_err(|error| extent_error(&error.to_string()))?
             .map(|(marf_value, proof)| {
                 let data = if self.value_extents.is_some() {
                     self.get_data_from_path(&proof_path)?
@@ -1551,7 +1600,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         let _phase = stacks_profiler::diagnostic_span!("Writeback: Apply entries");
         stacks_profiler::diagnostics::count("write_entries", entries.len() as u64);
         if let Some(store) = &self.value_extents {
-            let inline_enabled = matches!(self.marf.record_format(), NodeRecordFormat::TypeFirstV3 | NodeRecordFormat::TypeFirstV4);
+            let inline_enabled = matches!(self.marf.record_format(), NodeRecordFormat::Optimized);
             let mut keys = Vec::with_capacity(entries.len());
             let mut leaves = Vec::with_capacity(entries.len());
             let mut values = Vec::new();
@@ -1589,9 +1638,11 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
                     .lock()
                     .map_err(|_| extent_error("extent lock poisoned"))?
                     .append_indexed_encoded(self.marf.sqlite_tx(), &values, Some(&mut encoded))?;
-                for (slot, (value, extent)) in extent_slots.into_iter().zip(located) {
+                for (slot, (value, reference)) in extent_slots.into_iter().zip(located) {
                     let mut leaf = TrieLeaf::from_value(&[], value);
-                    leaf.extent = Some(extent);
+                    match reference {
+                        ExternalValueRef::Stable(id) => leaf.value_id = Some(id.get()),
+                    }
                     leaves[slot] = leaf;
                 }
             }
@@ -1899,21 +1950,31 @@ impl<'a> WritableMarfStore for Box<dyn WritableMarfStore + 'a> {}
 /// Load the explicit completion marker; the presence of a partial extent file never activates it.
 fn open_value_extents(
     marf: &mut MARF<StacksBlockId>,
-) -> Result<Option<Arc<Mutex<ValueExtentStore>>>, VmExecutionError> {
+) -> Result<Option<Arc<Mutex<ValueBackend>>>, VmExecutionError> {
     let Some(store) =
-        ValueExtentStore::open_registered(marf.sqlite_conn(), Path::new(marf.get_db_path()), true)?
+        ValueBackend::open_registered(marf.sqlite_conn(), Path::new(marf.get_db_path()))?
     else {
+        if marf.record_format() == NodeRecordFormat::Optimized {
+            return Err(extent_error(
+                "Canonical Clarity MARF has no registered value generation",
+            ));
+        }
         return Ok(None);
     };
+    if store.is_stable() != matches!(marf.record_format(), NodeRecordFormat::Optimized) {
+        return Err(extent_error(
+            "MARF record format and stable value generation disagree",
+        ));
+    }
     let store = Arc::new(Mutex::new(store));
-    marf.set_value_extent_resolver(store.clone());
+    marf.set_value_resolver(store.clone());
     Ok(Some(store))
 }
 
 /// Immutable value record obtained from an extent or retained inline trie bytes.
 enum LeafValueRecord {
-    /// Record in the separate values file.
-    Extent(MappedValueRecord),
+    /// Record in the canonical stable-ID generation.
+    Stable(StableMappedValueRecord),
     /// Record in a trie leaf.
     Inline(InlineValueRecord),
 }
@@ -1922,7 +1983,7 @@ impl LeafValueRecord {
     /// Reconstruct the exact canonical string only when requested.
     fn canonical(&self) -> Result<String, VmExecutionError> {
         match self {
-            Self::Extent(record) => record.canonical(),
+            Self::Stable(record) => record.canonical(),
             Self::Inline(record) => record.canonical(),
         }
     }
@@ -1934,7 +1995,7 @@ impl LeafValueRecord {
         epoch: &StacksEpochId,
     ) -> Result<StoredValueResult, VmExecutionError> {
         match self {
-            Self::Extent(record) => record.stored(expected, epoch),
+            Self::Stable(record) => record.stored(expected, epoch),
             Self::Inline(record) => record.stored(expected, epoch),
         }
     }
@@ -1942,7 +2003,7 @@ impl LeafValueRecord {
 
 /// Resolve bytes from the historical leaf reached by traversal, never from the current tip.
 fn read_value_extent(
-    store: &Arc<Mutex<ValueExtentStore>>,
+    store: &Arc<Mutex<ValueBackend>>,
     leaf: &TrieLeaf,
 ) -> Result<LeafValueRecord, VmExecutionError> {
     if let Some(inline) = &leaf.inline {
@@ -1950,14 +2011,17 @@ fn read_value_extent(
             inline,
         )));
     }
-    let extent = leaf
-        .extent
-        .ok_or_else(|| extent_error("extent-mode leaf has no value locator"))?;
-    store
-        .lock()
-        .map_err(|_| extent_error("extent lock poisoned"))?
-        .read_at(extent)
-        .map(LeafValueRecord::Extent)
+    if let Some(raw) = leaf.value_id {
+        let id = ValueId::new(raw).map_err(|error| extent_error(&error.to_string()))?;
+        return store
+            .lock()
+            .map_err(|_| extent_error("stable value lock poisoned"))?
+            .read_id(id)
+            .map(LeafValueRecord::Stable);
+    }
+    Err(extent_error(
+        "Canonical Clarity leaf has no stable ID or inline value",
+    ))
 }
 
 /// Preserve concrete storage errors through the Clarity backing-store API.
@@ -1974,9 +2038,239 @@ mod extent_tests {
     use super::*;
     use crate::chainstate::stacks::index::TrieMerkleProof;
 
-    /// Extent values retain fork history, survive reopen and support unchanged inclusion proofs.
+    use clarity::vm::database::TypedValueData;
+    use clarity::vm::types::Value;
+    use std::{env, process};
+
+    /// Typed external value shared by publication and readback assertions.
+    fn publication_fixture_value() -> DataStoreValue {
+        DataStoreValue::Typed(TypedValueData::prepare(Value::buff_from(vec![6; 96]).unwrap()).unwrap())
+    }
+
+    /// Write the same inline/external pair through the public Clarity transaction API.
+    fn write_publication_fixture(transaction: &mut PersistentWritableMarfStore<'_>) {
+        transaction
+            .put_all_data_entries(vec![
+                DataStoreEntry {
+                    key: "external".into(),
+                    value: publication_fixture_value(),
+                },
+                DataStoreEntry {
+                    key: "inline".into(),
+                    value: DataStoreValue::Canonical("new-inline".into()),
+                },
+            ])
+            .unwrap();
+    }
+
+    /// Dedicated process for publication failures through the public MARF transaction path.
     #[test]
-    fn extent_history_rollback_reopen_and_proofs() {
+    #[ignore = "launched by canonical_publication_process_crash_matrix"]
+    fn canonical_publication_crash_child() {
+        let Ok(path) = env::var("CANONICAL_PUBLICATION_TEST_ROOT") else {
+            return;
+        };
+        let point = env::var("STACKSLIB_STABLE_CRASH_POINT").unwrap();
+        let parent = StacksBlockId([61; 32]);
+        let block = StacksBlockId([62; 32]);
+        let mut store = MarfedKV::open(&path, Some(&parent), None).unwrap();
+        let mut transaction = store.begin(&parent, &block);
+        write_publication_fixture(&mut transaction);
+        transaction.seal_trie();
+        if point == "before_value_publication" {
+            process::exit(73);
+        }
+        if point == "after_value_publication" {
+            transaction
+                .value_extents
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .publish_block()
+                .unwrap();
+            process::exit(73);
+        }
+        transaction.commit_to_processed_block(&block).unwrap();
+        if point == "after_marf_commit" {
+            process::exit(73);
+        }
+        panic!("public transaction did not reach crash point {point}");
+    }
+
+    /// Process failures preserve the parent root and publish either all or none of the next block.
+    #[test]
+    fn canonical_publication_process_crash_matrix() {
+        const CHILD: &str =
+            "clarity_vm::database::marf::extent_tests::canonical_publication_crash_child";
+        let mut expected_root = None;
+        for point in [
+            "after_marf_commit",
+            "descriptor_bytes",
+            "descriptor_row",
+            "value_bytes",
+            "value_row",
+            "value_index",
+            "before_value_publication",
+            "after_value_publication",
+        ] {
+            let directory = tempdir().unwrap();
+            let path = directory.path().to_str().unwrap();
+            let parent = StacksBlockId([61; 32]);
+            let block = StacksBlockId([62; 32]);
+            let mut original = MarfedKV::open(path, None, None).unwrap();
+            let mut transaction = original.begin(&StacksBlockId::sentinel(), &parent);
+            transaction
+                .put_all_data(vec![("inline".into(), "old-inline".into())])
+                .unwrap();
+            transaction.seal_trie();
+            transaction.commit_to_processed_block(&parent).unwrap();
+            let parent_root = original.get_marf().get_root_hash_at(&parent).unwrap();
+            drop(original);
+
+            let child = process::Command::new(env::current_exe().unwrap())
+                .args(["--ignored", "--exact", CHILD, "--nocapture"])
+                .env("CANONICAL_PUBLICATION_TEST_ROOT", path)
+                .env("STACKSLIB_STABLE_CRASH_POINT", point)
+                .output()
+                .unwrap();
+            assert_eq!(
+                child.status.code(),
+                Some(73),
+                "{point}: {}",
+                String::from_utf8_lossy(&child.stderr)
+            );
+            let mut reopened = MarfedKV::open(path, Some(&parent), None).unwrap();
+            assert_eq!(
+                reopened.get_marf().get_root_hash_at(&parent).unwrap(),
+                parent_root,
+                "{point}"
+            );
+            let published = reopened
+                .get_marf()
+                .with_conn(|connection| connection.has_block(&block))
+                .unwrap();
+            assert_eq!(published, point == "after_marf_commit", "{point}");
+            {
+                let mut view = reopened.begin_read_only(Some(&parent));
+                assert_eq!(
+                    view.get_data("inline").unwrap().as_deref(),
+                    Some("old-inline"),
+                    "{point}"
+                );
+                assert!(view.get_data("external").unwrap().is_none(), "{point}");
+            }
+            if !published {
+                let mut retry = reopened.begin(&parent, &block);
+                write_publication_fixture(&mut retry);
+                retry.seal_trie();
+                retry.commit_to_processed_block(&block).unwrap();
+            }
+            drop(reopened);
+            let mut verified = MarfedKV::open(path, Some(&block), None).unwrap();
+            let root = verified.get_marf().get_root_hash_at(&block).unwrap();
+            if let Some(expected) = expected_root {
+                assert_eq!(root, expected, "{point}");
+            } else {
+                expected_root = Some(root);
+            }
+            let mut view = verified.begin_read_only(Some(&block));
+            for key in ["inline", "external"] {
+                let (value, bytes) = view.get_data_with_proof(key).unwrap().unwrap();
+                let expected = if key == "inline" {
+                    "new-inline".to_owned()
+                } else {
+                    publication_fixture_value().canonical().to_owned()
+                };
+                assert_eq!(value, expected, "{point}/{key}");
+                let proof =
+                    TrieMerkleProof::<StacksBlockId>::consensus_deserialize(&mut bytes.as_slice())
+                        .unwrap();
+                assert!(
+                    proof.verify(
+                        &TrieHash::from_key(key),
+                        &MARFValue::from_value(&value),
+                        &root,
+                        &HashMap::from([(root, block.clone())])
+                    ),
+                    "{point}/{key}"
+                );
+            }
+        }
+    }
+
+    /// Full-state traversal resolves both inline and stable leaves without SQL values.
+    #[test]
+    fn canonical_leaf_walk_resolves_both_value_kinds() {
+        let directory = tempdir().unwrap();
+        let mut store = MarfedKV::open(directory.path().to_str().unwrap(), None, None).unwrap();
+        let block = StacksBlockId([31; 32]);
+        let entries = vec![
+            ("small".to_string(), "tiny".to_string()),
+            ("large".to_string(), "external payload".repeat(128)),
+        ];
+        let expected: HashMap<_, _> = entries
+            .iter()
+            .map(|(key, value)| (TrieHash::from_key(key), MARFValue::from_value(value)))
+            .collect();
+        let mut transaction = store.begin(&StacksBlockId::sentinel(), &block);
+        transaction.put_all_data(entries).unwrap();
+        transaction.test_commit();
+        let mut seen = HashMap::new();
+        store
+            .get_marf()
+            .with_storage(|connection| {
+                MARF::for_each_leaf(connection, &block, |path, value| {
+                    seen.insert(path, value);
+                    Ok(())
+                })
+            })
+            .unwrap();
+        for (path, value) in expected {
+            assert_eq!(seen.get(&path), Some(&value));
+        }
+    }
+
+    /// A crash after schema creation retries canonical initialization instead of selecting legacy.
+    #[test]
+    fn interrupted_fresh_initialization_reopens_canonical() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().to_str().unwrap();
+        let (marf, _, fresh) = MarfedKV::setup_db(path, false, None).unwrap();
+        assert!(fresh);
+        drop(marf);
+        let mut reopened = MarfedKV::open(path, None, None).unwrap();
+        assert_eq!(
+            reopened.get_marf().record_format(),
+            NodeRecordFormat::Optimized
+        );
+        let pending: bool = reopened.get_marf().sqlite_conn().query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='canonical_clarity_initialization')",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert!(!pending);
+        drop(reopened);
+        assert!(MarfedKV::open(path, None, None).is_ok());
+    }
+
+    /// Canonical trie records cannot fall back to a missing SQL value store registration.
+    #[test]
+    fn missing_canonical_value_registration_fails_closed() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().to_str().unwrap();
+        let mut store = MarfedKV::open(path, None, None).unwrap();
+        store
+            .get_marf()
+            .sqlite_conn()
+            .execute_batch("DROP TABLE clarity_stable_format")
+            .unwrap();
+        drop(store);
+        assert!(MarfedKV::open(path, None, None).is_err());
+    }
+
+    /// Stable-ID leaves preserve fork history, reopen behavior and inclusion proofs.
+    #[test]
+    fn stable_id_history_rollback_reopen_and_proofs() {
         for compression in [false, true] {
             for mmap in [false, true] {
                 extent_history_case(compression, mmap);
@@ -2000,7 +2294,7 @@ mod extent_tests {
         let fork = StacksBlockId([13; 32]);
         let aborted = StacksBlockId([14; 32]);
         let mut marf = MarfedKV::open(path, None, options()).unwrap();
-        marf.enable_value_extents().unwrap();
+        marf.enable_stable_value_ids().unwrap();
         {
             let mut store = marf.begin(&StacksBlockId::sentinel(), &b1);
             store
@@ -2094,9 +2388,14 @@ mod extent_tests {
         );
     }
 
-    /// Typed inline and extent writes preserve roots, proofs and values across every type family.
+    /// Canonical A branches, inline values and stable IDs coexist through public Clarity writes.
     #[test]
-    fn inline_all_types_match_legacy_roots_and_retained_reads() {
+    fn canonical_all_types_match_legacy_roots_and_retained_reads() {
+        typed_value_history();
+    }
+
+    /// Compare logical history and retained value owners with a legacy-backed store.
+    fn typed_value_history() {
         use clarity::vm::database::TypedValueData;
         use clarity::vm::types::{PrincipalData, TupleData, Value};
 
@@ -2137,11 +2436,24 @@ mod extent_tests {
             let options = || Some(MARFOpenOpts::default().with_mmap(mmap));
             let before_dir = tempdir().unwrap();
             let after_dir = tempdir().unwrap();
+            // Seed an actual legacy store so the differential baseline cannot default to canonical.
+            let legacy = MARF::<StacksBlockId>::from_path(
+                before_dir.path().join("marf.sqlite").to_str().unwrap(),
+                MARFOpenOpts::default(),
+            )
+            .unwrap();
+            SqliteConnection::initialize_conn(legacy.sqlite_conn()).unwrap();
+            drop(legacy);
             let mut before =
                 MarfedKV::open(before_dir.path().to_str().unwrap(), None, options()).unwrap();
+            assert_eq!(before.get_marf().record_format(), NodeRecordFormat::Legacy);
             let mut after =
                 MarfedKV::open(after_dir.path().to_str().unwrap(), None, options()).unwrap();
-            after.enable_value_extents().unwrap();
+            after.enable_stable_value_ids().unwrap();
+            assert_eq!(
+                after.get_marf().record_format(),
+                NodeRecordFormat::Optimized
+            );
             let block = StacksBlockId([41; 32]);
             for marf in [&mut before, &mut after] {
                 let mut store = marf.begin(&StacksBlockId::sentinel(), &block);
@@ -2185,7 +2497,7 @@ mod extent_tests {
                     .unwrap()
                     .unwrap();
                 inline_count += usize::from(leaf.inline.is_some());
-                extent_count += usize::from(leaf.extent.is_some());
+                extent_count += usize::from(leaf.value_id.is_some());
                 let expected = TypeSignature::type_of(value).unwrap();
                 let stored = after
                     .begin_read_only(Some(&block))
@@ -2236,9 +2548,11 @@ mod extent_tests {
             let rows: i64 = after
                 .marf
                 .sqlite_conn()
-                .query_row("SELECT COUNT(*) FROM clarity_extent_index", [], |row| {
-                    row.get(0)
-                })
+                .query_row(
+                    "SELECT COUNT(*) FROM clarity_stable_value_index",
+                    [],
+                    |row| row.get(0),
+                )
                 .unwrap();
             assert_eq!(
                 rows as usize, extent_count,

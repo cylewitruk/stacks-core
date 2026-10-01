@@ -5431,12 +5431,7 @@ fn test_node_copy_update_ptrs_preserves_nonzero_back_block() {
 #[test]
 fn test_get_node_max_byte_len() {
     let path = [0u8; 32]; // longest a MARF path can be
-    let mut largest_leaf = TrieLeaf::new(&path, &[0u8; 40]);
-    largest_leaf.extent = Some(crate::chainstate::stacks::index::ValueExtent {
-        store_id: [1; 16],
-        offset: 48,
-        length: 100,
-    });
+    let largest_leaf = TrieLeaf::new(&path, &[0u8; 40]);
     let cases: Vec<(u8, usize, TrieNodeType)> = vec![
         (TrieNodeID::Leaf as u8, 0, TrieNodeType::Leaf(largest_leaf)),
         (
@@ -5484,37 +5479,23 @@ fn test_get_node_max_byte_len() {
     assert!(get_node_max_byte_len(TrieNodeID::Patch as u8, false).is_err());
 }
 
-/// Physical extent locations round-trip without changing leaf commitments or proofs.
+/// Retired physical leaves fail closed; stable IDs retain logical commitment semantics.
 #[test]
-fn leaf_extent_preserves_commitment() {
-    use std::io::Cursor;
-
-    use crate::chainstate::stacks::index::ValueExtent;
+fn stable_leaf_commitment_and_retired_marker_rejection() {
     use crate::chainstate::stacks::index::bits::get_leaf_hash;
     let legacy = TrieLeaf::from_value(&[1, 2, 3], MARFValue::from_value("value"));
     let mut located = legacy.clone();
-    located.extent = Some(ValueExtent {
-        store_id: [7; 16],
-        offset: 4096,
-        length: 200,
-    });
+    located.value_id = Some(7);
     assert_eq!(get_leaf_hash(&legacy), get_leaf_hash(&located));
-    for compressed in [false, true] {
-        let mut bytes = Vec::new();
-        if compressed {
-            located.write_bytes_compressed(&mut bytes).unwrap();
-        } else {
-            located.write_bytes(&mut bytes).unwrap();
-        }
-        assert_eq!(bytes.len(), located.byte_len());
-        let (decoded, consumed) = TrieLeaf::from_bytes(&bytes).unwrap();
-        assert_eq!(consumed, bytes.len());
-        assert_eq!(decoded.extent, located.extent);
-        assert_eq!(get_leaf_hash(&decoded), get_leaf_hash(&legacy));
-    }
+    assert!(TrieLeaf::from_bytes(&[TrieNodeID::ValueLeaf as u8, 0]).is_err());
+    assert!(TrieLeaf::from_bytes(&[TrieNodeID::Leaf as u8 | 0x10, 0]).is_err());
     let mut proof_bytes = Vec::new();
     located.consensus_serialize(&mut proof_bytes).unwrap();
     let decoded = TrieLeaf::consensus_deserialize(&mut proof_bytes.as_slice()).unwrap();
-    assert_eq!(decoded.extent, None);
+    assert_eq!(decoded.value_id, None);
     assert_eq!(get_leaf_hash(&decoded), get_leaf_hash(&legacy));
+    located.data = None;
+    let mut different = located.clone();
+    different.value_id = Some(8);
+    assert_ne!(located, different);
 }

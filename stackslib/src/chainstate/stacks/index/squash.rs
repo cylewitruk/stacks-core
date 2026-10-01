@@ -42,7 +42,7 @@ use crate::chainstate::stacks::index::storage::{
 };
 use crate::chainstate::stacks::index::trie::Trie;
 use crate::chainstate::stacks::index::{
-    trie_sql, Error, MarfDataEntry, MarfTrieId, TrieReadStorage, ValueExtentResolver,
+    trie_sql, Error, MarfDataEntry, MarfTrieId, TrieReadStorage, ValueResolver,
 };
 
 mod node_store;
@@ -695,7 +695,7 @@ impl<T: MarfTrieId> MARF<T> {
         tip: &T,
         squash_height: u32,
         label: &str,
-        value_resolver: Option<Arc<dyn ValueExtentResolver>>,
+        value_resolver: Option<Arc<dyn ValueResolver>>,
     ) -> Result<SquashStats, Error>
     where
         T: Send + Sync,
@@ -747,7 +747,7 @@ impl<T: MarfTrieId> MARF<T> {
         tip: &T,
         squash_height: u32,
         label: &str,
-        value_resolver: Option<Arc<dyn ValueExtentResolver>>,
+        value_resolver: Option<Arc<dyn ValueResolver>>,
     ) -> Result<SquashStats, Error>
     where
         T: Send + Sync,
@@ -772,7 +772,7 @@ impl<T: MarfTrieId> MARF<T> {
         let mut src = MARF::from_storage(src_storage);
         let format = NodeRecordFormat::from_database(src.sqlite_conn())?;
         if let Some(resolver) = &value_resolver {
-            src.set_value_extent_resolver(resolver.clone());
+            src.set_value_resolver(resolver.clone());
         }
 
         // Re-squashing at or below the source boundary would rely on history already pruned.
@@ -802,7 +802,7 @@ impl<T: MarfTrieId> MARF<T> {
             dst.set_record_format(format);
         }
         if let Some(resolver) = value_resolver {
-            dst.set_value_extent_resolver(resolver);
+            dst.set_value_resolver(resolver);
         }
         apply_offline_squash_pragmas(dst.sqlite_conn())?;
 

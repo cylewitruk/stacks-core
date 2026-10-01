@@ -996,13 +996,7 @@ mod integration_tests {
     /// Clarity's type-first roots work for building, sealing and committed-tail recovery.
     #[test]
     fn direct_hash_type_first_sealing_forks_and_reopens() {
-        sealing_forks_and_reopens(NodeRecordFormat::TypeFirstV1);
-    }
-
-    /// Compact raw mapping leaves preserve indexed and unindexed fork roots.
-    #[test]
-    fn direct_hash_compact_raw_sealing_forks_and_reopens() {
-        sealing_forks_and_reopens(NodeRecordFormat::TypeFirstV2);
+        sealing_forks_and_reopens(NodeRecordFormat::Optimized);
     }
 
     /// Named and opaque-path overrides retain exact roots and lookups through descendants/rebuild.
