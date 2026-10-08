@@ -9,14 +9,16 @@ pub fn prepare_for_validation(database_root: &Path) -> stacks_storage_migrate::R
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::fs;
+
     use clarity::vm::database::SqliteConnection;
     use rusqlite::{Connection, params};
     use stacks_common::types::chainstate::StacksBlockId;
     use stackslib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
     use stackslib::chainstate::stacks::index::record::NodeRecordFormat;
     use stackslib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
-    use std::fs;
+
+    use super::*;
 
     /// A populated legacy chainstate retains its root through preparation and a second startup.
     #[test]

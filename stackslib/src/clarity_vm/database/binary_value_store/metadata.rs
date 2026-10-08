@@ -19,7 +19,7 @@ use std::str;
 
 use clarity::vm::errors::VmExecutionError;
 use rusqlite::types::{ToSqlOutput, ValueRef};
-use rusqlite::{Connection, OptionalExtension, ToSql, params};
+use rusqlite::{params, Connection, OptionalExtension, ToSql};
 
 use super::schema::{
     COMMIT_METADATA, DROP_METADATA, GET_METADATA, INSERT_METADATA, METADATA_TABLE,

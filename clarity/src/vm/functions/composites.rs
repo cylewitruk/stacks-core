@@ -1,9 +1,10 @@
 //! Constructors and updates that retain shared children through VM composition.
 
+use std::cmp;
+
 use clarity_types::types::MAX_UTF8_VALUE_SIZE;
 use stacks_common::bounded_format;
 use stacks_common::types::StacksEpochId;
-use std::cmp;
 
 use crate::vm::contexts::{ExecutionState, InvocationContext};
 use crate::vm::costs::cost_functions::ClarityCostFunction;

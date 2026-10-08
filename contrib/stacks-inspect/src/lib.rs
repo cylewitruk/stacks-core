@@ -588,7 +588,7 @@ pub fn command_try_mine(args: &TryMineArgs, conf: Option<&Config>) {
         burnchain.pox_constants.clone(),
         Some(conf.node.get_marf_opts()),
     )
-        .unwrap_or_else(|e| panic!("Failed to open {sort_db_path}: {e}"));
+    .unwrap_or_else(|e| panic!("Failed to open {sort_db_path}: {e}"));
     let (chainstate, _) = StacksChainState::open(
         conf.is_mainnet(),
         conf.burnchain.chain_id,

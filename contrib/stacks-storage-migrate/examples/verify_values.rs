@@ -15,11 +15,10 @@
 
 //! Read every published stable value and verify reconstruction plus dedup membership.
 
-use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::thread;
 use std::time::Instant;
+use std::{env, thread};
 
 use blockstack_lib::chainstate::stacks::index::MARFValue;
 use blockstack_lib::clarity_vm::database::value_extents::{StableMappedValueRecord, ValueBackend};

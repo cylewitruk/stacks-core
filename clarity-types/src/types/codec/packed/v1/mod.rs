@@ -27,7 +27,7 @@ use super::{
     PackedValueError, PackedValueRef, PackedValueVersion, ReconstructionError, ValueDescriptor,
     ValueDescriptorError, ValueDescriptorRef, ValueDescriptorVersion,
 };
-use crate::types::{TypeSignature, Value, BOUND_VALUE_SERIALIZATION_BYTES, MAX_VALUE_SIZE};
+use crate::types::{BOUND_VALUE_SERIALIZATION_BYTES, MAX_VALUE_SIZE, TypeSignature, Value};
 
 mod decode;
 mod view;

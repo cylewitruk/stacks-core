@@ -19,11 +19,10 @@ use std::fs;
 use std::io::{Cursor, Read as _};
 
 use sha2::{Digest as _, Sha256};
-
 use stacks_common::codec::{Error as codec_error, StacksMessageCodec};
 
 use super::*;
-use crate::chainstate::stacks::index::{ClarityMarfTrieId as _, trie_sql};
+use crate::chainstate::stacks::index::{trie_sql, ClarityMarfTrieId as _};
 
 #[test]
 fn trie_node_patch_try_from_nodetype_returns_none_when_no_diffs() {

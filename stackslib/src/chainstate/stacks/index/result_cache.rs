@@ -1,7 +1,7 @@
 //! Bounded lookup results belonging to one mutable trie, with mutation guards.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use rapidhash::RapidHashMap;
 use stacks_common::types::chainstate::TrieHash;
@@ -249,7 +249,11 @@ impl ResultCache {
     /// Number of currently usable entries for correctness checks.
     #[cfg(test)]
     pub fn len(&mut self) -> usize {
-        if self.ready() { self.index.len() } else { 0 }
+        if self.ready() {
+            self.index.len()
+        } else {
+            0
+        }
     }
 }
 

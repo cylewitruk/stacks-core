@@ -294,12 +294,21 @@ fn open_nakamoto_chainstate_dbs(
     let chain_state_path = format!("{chainstate_dir}/{dirname}/chainstate/");
     let sort_db_path = format!("{chainstate_dir}/{dirname}/burnchain/sortition/");
 
-    let sort_db = SortitionDB::open(&sort_db_path, true, pox_constants, Some(inspect_marf_opts()))
-        .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
+    let sort_db = SortitionDB::open(
+        &sort_db_path,
+        true,
+        pox_constants,
+        Some(inspect_marf_opts()),
+    )
+    .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
 
-    let (chain_state, _) =
-        StacksChainState::open(mainnet, chain_id, &chain_state_path, Some(inspect_marf_opts()))
-        .expect("Failed to open stacks chain state");
+    let (chain_state, _) = StacksChainState::open(
+        mainnet,
+        chain_id,
+        &chain_state_path,
+        Some(inspect_marf_opts()),
+    )
+    .expect("Failed to open stacks chain state");
 
     (sort_db, chain_state)
 }
@@ -1335,16 +1344,12 @@ pub fn tip_mine(working_dir: &str, event_log: &str, mine_tip_height: u64, max_tx
         PoxConstants::mainnet_default(),
         Some(inspect_marf_opts()),
     )
-        .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
+    .unwrap_or_else(|_| panic!("Failed to open {sort_db_path}"));
     let chain_id = CHAIN_ID_MAINNET;
-    let mut chain_state = StacksChainState::open(
-        true,
-        chain_id,
-        &chain_state_path,
-        Some(inspect_marf_opts()),
-    )
-        .expect("Failed to open stacks chain state")
-        .0;
+    let mut chain_state =
+        StacksChainState::open(true, chain_id, &chain_state_path, Some(inspect_marf_opts()))
+            .expect("Failed to open stacks chain state")
+            .0;
     let chain_tip = SortitionDB::get_canonical_burn_chain_tip(sort_db.conn())
         .expect("Failed to get sortition chain tip");
 

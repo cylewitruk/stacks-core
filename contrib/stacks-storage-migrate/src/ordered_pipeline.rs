@@ -225,8 +225,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::time::Duration;
+
+    use super::*;
 
     /// Out-of-order workers preserve publication order and both capacity limits.
     #[test]

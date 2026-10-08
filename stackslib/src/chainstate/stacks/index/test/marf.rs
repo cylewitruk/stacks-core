@@ -23,15 +23,15 @@ use stacks_common::util::hash::to_hex;
 
 use super::MarfRootTable;
 use crate::chainstate::stacks::index::marf::{
-    BLOCK_HASH_TO_HEIGHT_MAPPING_KEY, BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF, MARFOpenOpts,
-    MarfConnection, MarfCore, OWN_BLOCK_HEIGHT_KEY,
+    MARFOpenOpts, MarfConnection, MarfCore, BLOCK_HASH_TO_HEIGHT_MAPPING_KEY,
+    BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF, OWN_BLOCK_HEIGHT_KEY,
 };
 use crate::chainstate::stacks::index::node::{TrieNodeID, TrieNodeType, TriePtr};
 use crate::chainstate::stacks::index::storage::{
     TrieFileStorage, TrieHashCalculationMode, TrieStorageTransaction,
 };
 use crate::chainstate::stacks::index::test::{
-    make_node_path, make_node4_path, merkle_test_marf, opts,
+    make_node4_path, make_node_path, merkle_test_marf, opts,
 };
 use crate::chainstate::stacks::index::trie::Trie;
 use crate::chainstate::stacks::index::{
@@ -152,7 +152,10 @@ fn marf_insert_different_leaf_same_block_100() {
 
         let value = TrieLeaf::new(&[], &[99; 40]);
         let leaf = marf.expect_path(&block_header, &path);
-        assert_eq!(leaf.data.as_ref().expect("resolved test leaf").to_vec(), [99; 40].to_vec());
+        assert_eq!(
+            leaf.data.as_ref().expect("resolved test leaf").to_vec(),
+            [99; 40].to_vec()
+        );
         assert_eq!(marf.borrow_storage_backend().get_cur_block(), block_header);
 
         if marf.borrow_storage_backend().hash_calculation_mode == TrieHashCalculationMode::Deferred
@@ -229,7 +232,10 @@ fn marf_insert_different_leaf_different_path_different_block_100() {
             let value = TrieLeaf::new(&[], &[i; 40]);
             let leaf = marf.get_path(&block_header, &path).unwrap().unwrap();
 
-            assert_eq!(leaf.data.as_ref().expect("resolved test leaf").to_vec(), [i; 40].to_vec());
+            assert_eq!(
+                leaf.data.as_ref().expect("resolved test leaf").to_vec(),
+                [i; 40].to_vec()
+            );
             assert_eq!(marf.borrow_storage_backend().get_cur_block(), block_header);
 
             merkle_test_marf(
@@ -302,7 +308,10 @@ fn marf_insert_same_leaf_different_block_100() {
             let value = TrieLeaf::new(&[], &[i; 40]);
             let leaf = marf.expect_path(&next_block_header, &path);
 
-            assert_eq!(leaf.data.as_ref().expect("resolved test leaf").to_vec(), [i; 40].to_vec());
+            assert_eq!(
+                leaf.data.as_ref().expect("resolved test leaf").to_vec(),
+                [i; 40].to_vec()
+            );
             assert_eq!(
                 marf.borrow_storage_backend().get_cur_block(),
                 next_block_header
@@ -377,7 +386,10 @@ fn marf_insert_leaf_sequence_2() {
             let value = TrieLeaf::new(&[], &[i; 40]);
             let leaf = marf.expect_path(&last_block_header, &path);
 
-            assert_eq!(leaf.data.as_ref().expect("resolved test leaf").to_vec(), [i; 40].to_vec());
+            assert_eq!(
+                leaf.data.as_ref().expect("resolved test leaf").to_vec(),
+                [i; 40].to_vec()
+            );
             assert_eq!(
                 marf.borrow_storage_backend().get_cur_block(),
                 next_block_header
@@ -450,7 +462,10 @@ fn marf_insert_leaf_sequence_100() {
             test_debug!("Finding value inserted at {}", &next_block_header);
             let leaf = marf.expect_path(&last_block_header, &path);
 
-            assert_eq!(leaf.data.as_ref().expect("resolved test leaf").to_vec(), [i; 40].to_vec());
+            assert_eq!(
+                leaf.data.as_ref().expect("resolved test leaf").to_vec(),
+                [i; 40].to_vec()
+            );
 
             merkle_test_marf(
                 &mut marf.borrow_storage_backend(),
@@ -658,7 +673,14 @@ where
                 &next_block_header,
                 &TrieHash::from_bytes(&next_path[..]).unwrap(),
             );
-            assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), [i as u8; 40].to_vec());
+            assert_eq!(
+                read_value
+                    .data
+                    .as_ref()
+                    .expect("resolved test leaf")
+                    .to_vec(),
+                [i as u8; 40].to_vec()
+            );
             assert_eq!(
                 marf.borrow_storage_backend().get_cur_block(),
                 next_block_header
@@ -675,7 +697,14 @@ where
                     &next_block_header,
                     &TrieHash::from_bytes(&prev_path[..]).unwrap(),
                 );
-                assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), [j as u8; 40].to_vec());
+                assert_eq!(
+                    read_value
+                        .data
+                        .as_ref()
+                        .expect("resolved test leaf")
+                        .to_vec(),
+                    [j as u8; 40].to_vec()
+                );
 
                 // can only do this test if not in deferred mode, since the trie hashes won't
                 // have been calculated until commit
@@ -1014,7 +1043,14 @@ where
             marf.insert_raw(triepath, value.clone()).unwrap();
             let read_value =
                 marf.expect_path(&block_header, &TrieHash::from_bytes(&path[..]).unwrap());
-            assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), value.data.as_ref().expect("resolved test leaf").to_vec());
+            assert_eq!(
+                read_value
+                    .data
+                    .as_ref()
+                    .expect("resolved test leaf")
+                    .to_vec(),
+                value.data.as_ref().expect("resolved test leaf").to_vec()
+            );
             assert_eq!(marf.borrow_storage_backend().get_cur_block(), block_header);
 
             if check_merkle_proof
@@ -1070,7 +1106,14 @@ where
 
             let read_value =
                 marf.expect_path(&block_header, &TrieHash::from_bytes(&path[..]).unwrap());
-            assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), value.data.as_ref().expect("resolved test leaf").to_vec());
+            assert_eq!(
+                read_value
+                    .data
+                    .as_ref()
+                    .expect("resolved test leaf")
+                    .to_vec(),
+                value.data.as_ref().expect("resolved test leaf").to_vec()
+            );
 
             // can make a merkle proof to each one
             if check_merkle_proof {
@@ -1240,7 +1283,14 @@ fn marf_split_leaf_path() {
     debug!("----------------");
 
     let read_value = marf.expect_path(&block_header_2, &triepath);
-    assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), value.data.as_ref().expect("resolved test leaf").to_vec());
+    assert_eq!(
+        read_value
+            .data
+            .as_ref()
+            .expect("resolved test leaf")
+            .to_vec(),
+        value.data.as_ref().expect("resolved test leaf").to_vec()
+    );
 
     debug!("----------------");
     debug!(
@@ -1250,7 +1300,14 @@ fn marf_split_leaf_path() {
     debug!("----------------");
 
     let read_value_2 = marf.expect_path(&block_header_2, &triepath_2);
-    assert_eq!(read_value_2.data.as_ref().expect("resolved test leaf").to_vec(), value_2.data.as_ref().expect("resolved test leaf").to_vec());
+    assert_eq!(
+        read_value_2
+            .data
+            .as_ref()
+            .expect("resolved test leaf")
+            .to_vec(),
+        value_2.data.as_ref().expect("resolved test leaf").to_vec()
+    );
 }
 
 // insert a random sequence of 65536 keys.  Every 2048 inserts, start a new block.
@@ -1726,7 +1783,14 @@ fn marf_insert_flush_to_different_block() {
         // all I/O happens off the target block
         let read_value = marf.expect_path(&target_block, &TrieHash::from_bytes(&path[..]).unwrap());
 
-        assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), value.data.as_ref().expect("resolved test leaf").to_vec());
+        assert_eq!(
+            read_value
+                .data
+                .as_ref()
+                .expect("resolved test leaf")
+                .to_vec(),
+            value.data.as_ref().expect("resolved test leaf").to_vec()
+        );
         assert_eq!(marf.borrow_storage_backend().get_cur_block(), target_block);
 
         // can prove off of the target block (but only if we're not in deferred-hash mode,
@@ -1830,7 +1894,14 @@ fn marf_insert_flush_to_different_block() {
         let read_value =
             marf.expect_path(&read_from_block, &TrieHash::from_bytes(&path[..]).unwrap());
 
-        assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), value.data.as_ref().expect("resolved test leaf").to_vec());
+        assert_eq!(
+            read_value
+                .data
+                .as_ref()
+                .expect("resolved test leaf")
+                .to_vec(),
+            value.data.as_ref().expect("resolved test leaf").to_vec()
+        );
 
         if i == 2046 {
             //    std::env::set_var("BLOCKSTACK_TRACE", "1");

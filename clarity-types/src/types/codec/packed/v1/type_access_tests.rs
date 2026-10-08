@@ -1,11 +1,12 @@
 //! Differential coverage for admitted accessors and their owned equivalents.
+use stacks_common::types::StacksEpochId;
+
 use super::super::{PackedValue, PackedValueVersion, SharedPackedValue};
 use crate::types::signatures::CallableSubtype;
 use crate::types::{
     CallableData, PrincipalData, QualifiedContractIdentifier, TraitIdentifier, TupleData,
     TupleTypeSignature, TypeSignature, Value,
 };
-use stacks_common::types::StacksEpochId;
 
 /// Encode and strictly admit a fixture before exercising cheap accessors.
 fn packed(value: &Value, expected: &TypeSignature) -> SharedPackedValue {

@@ -349,10 +349,12 @@ fn storage_error(message: &str) -> VmExecutionError {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Seek, SeekFrom, Write};
+
+    use clarity::vm::database::TypedValueData;
+
     use super::*;
     use crate::chainstate::stacks::index::FileMapping;
-    use clarity::vm::database::TypedValueData;
-    use std::io::{Seek, SeekFrom, Write};
 
     /// Inline generic reads retain exact canonical spelling and the original commitment.
     #[test]

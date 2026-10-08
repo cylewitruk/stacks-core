@@ -3,7 +3,6 @@
 use stacks_common::consts::CHAIN_ID_TESTNET;
 use stacks_common::types::StacksEpochId;
 
-use crate::vm::ast;
 use crate::vm::callables::{DefineType, DefinedFunction};
 use crate::vm::contexts::{ExecutionState, InvocationContext};
 use crate::vm::costs::{ExecutionCost, LimitedCostTracker};
@@ -12,7 +11,7 @@ use crate::vm::types::codec::packed::{PackedValue, PackedValueVersion, SharedPac
 use crate::vm::types::{QualifiedContractIdentifier, TupleData, TypeSignature};
 use crate::vm::{
     CallStack, ClarityName, ClarityVersion, ContractContext, GlobalContext, LocalContext, Value,
-    ValueCow, eval,
+    ValueCow, ast, eval,
 };
 
 /// Encode one owned fixture while retaining its declared schema.

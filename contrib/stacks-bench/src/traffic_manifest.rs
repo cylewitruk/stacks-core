@@ -1,10 +1,9 @@
 //! Explicit, signed traffic with preparation and normal state continuity.
 
 use std::collections::BTreeMap;
-use std::env;
-use std::fs;
 use std::path::Path;
 use std::time::Instant;
+use std::{env, fs};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use blockstack_lib::chainstate::burn::db::sortdb::SortitionDB;

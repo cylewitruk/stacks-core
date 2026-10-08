@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::chainstate::stacks::index::node::{
-    TrieNode, TrieNode4, TrieNode16, TrieNode48, TrieNode256, TrieNodeID, TrieNodePatch,
+    TrieNode, TrieNode16, TrieNode256, TrieNode4, TrieNode48, TrieNodeID, TrieNodePatch,
     TrieNodeType, TriePtr,
 };
 use crate::chainstate::stacks::index::scratch::MarfReadState;

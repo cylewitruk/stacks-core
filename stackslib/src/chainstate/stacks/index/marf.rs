@@ -13,8 +13,6 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-use super::record::NodeRecordFormat;
-use super::ValueResolver;
 use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(any(test, feature = "testing"))]
@@ -27,8 +25,10 @@ use stacks_common::util::hash::Sha512Trunc256Sum;
 #[cfg(any(test, feature = "testing"))]
 use stacks_common::util::tests::TestFlag;
 
+use super::record::NodeRecordFormat;
 pub use super::squash::SquashStats;
 use super::storage::ReopenedTrieStorageConnection;
+use super::ValueResolver;
 use crate::chainstate::stacks::index::node::{
     clear_backptr, is_backptr, node_copy_update_ptrs, set_backptr, CursorError, TrieCowPtr,
     TrieCursor, TrieNode256, TrieNodeID, TrieNodeType, TriePtr,

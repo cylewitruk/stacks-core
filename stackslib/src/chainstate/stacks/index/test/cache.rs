@@ -1,16 +1,16 @@
 //! Correctness checks for the small committed-root cache.
 
+use std::sync::{Arc, Barrier};
+use std::thread;
+
 use stacks_common::codec::StacksMessageCodec;
-use stacks_common::types::chainstate::StacksBlockId;
-use stacks_common::types::chainstate::TrieHash;
+use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 
 use crate::chainstate::stacks::index::cache::{ArrayLru, SharedLru, SmallLru};
-use crate::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection, MarfCore};
+use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MarfCore, MARF};
 use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::storage::TrieFileStorage;
 use crate::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue, TrieLeaf, TrieReadStorage};
-use std::sync::{Arc, Barrier};
-use std::thread;
 
 /// Point writes, raw writes and batches evict changed values and cached absence only.
 #[test]

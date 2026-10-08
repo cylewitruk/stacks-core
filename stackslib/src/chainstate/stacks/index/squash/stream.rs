@@ -25,9 +25,10 @@ use crate::chainstate::stacks::index::bits::{
     get_leaf_hash, is_inline_child_ptr, reserved_root_size, resolve_inline_child_offsets,
 };
 use crate::chainstate::stacks::index::node::{is_backptr, TrieNodeID, TrieNodeType};
-use crate::chainstate::stacks::index::packed_branch;
 use crate::chainstate::stacks::index::record::NodeRecordFormat;
-use crate::chainstate::stacks::index::{blob_layout, BlockMap, Error, MarfTrieId, TrieHasher};
+use crate::chainstate::stacks::index::{
+    blob_layout, packed_branch, BlockMap, Error, MarfTrieId, TrieHasher,
+};
 
 /// Recompute content hashes in reverse NodeStore order.
 ///

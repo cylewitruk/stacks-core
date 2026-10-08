@@ -14,9 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[cfg(feature = "marf-read-bench-counters")]
-use crate::chainstate::stacks::index::read_bench;
-
 use std::collections::{HashMap, VecDeque};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::ops::Deref;
@@ -34,7 +31,6 @@ use crate::chainstate::stacks::index::bits::{
 };
 use crate::chainstate::stacks::index::blob_layout::{self, BlobHeader};
 use crate::chainstate::stacks::index::cache::*;
-use crate::chainstate::stacks::index::canonical_branch;
 use crate::chainstate::stacks::index::direct_hash_index::{DirectHashGuard, DirectHashIndex};
 use crate::chainstate::stacks::index::file::{MappedTrieItem, TrieFile, TrieFileNodeHashReader};
 use crate::chainstate::stacks::index::marf::MARFOpenOpts;
@@ -42,6 +38,8 @@ use crate::chainstate::stacks::index::node::{
     is_backptr, set_backptr, TrieCowPtr, TrieNode, TrieNodeID, TrieNodePatch, TrieNodeRef,
     TrieNodeTransientMeta, TrieNodeType, TriePtr,
 };
+#[cfg(feature = "marf-read-bench-counters")]
+use crate::chainstate::stacks::index::read_bench;
 use crate::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
 use crate::chainstate::stacks::index::result_cache::{
     ResultCache, ResultCacheControl, ResultCacheGuard, DEFAULT_RESULT_CACHE_CAPACITY,
@@ -49,9 +47,9 @@ use crate::chainstate::stacks::index::result_cache::{
 use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::trie::Trie;
 use crate::chainstate::stacks::index::{
-    bits, trie_sql, BlockMap, ClarityMarfTrieId, Error, MARFValue, MarfDataEntry, MarfTrieId,
-    NodePatching, NodePath, PatchChainEntry, ReadTrieItem, ReadTrieItemKind, ReadTrieNode,
-    TrieHasher, TrieLeaf, TrieReadStorage, ValueResolver, MAX_PATCH_DEPTH,
+    bits, canonical_branch, trie_sql, BlockMap, ClarityMarfTrieId, Error, MARFValue, MarfDataEntry,
+    MarfTrieId, NodePatching, NodePath, PatchChainEntry, ReadTrieItem, ReadTrieItemKind,
+    ReadTrieNode, TrieHasher, TrieLeaf, TrieReadStorage, ValueResolver, MAX_PATCH_DEPTH,
 };
 use crate::util_lib::db::{
     sql_pragma, sqlite_open, tx_begin_immediate, Error as db_error, SQLITE_MARF_PAGE_SIZE,
@@ -4049,8 +4047,9 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
 
 #[cfg(test)]
 pub mod testing {
-    use super::*;
     use stacks_common::types::chainstate::StacksBlockId;
+
+    use super::*;
 
     /// Temporary reinstatement retains cache entries, admission and owner invalidation on error.
     #[test]

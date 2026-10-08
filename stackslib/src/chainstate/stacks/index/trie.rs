@@ -14,10 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-/// This module defines the methods for reading and inserting into a Trie
-#[cfg(feature = "marf-read-bench-counters")]
-use crate::chainstate::stacks::index::read_bench;
-
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -31,6 +27,9 @@ use crate::chainstate::stacks::index::node::{
     clear_backptr, is_backptr, CursorNodeHandle, TrieCursor, TrieNode, TrieNode16, TrieNode256,
     TrieNode4, TrieNode48, TrieNodeID, TrieNodeType, TriePtr,
 };
+/// This module defines the methods for reading and inserting into a Trie
+#[cfg(feature = "marf-read-bench-counters")]
+use crate::chainstate::stacks::index::read_bench;
 use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::storage::{TrieHashCalculationMode, TrieStorageConnection};
 use crate::chainstate::stacks::index::{

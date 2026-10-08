@@ -18,7 +18,7 @@
 use std::time::Instant;
 
 use rusqlite::types::Value;
-use rusqlite::{Connection, params, params_from_iter};
+use rusqlite::{params, params_from_iter, Connection};
 
 use crate::chainstate::stacks::index::Error;
 use crate::util_lib::db::{sqlite_readonly_uri, sqlite_schema_objects, Error as db_error};
@@ -483,7 +483,7 @@ pub trait DbSnapshotSpec {
 mod tests {
     use rusqlite::Connection;
 
-    use super::{NoBind, TableCopySpec, TableCopySpecs, copied_rows, execute_copy_specs};
+    use super::{copied_rows, execute_copy_specs, NoBind, TableCopySpec, TableCopySpecs};
 
     /// The per-DB well-formedness guards detect a table listed twice by
     /// comparing `table_names()` length against its deduplicated set, so

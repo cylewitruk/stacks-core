@@ -1,6 +1,9 @@
 //! Build the experimental direct-addressed hash snapshot on an offline database.
+use std::env;
+use std::path::Path;
+use std::time::Instant;
+
 use blockstack_lib::chainstate::stacks::index::direct_hash_index;
-use std::{env, path::Path, time::Instant};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = env::args()
         .nth(1)

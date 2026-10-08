@@ -16,9 +16,9 @@
 
 use stacks_common::types::chainstate::TrieHash;
 
-use crate::chainstate::stacks::index::MARFValue;
 use crate::chainstate::stacks::index::marf::MARFOpenOpts;
 use crate::chainstate::stacks::index::test::{make_test_insert_data, opts};
+use crate::chainstate::stacks::index::MARFValue;
 
 mod utils {
     use std::fs;
@@ -26,7 +26,7 @@ mod utils {
 
     use stacks_common::types::chainstate::{BlockHeaderHash, TrieHash};
 
-    use crate::chainstate::stacks::index::marf::{MARF, MARFOpenOpts};
+    use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MARF};
     use crate::chainstate::stacks::index::storage::{TrieFileStorage, TrieHashCalculationMode};
     use crate::chainstate::stacks::index::test::marf::MarfTestExt;
     use crate::chainstate::stacks::index::test::verify_marf_merkle_proof;

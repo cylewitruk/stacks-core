@@ -24,12 +24,12 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use rusqlite::types::{Value, ValueRef};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 
 use super::common::clone_schemas_from_source;
-use crate::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
+use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MARF};
 use crate::chainstate::stacks::index::storage::{TrieFileStorage, TrieHashCalculationMode};
-use crate::chainstate::stacks::index::{Error, MARFValue, MarfTrieId, trie_sql};
+use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue, MarfTrieId};
 use crate::util_lib::db::quote_sql_identifier;
 
 /// Physical payload columns copied with each content-addressed row.

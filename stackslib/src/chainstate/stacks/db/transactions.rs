@@ -18,12 +18,12 @@ use clarity::vm::analysis::types::ContractAnalysis;
 use clarity::vm::clarity::TransactionConnection;
 // Re-exported to keep the old import paths working.
 pub use clarity::vm::clarity::{
-    ClarityAnalysisTxError, ClarityRuntimeTxError, IncludedRuntimeTxError, RejectedRuntimeTxError,
-    handle_clarity_analysis_error, handle_clarity_runtime_error,
+    handle_clarity_analysis_error, handle_clarity_runtime_error, ClarityAnalysisTxError,
+    ClarityRuntimeTxError, IncludedRuntimeTxError, RejectedRuntimeTxError,
 };
 use clarity::vm::contexts::{AssetMap, ExecutionState, InvocationContext};
 use clarity::vm::costs::cost_functions::ClarityCostFunction;
-use clarity::vm::costs::{CostTracker, ExecutionCost, runtime_cost};
+use clarity::vm::costs::{runtime_cost, CostTracker, ExecutionCost};
 use clarity::vm::errors::VmExecutionError;
 use clarity::vm::representations::ClarityName;
 use clarity::vm::resource_limiter::ResourceBudget;
@@ -1702,7 +1702,7 @@ impl StacksChainState {
 pub mod test {
     use clarity::util::secp256k1::Secp256k1PrivateKey;
     use clarity::vm::representations::{ClarityName, ContractName};
-    use clarity::vm::test_util::{TEST_BURN_STATE_DB, UnitTestBurnStateDB};
+    use clarity::vm::test_util::{UnitTestBurnStateDB, TEST_BURN_STATE_DB};
     use clarity::vm::tests::TEST_HEADER_DB;
     use clarity::vm::types::{ResponseData, StandardPrincipalData};
     use rand::Rng;
@@ -6173,12 +6173,9 @@ pub mod test {
         if let Err(Error::InvalidStacksTransaction(msg, ..)) =
             StacksChainState::process_transaction(&mut conn, &smart_contract_v2, false, None)
         {
-            assert!(
-                msg.find(
-                    "asks for Clarity 2, but current epoch 2.05 only supports up to Clarity 1"
-                )
-                .is_some()
-            );
+            assert!(msg
+                .find("asks for Clarity 2, but current epoch 2.05 only supports up to Clarity 1")
+                .is_some());
         } else {
             panic!(
                 "FATAL: did not recieve the appropriate error in processing a clarity2 tx in pre-2.1 epoch"
@@ -7232,11 +7229,9 @@ pub mod test {
 
         assert!(tx_receipt.vm_error.is_some());
         let err_str = tx_receipt.vm_error.unwrap();
-        assert!(
-            err_str
-                .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
-                .is_some()
-        );
+        assert!(err_str
+            .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
+            .is_some());
 
         let (fee, tx_receipt) = validate_transactions_static_epoch_and_process_transaction(
             &mut conn,
@@ -7257,11 +7252,9 @@ pub mod test {
 
         assert!(tx_receipt.vm_error.is_some());
         let err_str = tx_receipt.vm_error.unwrap();
-        assert!(
-            err_str
-                .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
-                .is_some()
-        );
+        assert!(err_str
+            .find("TypeValueError(OptionalType(CallableType(Trait(TraitIdentifier ")
+            .is_some());
 
         conn.commit_block();
 
@@ -7522,12 +7515,10 @@ pub mod test {
                 addr.clone(),
                 "call-foo",
                 "call-do-it",
-                vec![
-                    Value::some(Value::Principal(PrincipalData::Contract(
-                        QualifiedContractIdentifier::parse(&format!("{}.foo-impl", &addr)).unwrap(),
-                    )))
-                    .unwrap(),
-                ],
+                vec![Value::some(Value::Principal(PrincipalData::Contract(
+                    QualifiedContractIdentifier::parse(&format!("{}.foo-impl", &addr)).unwrap(),
+                )))
+                .unwrap()],
             )
             .unwrap(),
         );

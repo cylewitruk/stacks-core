@@ -1,5 +1,6 @@
 //! Compare sampled sidecar ancestry answers with authoritative reserved trie mappings.
-use std::{env, path::Path};
+use std::env;
+use std::path::Path;
 
 use blockstack_lib::chainstate::stacks::index::direct_hash_index::DirectHashIndex;
 use blockstack_lib::chainstate::stacks::index::marf::{

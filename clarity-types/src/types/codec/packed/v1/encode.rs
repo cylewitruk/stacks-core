@@ -16,9 +16,9 @@
 //! Version 1 sizing and canonical packed encoding.
 
 use super::{
-    descriptor, directory, layout, primitive, validate_packed_body_len, PackedCodecInvariant,
-    PackedValue, PackedValueError, PackedValueVersion, ValueDescriptor, PACKED_VALUE_HEADER_LEN,
-    PACKED_VALUE_VERSION,
+    PACKED_VALUE_HEADER_LEN, PACKED_VALUE_VERSION, PackedCodecInvariant, PackedValue,
+    PackedValueError, PackedValueVersion, ValueDescriptor, descriptor, directory, layout,
+    primitive, validate_packed_body_len,
 };
 use crate::types::serialization::SerializationError;
 use crate::types::{
@@ -426,7 +426,7 @@ fn deserialize_canonical_consensus(consensus: &[u8]) -> Result<Value, PackedValu
 mod tests {
     use rstest::rstest;
 
-    use super::{body_size, BodySize};
+    use super::{BodySize, body_size};
     use crate::representations::ClarityName;
     use crate::types::codec::packed::{PackedValue, PackedValueRef, PackedValueVersion};
     use crate::types::{TupleData, TypeSignature, Value};

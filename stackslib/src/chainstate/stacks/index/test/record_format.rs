@@ -1,17 +1,15 @@
 //! Persistent type-first format coverage across storage backends and mutable reopens.
 
 use std::path::Path;
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use tempfile::tempdir;
 
 use super::*;
-use crate::chainstate::stacks::index::direct_hash_index;
 use crate::chainstate::stacks::index::inline_value::InlineValue;
 use crate::chainstate::stacks::index::record::NodeRecordFormat;
-use crate::chainstate::stacks::index::{ClarityMarfTrieId, ValueResolver};
+use crate::chainstate::stacks::index::{direct_hash_index, ClarityMarfTrieId, ValueResolver};
 
 /// Count requests to reconstruct the commitment of a known stable-ID value.
 struct CountingResolver {

@@ -22,13 +22,13 @@ use std::path::{Path, PathBuf};
 use std::{error, fmt, fs, io};
 
 use clarity::vm::types::QualifiedContractIdentifier;
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use rusqlite::types::ToSql;
 use rusqlite::{params, Connection, Error as sqlite_error, Params, Row};
 use serde_json::Error as serde_error;
-use stacks_common::types::Address;
 use stacks_common::types::chainstate::{SortitionId, StacksAddress, StacksBlockId, TrieHash};
 use stacks_common::types::sqlite::NO_PARAMS;
+use stacks_common::types::Address;
 // Shared SQLite connection policy and MARF constants live in stacks-common.
 pub use stacks_common::util::db::{
     sqlite_open, table_exists, tx_begin_immediate as tx_begin_immediate_sqlite, tx_busy_handler,
@@ -37,7 +37,7 @@ pub use stacks_common::util::db::{
 use stacks_common::util::hash::to_hex;
 use stacks_common::util::secp256k1::{Secp256k1PrivateKey, Secp256k1PublicKey};
 
-use crate::chainstate::stacks::index::marf::{MARF, MarfConnection, MarfCore, MarfTransaction};
+use crate::chainstate::stacks::index::marf::{MarfConnection, MarfCore, MarfTransaction, MARF};
 use crate::chainstate::stacks::index::{Error as MARFError, MARFValue, MarfTrieId};
 
 pub type DBConn = rusqlite::Connection;
@@ -997,7 +997,6 @@ mod tests {
     use std::{assert_matches, fs};
 
     use rstest::rstest;
-
     use rusqlite::OpenFlags;
 
     use super::*;

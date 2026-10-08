@@ -953,13 +953,10 @@ pub fn special_delete_entry_v205(
         )))?;
 
     let epoch = *exec_state.epoch();
-    let result = exec_state.global_context.database.delete_entry_ref(
-        contract,
-        map_name,
-        &key,
-        data_types,
-        &epoch,
-    );
+    let result = exec_state
+        .global_context
+        .database
+        .delete_entry_ref(contract, map_name, &key, data_types, &epoch);
 
     let result_size = match &result {
         Ok(data) => data.serialized_byte_len,

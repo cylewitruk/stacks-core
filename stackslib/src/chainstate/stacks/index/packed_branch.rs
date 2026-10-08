@@ -11,15 +11,12 @@
 
 use std::io::Write;
 
-use super::bits;
-use super::canonical_branch;
-use super::mapped_node;
 use super::node::{
     clear_ctrl_bits, is_backptr, TrieNode, TrieNode16, TrieNode256, TrieNode4, TrieNode48,
     TrieNodeID, TrieNodeType, TriePtr,
 };
 use super::record::NodeRecordFormat;
-use super::{Error, NodePath};
+use super::{bits, canonical_branch, mapped_node, Error, NodePath};
 
 /// Checked metadata and mmap-backed pointer columns for one branch.
 #[derive(Clone, Copy, Debug)]
@@ -636,11 +633,13 @@ impl<'a> BranchView<'a> {
 
 #[cfg(test)]
 mod record_tests {
+    use std::io::{Cursor, Seek};
+
+    use stacks_common::types::chainstate::TrieHash;
+
     use super::*;
     use crate::chainstate::stacks::index::scratch::MarfReadState;
     use crate::chainstate::stacks::index::{BorrowedNodeBytes, ReadTrieNode};
-    use stacks_common::types::chainstate::TrieHash;
-    use std::io::{Cursor, Seek};
 
     /// The versioned record dispatch keeps mapped reads lazy and buffered reads exact.
     #[test]

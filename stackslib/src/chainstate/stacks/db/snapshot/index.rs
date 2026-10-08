@@ -19,16 +19,16 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use rusqlite::types::Value;
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use stacks_common::types::chainstate::StacksBlockId;
 
 use super::common::{
-    DbSnapshotSpec, TableCopySpec, TableCopySpecs, classify_hint, clone_schemas_from_source,
-    copied_rows, marf_err, with_offline_write_session,
+    classify_hint, clone_schemas_from_source, copied_rows, marf_err, with_offline_write_session,
+    DbSnapshotSpec, TableCopySpec, TableCopySpecs,
 };
 use super::fork_storage::{collect_canonical_leaf_hashes, copy_canonical_fork_storage};
 use crate::burnchains::PoxConstants;
-use crate::chainstate::stacks::index::{Error, MARF_SQLITE_TABLES, MARFValue, trie_sql};
+use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue, MARF_SQLITE_TABLES};
 use crate::util_lib::db::{sqlite_open, u64_to_sql};
 
 /// The index snapshot's `?N` bind: the `signer_stats` reward-cycle bound.

@@ -20,7 +20,6 @@ mod continuous;
 #[path = "growth.rs"]
 mod growth;
 
-use blockstack_lib::chainstate::stacks::address::StacksAddressExtensions;
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
@@ -29,6 +28,7 @@ use blockstack_lib::burnchains::Txid;
 use blockstack_lib::chainstate::burn::db::sortdb::{SortitionDB, get_ancestor_sort_id};
 use blockstack_lib::chainstate::nakamoto::NakamotoChainState;
 use blockstack_lib::chainstate::nakamoto::miner::{MinerTenureInfoCause, NakamotoBlockBuilder};
+use blockstack_lib::chainstate::stacks::address::StacksAddressExtensions;
 use blockstack_lib::chainstate::stacks::db::StacksChainState;
 use blockstack_lib::chainstate::stacks::miner::{
     BlockBuilder, BlockLimitFunction, TransactionResourceBudgets, TransactionResult,

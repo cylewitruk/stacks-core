@@ -10,16 +10,15 @@ use rusqlite::{Connection, OptionalExtension};
 use stacks_common::codec::StacksMessageCodec;
 use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 
-use super::bits;
-use super::canonical_branch;
-use super::inline_value;
 use super::node::{
     clear_ctrl_bits, logical_node_id, TrieNode, TrieNode16, TrieNode256, TrieNode4, TrieNode48,
     TrieNodeID, TrieNodePatch, TrieNodeType,
 };
 use super::packed_branch::{self, BranchView};
 use super::trie_sql::SQL_MARF_TYPE_FIRST_SCHEMA_VERSION;
-use super::{Error, NodeDecodeScratch, TrieLeaf, ValueResolver};
+use super::{
+    bits, canonical_branch, inline_value, Error, NodeDecodeScratch, TrieLeaf, ValueResolver,
+};
 
 /// Disk layout selected explicitly by the database format metadata.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -622,9 +621,10 @@ mod tests {
     /// Buffered and borrowed reads expose an unresolved locator without requiring a hash.
     #[test]
     fn compact_leaf_reads_match_across_backings() {
+        use std::io::{Cursor, Seek};
+
         use crate::chainstate::stacks::index::scratch::MarfReadState;
         use crate::chainstate::stacks::index::{BorrowedNodeBytes, ReadTrieItemKind, ReadTrieNode};
-        use std::io::{Cursor, Seek};
 
         let value_id = 7;
         let mut leaf = TrieLeaf::from_value(&[3, 9], MARFValue([1; 40]));

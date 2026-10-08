@@ -5,7 +5,9 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 
-use ptr_hash::{bucket_fn::Linear, hash::Xxh3_128, PtrHash};
+use ptr_hash::bucket_fn::Linear;
+use ptr_hash::hash::Xxh3_128;
+use ptr_hash::PtrHash;
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use sha2::{Digest, Sha256};
 

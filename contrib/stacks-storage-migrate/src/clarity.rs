@@ -28,8 +28,7 @@ use blockstack_lib::clarity_vm::database::stable_value_store::{
 use rusqlite::{Connection, params};
 use stacks_common::util::hash::hex_bytes;
 
-use crate::Result;
-use crate::{memberships, space, value_pipeline};
+use crate::{Result, memberships, space, value_pipeline};
 
 /// Clarity leaf policy backed by an immutable mapped commitment lookup.
 pub struct ClarityValues {

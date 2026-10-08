@@ -17,7 +17,7 @@
 
 use clarity::vm::errors::VmExecutionError;
 use clarity::vm::types::codec::packed::ValueDescriptorVersion;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{sql_error, storage_error};
 

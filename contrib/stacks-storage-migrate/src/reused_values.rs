@@ -28,8 +28,9 @@ use rusqlite::{Connection, OpenFlags};
 use stable_value_format::{FILE_HEADER_BYTES, VALUE_ROW_BYTES, ValueId};
 use stacks_common::util::hash::hex_bytes;
 
+use crate::Result;
+use crate::source::Source;
 use crate::value_lookup::{Reference, ValueLookup};
-use crate::{Result, source::Source};
 
 /// Clone stopped, unpublished extraction files; never modify or resume the original attempt.
 pub fn copy(seed: &Path, directory: &Path, name: &str) -> Result<()> {

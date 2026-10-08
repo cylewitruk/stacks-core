@@ -21,11 +21,11 @@ use std::path::Path;
 
 use blockstack_lib::chainstate::stacks::index::inline_value::InlineValue;
 use blockstack_lib::chainstate::stacks::index::{Error as MarfError, MARFValue, TrieLeaf};
+use blockstack_lib::clarity_vm::database::binary_value_store;
 use memmap2::Mmap;
 use rusqlite::Connection;
 
 use crate::Result;
-use blockstack_lib::clarity_vm::database::binary_value_store;
 
 /// Fixed record: full commitment, stable ID, inline offset, payload and descriptor lengths.
 const ROW_BYTES: usize = 56;
@@ -230,10 +230,12 @@ impl ValueLookup {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
+    use rusqlite::params;
+
     use super::*;
     use crate::memberships;
-    use rusqlite::params;
-    use std::assert_matches;
 
     /// Sparse prefixes, full-key misses and both leaf classes preserve exact references.
     #[test]

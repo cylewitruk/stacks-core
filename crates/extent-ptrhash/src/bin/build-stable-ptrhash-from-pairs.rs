@@ -15,9 +15,8 @@
 
 //! Build a target-native stable PtrHash base from retained sorted commitment/ID pairs.
 
-use std::env;
-use std::fs;
 use std::path::Path;
+use std::{env, fs};
 
 use serde_json::Value;
 

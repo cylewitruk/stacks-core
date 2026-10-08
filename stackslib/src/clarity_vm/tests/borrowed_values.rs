@@ -15,18 +15,18 @@
 
 //! Integration coverage for Clarity values read from Binary V1 packed storage.
 
-use clarity::vm::ClarityVersion;
 use clarity::vm::contexts::{AssetMap, ContractContext, OwnedEnvironment};
 use clarity::vm::costs::{CostTracker, ExecutionCost, LimitedCostTracker};
 use clarity::vm::database::clarity_store::StoredValue;
-use clarity::vm::test_util::{TEST_BURN_STATE_DB, TEST_HEADER_DB, execute};
+use clarity::vm::test_util::{execute, TEST_BURN_STATE_DB, TEST_HEADER_DB};
 use clarity::vm::types::codec::packed::SharedPackedValue;
 use clarity::vm::types::{PrincipalData, QualifiedContractIdentifier, Value};
+use clarity::vm::ClarityVersion;
 use stacks_common::consts::{
     CHAIN_ID_TESTNET, FIRST_BURNCHAIN_CONSENSUS_HASH, FIRST_STACKS_BLOCK_HASH,
 };
-use stacks_common::types::StacksEpochId;
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_common::types::StacksEpochId;
 
 use crate::chainstate::stacks::index::ClarityMarfTrieId as _;
 use crate::clarity_vm::clarity::{ClarityMarfStore, ClarityMarfStoreTransaction};

@@ -18,18 +18,18 @@
 use std::collections::HashSet;
 
 use rusqlite::types::Value;
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use stacks_common::types::chainstate::{BurnchainHeaderHash, SortitionId};
 use stacks_common::types::sqlite::NO_PARAMS;
 
 use super::common::{
-    DbSnapshotSpec, TableCopySpec, TableCopySpecs, classify_hint, clone_schemas_from_source,
-    copied_rows, marf_err, with_offline_write_session,
+    classify_hint, clone_schemas_from_source, copied_rows, marf_err, with_offline_write_session,
+    DbSnapshotSpec, TableCopySpec, TableCopySpecs,
 };
 use super::fork_storage::{collect_canonical_leaf_hashes, copy_canonical_fork_storage};
 use crate::chainstate::burn::db::sortdb::SortitionTipCopyBoundary;
-use crate::chainstate::stacks::index::{Error, MARF_SQLITE_TABLES, MARFValue, trie_sql};
-use crate::util_lib::db::{Error as db_error, sqlite_open, u64_to_sql};
+use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue, MARF_SQLITE_TABLES};
+use crate::util_lib::db::{sqlite_open, u64_to_sql, Error as db_error};
 
 /// Snapshot-only reads over a sortition DB connection.
 pub trait SortitionSnapshotExt {

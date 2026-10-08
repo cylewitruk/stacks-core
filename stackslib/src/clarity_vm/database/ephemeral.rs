@@ -15,9 +15,8 @@
 
 //! Ephemeral Clarity MARF storage layered over a persistent read-only store.
 
-use std::mem;
-
 use std::collections::HashMap;
+use std::mem;
 use std::sync::{Arc, Mutex};
 
 use clarity::util::hash::Sha512Trunc256Sum;
@@ -33,11 +32,11 @@ use clarity::vm::errors::{RuntimeError, VmExecutionError, VmInternalError};
 use clarity::vm::types::{QualifiedContractIdentifier, TypeSignature};
 use rusqlite::{self, Connection};
 use stacks_common::codec::StacksMessageCodec;
-use stacks_common::types::StacksEpochId;
 use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash};
 use stacks_common::types::sqlite::NO_PARAMS;
+use stacks_common::types::StacksEpochId;
 
-use crate::chainstate::stacks::index::marf::{MARF, MarfConnection, MarfCore, MarfTransaction};
+use crate::chainstate::stacks::index::marf::{MarfConnection, MarfCore, MarfTransaction, MARF};
 use crate::chainstate::stacks::index::{Error, MARFValue};
 use crate::clarity_vm::clarity::{
     ClarityMarfStore, ClarityMarfStoreTransaction, WritableMarfStore,
@@ -646,7 +645,8 @@ impl ClarityBackingStore for EphemeralMarfStore<'_> {
     fn get_data_from_path(&mut self, hash: &TrieHash) -> Result<Option<String>, VmExecutionError> {
         trace!(
             "Ephemeral MarfedKV get_from_hash: {:?} tip={:?}",
-            hash, &self.open_tip
+            hash,
+            &self.open_tip
         );
         let mode = self.value_storage_format;
         let memory_values = self.memory_values.clone();
@@ -660,7 +660,8 @@ impl ClarityBackingStore for EphemeralMarfStore<'_> {
                 };
                 trace!(
                     "Ephemeral MarfedKV get side-key for {:?}: {:?}",
-                    hash, marf_value
+                    hash,
+                    marf_value
                 );
                 let data = if let Some(memory) = &memory_values {
                     Some(
@@ -700,7 +701,8 @@ impl ClarityBackingStore for EphemeralMarfStore<'_> {
     ) -> Result<Option<(String, Vec<u8>)>, VmExecutionError> {
         trace!(
             "Ephemeral MarfedKV get_data_with_proof: '{}' tip={:?}",
-            key, &self.open_tip
+            key,
+            &self.open_tip
         );
         let mode = self.value_storage_format;
         let memory_values = self.memory_values.clone();
@@ -750,7 +752,8 @@ impl ClarityBackingStore for EphemeralMarfStore<'_> {
     ) -> Result<Option<(String, Vec<u8>)>, VmExecutionError> {
         trace!(
             "Ephemeral MarfedKV get_data_with_proof_from_hash: {:?} tip={:?}",
-            hash, &self.open_tip
+            hash,
+            &self.open_tip
         );
         let mode = self.value_storage_format;
         let memory_values = self.memory_values.clone();

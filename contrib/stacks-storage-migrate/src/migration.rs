@@ -15,18 +15,17 @@
 
 //! All-or-nothing direct migration with one final trie rewrite.
 
-use memmap2::Mmap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Instant;
 
-use blockstack_lib::chainstate::stacks::index::Error as MarfError;
-use blockstack_lib::chainstate::stacks::index::direct_hash_index;
 use blockstack_lib::chainstate::stacks::index::record::NodeRecordFormat;
 use blockstack_lib::chainstate::stacks::index::value_relocation::BlobRelocation;
+use blockstack_lib::chainstate::stacks::index::{Error as MarfError, direct_hash_index};
 use blockstack_lib::util_lib::db::sqlite_readonly_uri;
+use memmap2::Mmap;
 use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
 
@@ -464,12 +463,14 @@ fn sync_directory(path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod reuse_tests {
-    use super::*;
+    use std::collections::BTreeMap;
+
     use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
     use blockstack_lib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
     use clarity::vm::database::SqliteConnection;
     use stacks_common::types::chainstate::StacksBlockId;
-    use std::collections::BTreeMap;
+
+    use super::*;
 
     /// Preserve every retained seed byte, including after a rejected restart.
     fn inventory(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {

@@ -15,10 +15,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use clarity::boot_util::boot_code_id;
-use clarity::vm::ValueRef;
 use clarity::vm::contexts::GlobalContext;
 use clarity::vm::errors::VmExecutionError;
 use clarity::vm::types::{PrincipalData, QualifiedContractIdentifier, Value};
+use clarity::vm::ValueRef;
 use pox_locking::{POX_1_NAME, POX_2_NAME, POX_3_NAME, POX_4_NAME, POX_5_NAME};
 
 /// Handle special cases of contract-calls -- namely, those into PoX that should lock up STX

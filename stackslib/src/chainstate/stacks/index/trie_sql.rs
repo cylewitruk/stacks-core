@@ -1087,8 +1087,9 @@ pub fn clear_tables(tx: &Transaction) -> Result<(), Error> {
 
 #[cfg(test)]
 mod block_hash_lookup_tests {
-    use super::*;
     use stacks_common::types::chainstate::StacksBlockId;
+
+    use super::*;
 
     /// Make sparse identifiers so an equal-endpoint range cannot return a neighbor.
     fn fixture() -> Connection {

@@ -2032,19 +2032,20 @@ fn extent_error(message: &str) -> VmExecutionError {
 #[cfg(test)]
 mod extent_tests {
     use std::collections::HashMap;
+    use std::{env, process};
 
+    use clarity::vm::database::TypedValueData;
+    use clarity::vm::types::Value;
     use tempfile::tempdir;
 
     use super::*;
     use crate::chainstate::stacks::index::TrieMerkleProof;
 
-    use clarity::vm::database::TypedValueData;
-    use clarity::vm::types::Value;
-    use std::{env, process};
-
     /// Typed external value shared by publication and readback assertions.
     fn publication_fixture_value() -> DataStoreValue {
-        DataStoreValue::Typed(TypedValueData::prepare(Value::buff_from(vec![6; 96]).unwrap()).unwrap())
+        DataStoreValue::Typed(
+            TypedValueData::prepare(Value::buff_from(vec![6; 96]).unwrap()).unwrap(),
+        )
     }
 
     /// Write the same inline/external pair through the public Clarity transaction API.

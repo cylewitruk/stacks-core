@@ -110,8 +110,12 @@ impl<'a> QueryProbe<'a> {
             return None;
         }
         methods.xRead = Some(read);
-        if methods.xWrite.is_some() {methods.xWrite=Some(write);}
-        if methods.xSync.is_some() {methods.xSync=Some(sync);}
+        if methods.xWrite.is_some() {
+            methods.xWrite = Some(write);
+        }
+        if methods.xSync.is_some() {
+            methods.xSync = Some(sync);
+        }
         if methods.xFetch.is_some() {
             methods.xFetch = Some(fetch);
         }
@@ -295,20 +299,47 @@ mod tests {
 }
 
 /// Forward a main-file write and retain its elapsed time without changing durability.
-unsafe extern "C" fn write(file: *mut ffi::sqlite3_file, buffer: *const c_void, amount:i32, offset:i64)->i32 {
-    let Some(mut c)=CONTEXT.with(Cell::get) else {return ffi::SQLITE_IOERR;};
-    if c.file != file {return ffi::SQLITE_IOERR;}
-    let Some(original)=(*c.original).xWrite else {return ffi::SQLITE_IOERR;};
-    let start=Instant::now();let rc=original(file,buffer,amount,offset);
-    c.counts.writes+=1;c.counts.write_bytes+=amount.max(0) as u64;c.counts.write_ns+=start.elapsed().as_nanos() as u64;c.counts.errors+=u64::from(rc!=ffi::SQLITE_OK);
-    CONTEXT.with(|v|v.set(Some(c)));rc
+unsafe extern "C" fn write(
+    file: *mut ffi::sqlite3_file,
+    buffer: *const c_void,
+    amount: i32,
+    offset: i64,
+) -> i32 {
+    let Some(mut c) = CONTEXT.with(Cell::get) else {
+        return ffi::SQLITE_IOERR;
+    };
+    if c.file != file {
+        return ffi::SQLITE_IOERR;
+    }
+    let Some(original) = (*c.original).xWrite else {
+        return ffi::SQLITE_IOERR;
+    };
+    let start = Instant::now();
+    let rc = original(file, buffer, amount, offset);
+    c.counts.writes += 1;
+    c.counts.write_bytes += amount.max(0) as u64;
+    c.counts.write_ns += start.elapsed().as_nanos() as u64;
+    c.counts.errors += u64::from(rc != ffi::SQLITE_OK);
+    CONTEXT.with(|v| v.set(Some(c)));
+    rc
 }
 
 /// Forward a main-file sync; WAL/journal files are outside this connection-local probe.
-unsafe extern "C" fn sync(file:*mut ffi::sqlite3_file,flags:i32)->i32 {
-    let Some(mut c)=CONTEXT.with(Cell::get) else {return ffi::SQLITE_IOERR;};
-    if c.file!=file {return ffi::SQLITE_IOERR;}
-    let Some(original)=(*c.original).xSync else {return ffi::SQLITE_IOERR;};
-    let start=Instant::now();let rc=original(file,flags);c.counts.syncs+=1;c.counts.sync_ns+=start.elapsed().as_nanos() as u64;c.counts.errors+=u64::from(rc!=ffi::SQLITE_OK);
-    CONTEXT.with(|v|v.set(Some(c)));rc
+unsafe extern "C" fn sync(file: *mut ffi::sqlite3_file, flags: i32) -> i32 {
+    let Some(mut c) = CONTEXT.with(Cell::get) else {
+        return ffi::SQLITE_IOERR;
+    };
+    if c.file != file {
+        return ffi::SQLITE_IOERR;
+    }
+    let Some(original) = (*c.original).xSync else {
+        return ffi::SQLITE_IOERR;
+    };
+    let start = Instant::now();
+    let rc = original(file, flags);
+    c.counts.syncs += 1;
+    c.counts.sync_ns += start.elapsed().as_nanos() as u64;
+    c.counts.errors += u64::from(rc != ffi::SQLITE_OK);
+    CONTEXT.with(|v| v.set(Some(c)));
+    rc
 }

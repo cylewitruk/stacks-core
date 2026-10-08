@@ -15,8 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::btree_map::Entry;
-use std::collections::VecDeque;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::io::prelude::*;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
@@ -65,8 +64,7 @@ use crate::chainstate::stacks::events::*;
 use crate::chainstate::stacks::index::marf::{
     test_override_marf_compression, MARFOpenOpts, MarfConnection, MARF,
 };
-use crate::chainstate::stacks::index::trie_sql;
-use crate::chainstate::stacks::index::ClarityMarfTrieId;
+use crate::chainstate::stacks::index::{trie_sql, ClarityMarfTrieId};
 use crate::chainstate::stacks::miner::TransactionResourceBudgets;
 use crate::chainstate::stacks::{
     Error, StacksBlockHeader, StacksMicroblockHeader, C32_ADDRESS_VERSION_MAINNET_MULTISIG,

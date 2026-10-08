@@ -5,14 +5,11 @@ use std::io::{Cursor, Write};
 
 use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 
-use super::bits;
 use super::blob_layout::ROOT_NODE_OFFSET;
-use super::canonical_branch;
 use super::node::{is_backptr, logical_node_id, TrieNodePatch, TrieNodeType, TriePtr};
-use super::packed_branch;
 use super::record::NodeRecordFormat;
 use super::scratch::MarfReadState;
-use super::{Error, ReadTrieItemKind, TrieLeaf};
+use super::{bits, canonical_branch, packed_branch, Error, ReadTrieItemKind, TrieLeaf};
 
 /// Deterministic physical offsets for one trie blob, persisted by the migration coordinator.
 #[derive(Debug, Clone)]

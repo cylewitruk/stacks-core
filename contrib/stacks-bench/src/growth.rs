@@ -15,8 +15,9 @@ use blockstack_lib::chainstate::stacks::{
 };
 use clarity::vm::Value;
 use clarity::vm::representations::ClarityName;
-use clarity::vm::types::StacksAddressExtensions;
-use clarity::vm::types::{PrincipalData, QualifiedContractIdentifier, SequenceData, TupleData};
+use clarity::vm::types::{
+    PrincipalData, QualifiedContractIdentifier, SequenceData, StacksAddressExtensions, TupleData,
+};
 use stacks_common::types::chainstate::StacksPrivateKey;
 
 use super::{SegmentExecutionInput, TxSegment, execute_segment};

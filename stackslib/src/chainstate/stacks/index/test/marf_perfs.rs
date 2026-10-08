@@ -23,7 +23,7 @@ use stacks_common::util::hash::to_hex;
 
 use super::marf::MarfTestExt;
 use crate::chainstate::stacks::index::marf::{
-    MARF, MARFOpenOpts, MarfConnection, MarfCore as _, MarfReadCtx,
+    MARFOpenOpts, MarfConnection, MarfCore as _, MarfReadCtx, MARF,
 };
 use crate::chainstate::stacks::index::scratch::MarfReadState;
 use crate::chainstate::stacks::index::storage::TrieFileStorage;
@@ -217,7 +217,14 @@ fn marf_read_random_1048576_4096_file_storage() {
             );
 
             let read_value = read_ctx.expect_path(&block_header, &triepath);
-            assert_eq!(read_value.data.as_ref().expect("resolved test leaf").to_vec(), value.data.as_ref().expect("resolved test leaf").to_vec());
+            assert_eq!(
+                read_value
+                    .data
+                    .as_ref()
+                    .expect("resolved test leaf")
+                    .to_vec(),
+                value.data.as_ref().expect("resolved test leaf").to_vec()
+            );
 
             read_ctx.with_storage(|storage| {
                 // can make a merkle proof to each one

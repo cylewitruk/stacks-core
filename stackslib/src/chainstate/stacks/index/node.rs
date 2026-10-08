@@ -14,14 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use super::inline_value::{self, InlineValue};
-#[cfg(feature = "marf-read-bench-counters")]
-use crate::chainstate::stacks::index::read_bench;
-
 use std::io::{Read, Write};
 use std::{error, fmt};
 
+use super::inline_value::{self, InlineValue};
 use crate::chainstate::stacks::index::bits::{self, SPARSE_PTR_BITMAP_MARKER};
+#[cfg(feature = "marf-read-bench-counters")]
+use crate::chainstate::stacks::index::read_bench;
 use crate::chainstate::stacks::index::{
     BlockMap, ClarityMarfTrieId, Error, MARFValue, MarfTrieId, NodePath, ReadNodeBacking,
     ReadTrieNode, ReadTrieNodeCursorStep, TrieLeaf, MARF_VALUE_ENCODED_SIZE,

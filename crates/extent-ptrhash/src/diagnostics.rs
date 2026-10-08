@@ -40,21 +40,34 @@ pub fn enabled() -> bool {
 
 /// Record a slot access without retaining keys, values, or unbounded per-call events.
 pub fn slot(partition: usize, offset: usize) {
-    if !enabled() { return; }
+    if !enabled() {
+        return;
+    }
     PAGES.with(|p| {
-        let mut p=p.borrow_mut(); p.queries+=1;
-        let page=((partition as u64)<<32) | (offset/page_size()) as u64;
-        if p.slots.len()<PAGE_LIMIT || p.slots.contains(&page) { p.slots.insert(page); } else {p.overflows+=1;}
+        let mut p = p.borrow_mut();
+        p.queries += 1;
+        let page = ((partition as u64) << 32) | (offset / page_size()) as u64;
+        if p.slots.len() < PAGE_LIMIT || p.slots.contains(&page) {
+            p.slots.insert(page);
+        } else {
+            p.overflows += 1;
+        }
     });
 }
 
 /// Record the pages needed to compare a candidate's complete record envelope.
 pub fn header(offset: u64) {
-    if !enabled() { return; }
+    if !enabled() {
+        return;
+    }
     PAGES.with(|p| {
-        let mut p=p.borrow_mut();
-        for page in offset/page_size() as u64..=(offset+87)/page_size() as u64 {
-            if p.headers.len()<PAGE_LIMIT || p.headers.contains(&page) {p.headers.insert(page);} else {p.overflows+=1;}
+        let mut p = p.borrow_mut();
+        for page in offset / page_size() as u64..=(offset + 87) / page_size() as u64 {
+            if p.headers.len() < PAGE_LIMIT || p.headers.contains(&page) {
+                p.headers.insert(page);
+            } else {
+                p.overflows += 1;
+            }
         }
     });
 }
@@ -62,14 +75,27 @@ pub fn header(offset: u64) {
 /// Report resident pages for the mapped byte range, without faulting the bytes into memory.
 /// This is a mincore snapshot, not attribution of private process RSS or physical I/O.
 pub fn residency(bytes: &[u8]) -> std::io::Result<(usize, usize)> {
-    if bytes.is_empty() {return Ok((0,0));}
-    let size=page_size(); let address=bytes.as_ptr() as usize; let start=address/size*size;
-    let length=bytes.len()+address-start; let pages=length.div_ceil(size);
-    let mut result=vec![0u8;pages];
+    if bytes.is_empty() {
+        return Ok((0, 0));
+    }
+    let size = page_size();
+    let address = bytes.as_ptr() as usize;
+    let start = address / size * size;
+    let length = bytes.len() + address - start;
+    let pages = length.div_ceil(size);
+    let mut result = vec![0u8; pages];
     // SAFETY: the byte owner keeps this mapping live; vector has one entry per queried page.
-    let rc=unsafe {libc::mincore(start as *mut libc::c_void,length,result.as_mut_ptr().cast())};
-    if rc!=0 {return Err(std::io::Error::last_os_error());}
-    Ok((pages,result.iter().filter(|v| **v & 1 != 0).count()))
+    let rc = unsafe {
+        libc::mincore(
+            start as *mut libc::c_void,
+            length,
+            result.as_mut_ptr().cast(),
+        )
+    };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok((pages, result.iter().filter(|v| **v & 1 != 0).count()))
 }
 
 /// Emit fixed-size aggregates at the end of a base handle's lifetime.
@@ -83,8 +109,14 @@ mod tests {
     /// Residency sampling accepts an empty slice and a live page-aligned mapping.
     #[test]
     fn residency_of_live_mapping() {
-        assert_eq!(residency(&[]).unwrap(),(0,0));
-        let mut map=memmap2::MmapOptions::new().len(page_size()*2).map_anon().unwrap();map[0]=9;
-        let (pages,resident)=residency(&map).unwrap();assert_eq!(pages,2);assert!(resident>=1 && resident<=2);
+        assert_eq!(residency(&[]).unwrap(), (0, 0));
+        let mut map = memmap2::MmapOptions::new()
+            .len(page_size() * 2)
+            .map_anon()
+            .unwrap();
+        map[0] = 9;
+        let (pages, resident) = residency(&map).unwrap();
+        assert_eq!(pages, 2);
+        assert!(resident >= 1 && resident <= 2);
     }
 }

@@ -156,9 +156,10 @@ impl<T: MarfTrieId> BlobHeader<T> {
 
 #[cfg(test)]
 mod format_tests {
+    use stacks_common::types::chainstate::StacksBlockId;
+
     use super::*;
     use crate::chainstate::stacks::index::node::{TrieNode, TrieNode256, TrieNodeType};
-    use stacks_common::types::chainstate::StacksBlockId;
 
     /// Old reserved block IDs are never interpreted as layout versions.
     #[test]

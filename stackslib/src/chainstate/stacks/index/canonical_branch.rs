@@ -17,11 +17,9 @@
 
 use std::io::Write;
 
-use super::bits;
-use super::mapped_node;
 use super::node::{clear_ctrl_bits, is_backptr, TrieNodeID, TrieNodeType, TriePtr};
 use super::packed_branch::{self, PackedBranch};
-use super::Error;
+use super::{bits, mapped_node, Error};
 
 const FULL_OCCUPANCY: u8 = 1;
 const SPARSE_KINDS: u8 = 2;

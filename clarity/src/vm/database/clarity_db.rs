@@ -16,7 +16,6 @@
 
 //! High-level Clarity state access and typed value persistence.
 
-use crate::vm::{ValueRef, composite_vm_error};
 use stacks_common::bounded_format;
 use stacks_common::consts::{
     BITCOIN_REGTEST_FIRST_BLOCK_HASH, BITCOIN_REGTEST_FIRST_BLOCK_HEIGHT,
@@ -51,6 +50,7 @@ use crate::vm::types::{
     PrincipalData, QualifiedContractIdentifier, StandardPrincipalData, TupleData, TypeSignature,
     Value, byte_len_of_serialization,
 };
+use crate::vm::{ValueRef, composite_vm_error};
 
 pub const STORE_CONTRACT_SRC_INTERFACE: bool = true;
 pub const TENURE_HEIGHT_KEY: &str = "_stx-data::tenure_height";

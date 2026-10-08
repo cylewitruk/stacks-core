@@ -20,11 +20,10 @@ use std::str;
 
 use stacks_common::types::StacksEpochId;
 
-use crate::types::codec::packed::SharedPackedValue;
-use crate::types::codec::packed::composite::{CompositeValue, SharedList};
-
 use super::{PackedValueError, PackedValueRef, decode, directory, layout, primitive};
 use crate::representations::ClarityName;
+use crate::types::codec::packed::SharedPackedValue;
+use crate::types::codec::packed::composite::{CompositeValue, SharedList};
 use crate::types::signatures::{
     BufferLength, CallableSubtype, SequenceSubtype, StringSubtype, StringUTF8Length,
 };
@@ -1711,9 +1710,10 @@ mod tests {
     /// Child lengths stay lazy while nested results retain their original bytes and semantics.
     #[test]
     fn admitted_nested_projections_match_owned_lengths() {
+        use std::sync::Arc;
+
         use crate::types::TupleData;
         use crate::types::codec::packed::{PackedValue, PackedValueVersion, SharedPackedValue};
-        use std::sync::Arc;
         let epoch = StacksEpochId::latest();
         let nested = Value::from(
             TupleData::from_data(vec![
@@ -1782,8 +1782,9 @@ mod tests {
     /// Materialized compatibility values remain reusable when a populated handle is cloned.
     #[test]
     fn populated_materialization_cache_clones_cheaply() {
-        use crate::types::codec::packed::{PackedValue, PackedValueVersion, SharedPackedValue};
         use std::ptr;
+
+        use crate::types::codec::packed::{PackedValue, PackedValueVersion, SharedPackedValue};
         let value = Value::buff_from(vec![1; 1024]).unwrap();
         let expected = TypeSignature::type_of(&value).unwrap();
         let encoded = PackedValue::encode(PackedValueVersion::V1, &value).unwrap();

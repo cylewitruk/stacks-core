@@ -534,12 +534,13 @@ pub fn from_consensus_buff(
 
 #[cfg(test)]
 mod packed_decimal_tests {
+    use proptest::prelude::*;
+    use stacks_common::types::StacksEpochId;
+
     use super::{decimal_value, native_string_to_int_ref, native_string_to_uint_ref};
     use crate::vm::types::codec::packed::{PackedValue, PackedValueVersion, SharedPackedValue};
     use crate::vm::types::{TypeSignature, Value};
     use crate::vm::{PackedValueCow, ValueRef};
-    use proptest::prelude::*;
-    use stacks_common::types::StacksEpochId;
 
     /// Compare the byte parser with the historical standard-library parser.
     fn check(text: &str) {
