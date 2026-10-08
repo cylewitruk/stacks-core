@@ -188,6 +188,23 @@ impl<T: BlockEventDispatcher> OnChainRewardSetProvider<'_, T> {
         block_id: &StacksBlockId,
         debug_log: bool,
     ) -> Result<RewardSet, Error> {
+        self.read_reward_set_at_calculated_block_shared(
+            coinbase_height_of_calculation,
+            chainstate,
+            block_id,
+            debug_log,
+        )
+        .map(|reward_set| (*reward_set).clone())
+    }
+
+    /// Resolve a fork-specific reward set while sharing its decoded representation.
+    pub fn read_reward_set_at_calculated_block_shared(
+        &self,
+        coinbase_height_of_calculation: u64,
+        chainstate: &mut StacksChainState,
+        block_id: &StacksBlockId,
+        debug_log: bool,
+    ) -> Result<Arc<RewardSet>, Error> {
         let Some(reward_set_block) = NakamotoChainState::get_header_by_coinbase_height(
             &mut chainstate.index_conn(),
             block_id,
@@ -201,10 +218,8 @@ impl<T: BlockEventDispatcher> OnChainRewardSetProvider<'_, T> {
             return Err(Error::PoXAnchorBlockRequired);
         };
 
-        let Some(reward_set) = NakamotoChainState::get_reward_set(
-            chainstate.db(),
-            &reward_set_block.index_block_hash(),
-        )?
+        let Some(reward_set) =
+            chainstate.get_reward_set_cached(&reward_set_block.index_block_hash())?
         else {
             err_or_debug!(
                 debug_log,

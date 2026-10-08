@@ -19,10 +19,11 @@ use std::io::{BufWriter, Cursor, Read, Seek, SeekFrom, Write};
 use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 
 use crate::chainstate::stacks::index::file::read_exact_at;
+use crate::chainstate::stacks::index::inline_value::InlineValue;
 use crate::chainstate::stacks::index::node::{
-    TrieNode16, TrieNode256, TrieNode4, TrieNode48, TrieNodeType, TriePtr,
+    TrieNode16, TrieNode256, TrieNode4, TrieNode48, TrieNodeTransientMeta, TrieNodeType, TriePtr,
 };
-use crate::chainstate::stacks::index::{Error, MARFValue, TrieLeaf};
+use crate::chainstate::stacks::index::{Error, MARFValue, NodePath, TrieLeaf};
 
 /// Tag bytes for node serialization to the temp file.
 const TAG_LEAF: u8 = 0;
@@ -75,9 +76,32 @@ pub(crate) fn serialize_node<W: Write>(w: &mut W, node: &TrieNodeType) -> Result
     }
     match node {
         TrieNodeType::Leaf(leaf) => {
-            w.write_all(&[TAG_LEAF])?;
+            w.write_all(&[TAG_LEAF
+                | if leaf.data.is_none() { 0x40 } else { 0 }
+                | if leaf.inline.is_some() { 0x20 } else { 0 }
+                | if leaf.value_id.is_some() { 0x08 } else { 0 }])?;
             write_path(w, &leaf.path)?;
-            w.write_all(&leaf.data.0)?;
+            if let Some(data) = &leaf.data {
+                w.write_all(&data.0)?;
+            } else if leaf.inline.is_none() && leaf.value_id.is_none() {
+                return Err(Error::CorruptionError(
+                    "Leaf lacks value and locator".into(),
+                ));
+            }
+            if leaf.inline.is_some() && leaf.value_id.is_some() {
+                return Err(Error::CorruptionError(
+                    "Conflicting inline and extent leaf".into(),
+                ));
+            }
+            if let Some(inline) = &leaf.inline {
+                inline.write_to(w)?;
+            }
+            if let Some(value_id) = leaf.value_id {
+                if value_id == 0 {
+                    return Err(Error::CorruptionError("Zero stable value ID".into()));
+                }
+                w.write_all(&value_id.to_le_bytes())?;
+            }
         }
         TrieNodeType::Node4(n) => {
             w.write_all(&[TAG_NODE4])?;
@@ -117,6 +141,9 @@ pub(crate) fn serialize_node<W: Write>(w: &mut W, node: &TrieNodeType) -> Result
 pub(crate) fn deserialize_node<R: Read>(r: &mut R) -> Result<TrieNodeType, Error> {
     let mut tag = [0u8; 1];
     r.read_exact(&mut tag)?;
+    if tag[0] & 0x90 != 0 {
+        return Err(Error::CorruptionError("Unknown temporary node flag".into()));
+    }
     let mut path_len_buf = [0u8; 1];
     r.read_exact(&mut path_len_buf)?;
     let path_len = path_len_buf[0] as usize;
@@ -129,14 +156,54 @@ pub(crate) fn deserialize_node<R: Read>(r: &mut R) -> Result<TrieNodeType, Error
     if path_len > 0 {
         r.read_exact(&mut path)?;
     }
+    let path = NodePath::from_slice(&path).ok_or_else(|| {
+        Error::CorruptionError(format!(
+            "deserialize_node: path length {path_len} exceeds {TRIEHASH_ENCODED_SIZE}"
+        ))
+    })?;
 
-    match tag[0] {
+    match tag[0] & 0x07 {
         TAG_LEAF => {
+            if [0x80, 0x20, 0x08]
+                .iter()
+                .filter(|bit| tag[0] & **bit != 0)
+                .count()
+                > 1
+            {
+                return Err(Error::CorruptionError(
+                    "Conflicting inline and extent leaf".into(),
+                ));
+            }
             let mut data = [0u8; 40];
-            r.read_exact(&mut data)?;
+            if tag[0] & 0x40 == 0 {
+                r.read_exact(&mut data)?;
+            }
             Ok(TrieNodeType::Leaf(TrieLeaf {
+                inline: if tag[0] & 0x20 != 0 {
+                    let mut lengths = [0u8; 2];
+                    r.read_exact(&mut lengths)?;
+                    let mut bytes = vec![0; usize::from(lengths[0]) + usize::from(lengths[1])];
+                    r.read_exact(&mut bytes)?;
+                    Some(InlineValue::from_parts(
+                        &bytes[..usize::from(lengths[0])],
+                        &bytes[usize::from(lengths[0])..],
+                    )?)
+                } else {
+                    None
+                },
+                value_id: if tag[0] & 0x08 != 0 {
+                    let mut bytes = [0; 4];
+                    r.read_exact(&mut bytes)?;
+                    let id = u32::from_le_bytes(bytes);
+                    if id == 0 {
+                        return Err(Error::CorruptionError("Zero stable value ID".into()));
+                    }
+                    Some(id)
+                } else {
+                    None
+                },
                 path,
-                data: MARFValue(data),
+                data: (tag[0] & 0x40 == 0).then_some(MARFValue(data)),
             }))
         }
         TAG_NODE4 => {
@@ -147,8 +214,7 @@ pub(crate) fn deserialize_node<R: Read>(r: &mut R) -> Result<TrieNodeType, Error
             Ok(TrieNodeType::Node4(TrieNode4 {
                 path,
                 ptrs,
-                cowptr: None,
-                patches: vec![],
+                meta: TrieNodeTransientMeta::default(),
             }))
         }
         TAG_NODE16 => {
@@ -159,8 +225,7 @@ pub(crate) fn deserialize_node<R: Read>(r: &mut R) -> Result<TrieNodeType, Error
             Ok(TrieNodeType::Node16(TrieNode16 {
                 path,
                 ptrs,
-                cowptr: None,
-                patches: vec![],
+                meta: TrieNodeTransientMeta::default(),
             }))
         }
         TAG_NODE48 => {
@@ -175,8 +240,7 @@ pub(crate) fn deserialize_node<R: Read>(r: &mut R) -> Result<TrieNodeType, Error
                 path,
                 indexes,
                 ptrs,
-                cowptr: None,
-                patches: vec![],
+                meta: TrieNodeTransientMeta::default(),
             })))
         }
         TAG_NODE256 => {
@@ -187,8 +251,7 @@ pub(crate) fn deserialize_node<R: Read>(r: &mut R) -> Result<TrieNodeType, Error
             Ok(TrieNodeType::Node256(Box::new(TrieNode256 {
                 path,
                 ptrs,
-                cowptr: None,
-                patches: vec![],
+                meta: TrieNodeTransientMeta::default(),
             })))
         }
         _ => Err(Error::CorruptionError(format!(
@@ -463,5 +526,55 @@ impl NodeStore {
 impl Drop for NodeStore {
     fn drop(&mut self) {
         self.cleanup();
+    }
+}
+
+#[cfg(test)]
+mod inline_tests {
+    use super::*;
+
+    /// Squash scratch roundtrips both resolved and unresolved inline payloads exactly.
+    #[test]
+    fn inline_squash_spill_retains_payload_and_commitment_state() {
+        for resolved in [false, true] {
+            let mut leaf = TrieLeaf::from_value(&[1, 2, 3], MARFValue([9; 40]));
+            leaf.data = resolved.then_some(MARFValue([9; 40]));
+            leaf.inline = Some(InlineValue::from_parts(&[1, 2, 3, 4], &[5, 6]).unwrap());
+            let node = TrieNodeType::Leaf(leaf.clone());
+            let mut bytes = Vec::new();
+            serialize_node(&mut bytes, &node).unwrap();
+            let TrieNodeType::Leaf(restored) = deserialize_node(&mut Cursor::new(&bytes)).unwrap()
+            else {
+                panic!("leaf expected")
+            };
+            assert_eq!(restored.inline, leaf.inline);
+            assert_eq!(restored.data, leaf.data);
+            assert_eq!(restored.path, leaf.path);
+            for end in 0..bytes.len() {
+                assert!(deserialize_node(&mut Cursor::new(&bytes[..end])).is_err());
+            }
+        }
+    }
+
+    /// Temporary squash spill preserves the stable ID in resolved and unresolved leaves.
+    #[test]
+    fn stable_id_squash_spill_roundtrips() {
+        for resolved in [false, true] {
+            let mut leaf = TrieLeaf::from_value(&[4, 5], MARFValue([3; 40]));
+            leaf.data = resolved.then_some(MARFValue([3; 40]));
+            leaf.value_id = Some(17);
+            let mut bytes = Vec::new();
+            serialize_node(&mut bytes, &TrieNodeType::Leaf(leaf.clone())).unwrap();
+            let TrieNodeType::Leaf(restored) = deserialize_node(&mut Cursor::new(&bytes)).unwrap()
+            else {
+                panic!("leaf expected")
+            };
+            assert_eq!(restored.value_id, leaf.value_id);
+            assert_eq!(restored.data, leaf.data);
+            assert_eq!(restored.path, leaf.path);
+            for end in 0..bytes.len() {
+                assert!(deserialize_node(&mut Cursor::new(&bytes[..end])).is_err());
+            }
+        }
     }
 }

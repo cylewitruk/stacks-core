@@ -1,0 +1,13 @@
+[package]
+name = "stacks-mmap"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+description = "Access-pattern advice for Stacks read-only file mappings"
+
+[dependencies]
+memmap2 = "0.9"
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

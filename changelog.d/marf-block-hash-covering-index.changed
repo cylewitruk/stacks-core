@@ -1,0 +1,1 @@
+Use a transactionally maintained covering index for headers MARF block-ID/hash lookups. Writable headers opens build the index once; Clarity and sortition MARFs are unchanged. Read-only databases without the optional index remain readable. No trie or consensus format changes.

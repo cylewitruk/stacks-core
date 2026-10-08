@@ -23,12 +23,23 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
+use rusqlite::types::{Value, ValueRef};
 use rusqlite::{params, Connection};
 
 use super::common::clone_schemas_from_source;
 use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MARF};
 use crate::chainstate::stacks::index::storage::{TrieFileStorage, TrieHashCalculationMode};
 use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue, MarfTrieId};
+use crate::util_lib::db::quote_sql_identifier;
+
+/// Physical payload columns copied with each content-addressed row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReferencedRowLayout {
+    /// Copy only the content-addressed key and value.
+    KeyValue,
+    /// Also copy one owner-supplied payload column.
+    KeyValueAndExtra(&'static str),
+}
 
 /// Collect the `MARFValue` of every leaf in the squashed trie.
 ///
@@ -98,7 +109,13 @@ pub fn copy_canonical_fork_storage(
     }
 
     clone_schemas_from_source(conn, &["__fork_storage"])?;
-    copy_leaf_referenced_rows(conn, "__fork_storage", "value_hash", leaf_hashes)
+    copy_leaf_referenced_rows(
+        conn,
+        "__fork_storage",
+        "value_hash",
+        ReferencedRowLayout::KeyValue,
+        leaf_hashes,
+    )
 }
 
 /// Stream-copy a content-addressed `(key_col, value)` table from the ATTACHed
@@ -107,22 +124,35 @@ pub fn copy_canonical_fork_storage(
 /// leaf-set filter is in memory, not SQL, so these can't use `execute_copy_specs`.
 ///
 /// The destination table must exist and be empty - unexpected pre-population errors.
-/// Each key must be the canonical lowercase hex of a `MARFValue`, else it's corruption.
-/// `table`/`key_col` are interpolated into SQL: pass only trusted fixed identifiers,
-/// while the payload column is assumed to be named `value`.
+/// Keys may be canonical lowercase hexadecimal or raw 40-byte `MARFValue`s.
+/// `table`/`key_col` are interpolated into SQL: pass only trusted fixed identifiers.
+/// The payload column is named `value`; an optional owner-supplied extra column is
+/// quoted before interpolation.
 pub fn copy_leaf_referenced_rows(
     conn: &Connection,
     table: &str,
     key_col: &str,
+    layout: ReferencedRowLayout,
     keep: &HashSet<MARFValue>,
 ) -> Result<u64, Error> {
     let t = Instant::now();
+    let extra_column = match layout {
+        ReferencedRowLayout::KeyValue => None,
+        ReferencedRowLayout::KeyValueAndExtra(column) => Some(quote_sql_identifier(column)),
+    };
+    let extra_projection = extra_column
+        .as_deref()
+        .map_or_else(String::new, |column| format!(", {column}"));
     let mut select = conn
-        .prepare(&format!("SELECT {key_col}, value FROM src.{table}"))
+        .prepare(&format!(
+            "SELECT {key_col}, value{extra_projection} FROM src.{table}"
+        ))
         .map_err(Error::SQLError)?;
     let mut insert = conn
         .prepare(&format!(
-            "INSERT INTO {table} ({key_col}, value) VALUES (?1, ?2)"
+            "INSERT INTO {table} ({key_col}, value{extra_projection}) \
+             VALUES (?1, ?2{})",
+            if extra_column.is_some() { ", ?3" } else { "" }
         ))
         .map_err(Error::SQLError)?;
     let mut rows: u64 = 0;
@@ -131,27 +161,46 @@ pub fn copy_leaf_referenced_rows(
     while let Some(row) = rows_iter.next().map_err(Error::SQLError)? {
         scanned += 1;
         let key_ref = row.get_ref(0).map_err(Error::SQLError)?;
-        let key_str = key_ref.as_str().map_err(|e| {
-            Error::CorruptionError(format!("src.{table}.{key_col} is not TEXT: {e:?}"))
-        })?;
-        let key = MARFValue::from_hex(key_str).map_err(|e| {
-            Error::CorruptionError(format!(
-                "src.{table}.{key_col} `{key_str}` is not a hex MARFValue: {e:?}"
-            ))
-        })?;
-        // Writers store the key as lowercase hex and the runtime reads it
-        // back the same way; any other encoding (e.g. uppercase) is a
-        // foreign writer and the copied row would be unreachable in dst.
-        if key.to_hex() != key_str {
-            return Err(Error::CorruptionError(format!(
-                "src.{table}.{key_col} `{key_str}` is not canonical lowercase hex"
-            )));
-        }
+        let key = match key_ref {
+            ValueRef::Text(bytes) => {
+                let key_str = std::str::from_utf8(bytes).map_err(|error| {
+                    Error::CorruptionError(format!("src.{table}.{key_col} is not UTF-8: {error}"))
+                })?;
+                let key = MARFValue::from_hex(key_str).map_err(|error| {
+                    Error::CorruptionError(format!(
+                        "src.{table}.{key_col} `{key_str}` is not a hex MARFValue: {error:?}"
+                    ))
+                })?;
+                if key.to_hex() != key_str {
+                    return Err(Error::CorruptionError(format!(
+                        "src.{table}.{key_col} `{key_str}` is not canonical lowercase hex"
+                    )));
+                }
+                key
+            }
+            ValueRef::Blob(bytes) => MARFValue(bytes.try_into().map_err(|_| {
+                Error::CorruptionError(format!("src.{table}.{key_col} is not a 40-byte MARFValue"))
+            })?),
+            value => {
+                return Err(Error::CorruptionError(format!(
+                    "src.{table}.{key_col} has invalid SQLite type {:?}",
+                    value.data_type()
+                )));
+            }
+        };
         if keep.contains(&key) {
-            let value: String = row.get(1).map_err(Error::SQLError)?;
-            insert
-                .execute(params![key_str, &value])
-                .map_err(Error::SQLError)?;
+            let key = owned_sql_value(key_ref)?;
+            let value = owned_sql_value(row.get_ref(1).map_err(Error::SQLError)?)?;
+            if extra_column.is_some() {
+                let extra = owned_sql_value(row.get_ref(2).map_err(Error::SQLError)?)?;
+                insert
+                    .execute(params![key, value, extra])
+                    .map_err(Error::SQLError)?;
+            } else {
+                insert
+                    .execute(params![key, value])
+                    .map_err(Error::SQLError)?;
+            }
             rows += 1;
         }
     }
@@ -160,4 +209,19 @@ pub fn copy_leaf_referenced_rows(
         t.elapsed()
     );
     Ok(rows)
+}
+
+/// Materialize a borrowed SQLite value so it can outlive the source row cursor.
+fn owned_sql_value(value: ValueRef<'_>) -> Result<Value, Error> {
+    Ok(match value {
+        ValueRef::Null => Value::Null,
+        ValueRef::Integer(value) => Value::Integer(value),
+        ValueRef::Real(value) => Value::Real(value),
+        ValueRef::Text(value) => {
+            Value::Text(String::from_utf8(value.to_vec()).map_err(|error| {
+                Error::CorruptionError(format!("SQLite TEXT is not UTF-8: {error}"))
+            })?)
+        }
+        ValueRef::Blob(value) => Value::Blob(value.to_vec()),
+    })
 }

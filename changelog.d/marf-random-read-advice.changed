@@ -1,0 +1,1 @@
+Reduce speculative Linux read-ahead for memory-mapped MARF trie blobs, direct hash indexes, Clarity value-directory rows and PtrHash ID indexes. macOS, value payload files and descriptor files retain their existing policy.

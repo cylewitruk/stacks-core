@@ -1,0 +1,1 @@
+Avoid repeated packed-value validation, tuple layout traversal, principal materialization, and Unicode decoding on admitted Clarity read paths. Preserve callable trait identity in packed equality.

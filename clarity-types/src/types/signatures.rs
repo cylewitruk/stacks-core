@@ -16,7 +16,8 @@
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::ops::{Deref, Range};
+use std::sync::{Arc, OnceLock};
 use std::{cmp, fmt};
 
 use serde::{Deserialize, Serialize};
@@ -68,34 +69,101 @@ impl AssetIdentifier {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TupleTypeSignature {
     #[serde(with = "tuple_type_map_serde")]
-    type_map: Arc<BTreeMap<ClarityName, TypeSignature>>,
+    type_map: Arc<TupleFields>,
+}
+
+/// Immutable tuple schema with lazily indexed canonical field slots.
+struct TupleFields {
+    /// Logical fields, also used for serialization and equality.
+    map: BTreeMap<ClarityName, TypeSignature>,
+    /// Shared ordered slots for logarithmic named and constant-time indexed projection.
+    indexed: OnceLock<Vec<(ClarityName, TypeSignature)>>,
+    /// Packed V1 fixed-field offsets, or None for directory-framed tuples.
+    packed_offsets: OnceLock<Option<Vec<usize>>>,
+}
+
+impl TupleFields {
+    /// Retain an immutable field map without eagerly building projection metadata.
+    fn new(map: BTreeMap<ClarityName, TypeSignature>) -> Self {
+        Self {
+            map,
+            indexed: OnceLock::new(),
+            packed_offsets: OnceLock::new(),
+        }
+    }
+    /// Cache the packed fixed layout independently of values and declared sequence bounds.
+    fn packed_offsets(&self) -> Option<&[usize]> {
+        self.packed_offsets
+            .get_or_init(|| {
+                if self.map.values().any(|child| match child {
+                    TypeSignature::BoolType => false,
+                    TypeSignature::TupleType(tuple) => tuple.packed_fixed_width().is_none(),
+                    _ => true,
+                }) {
+                    return None;
+                }
+                let mut offsets = Vec::with_capacity(self.map.len() + 1);
+                offsets.push(0usize);
+                for child in self.map.values() {
+                    let width = match child {
+                        TypeSignature::BoolType => 1,
+                        TypeSignature::TupleType(tuple) => tuple.packed_fixed_width()?,
+                        _ => return None,
+                    };
+                    offsets.push(offsets.last()?.checked_add(width)?);
+                }
+                Some(offsets)
+            })
+            .as_deref()
+    }
+
+    /// Initialize the canonical slots once across all clones of this schema.
+    fn indexed(&self) -> &[(ClarityName, TypeSignature)] {
+        self.indexed.get_or_init(|| {
+            self.map
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect()
+        })
+    }
+}
+impl Deref for TupleFields {
+    type Target = BTreeMap<ClarityName, TypeSignature>;
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+impl PartialEq for TupleFields {
+    fn eq(&self, other: &Self) -> bool {
+        self.map == other.map
+    }
+}
+impl Eq for TupleFields {}
+impl Clone for TupleFields {
+    fn clone(&self) -> Self {
+        Self::new(self.map.clone())
+    }
 }
 
 mod tuple_type_map_serde {
     use std::collections::BTreeMap;
-    use std::ops::Deref;
     use std::sync::Arc;
 
     use serde::{Deserializer, Serializer};
 
-    use super::TypeSignature;
+    use super::{TupleFields, TypeSignature};
     use crate::representations::ClarityName;
 
-    pub fn serialize<S: Serializer>(
-        map: &Arc<BTreeMap<ClarityName, TypeSignature>>,
-        ser: S,
-    ) -> Result<S::Ok, S::Error> {
-        serde::Serialize::serialize(map.deref(), ser)
+    pub fn serialize<S: Serializer>(map: &Arc<TupleFields>, ser: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&map.map, ser)
     }
 
-    pub fn deserialize<'de, D>(
-        deser: D,
-    ) -> Result<Arc<BTreeMap<ClarityName, TypeSignature>>, D::Error>
+    pub fn deserialize<'de, D>(deser: D) -> Result<Arc<TupleFields>, D::Error>
     where
         D: Deserializer<'de>,
     {
         let map: BTreeMap<ClarityName, TypeSignature> = serde::Deserialize::deserialize(deser)?;
-        Ok(Arc::new(map))
+        Ok(Arc::new(TupleFields::new(map)))
     }
 }
 
@@ -668,7 +736,7 @@ impl TypeSignature {
                     canonicalized_fields.insert(field_name.clone(), field_type.canonicalize_v2_1());
                 }
                 TypeSignature::from(TupleTypeSignature {
-                    type_map: Arc::new(canonicalized_fields),
+                    type_map: Arc::new(TupleFields::new(canonicalized_fields)),
                 })
             }
             TraitReferenceType(trait_id) => CallableType(CallableSubtype::Trait(trait_id.clone())),
@@ -754,7 +822,7 @@ impl TryFrom<BTreeMap<ClarityName, TypeSignature>> for TupleTypeSignature {
                 return Err(ClarityTypeError::TypeSignatureTooDeep);
             }
         }
-        let type_map = Arc::new(type_map.into_iter().collect());
+        let type_map = Arc::new(TupleFields::new(type_map));
         let result = TupleTypeSignature { type_map };
         let would_be_size = result
             .inner_size()?
@@ -780,6 +848,34 @@ impl TupleTypeSignature {
 
     pub fn field_type(&self, field: &str) -> Option<&TypeSignature> {
         self.type_map.get(field)
+    }
+
+    /// Find a field's canonical storage slot without scanning preceding fields.
+    pub fn indexed_field(&self, name: &str) -> Option<(usize, &TypeSignature)> {
+        let fields = self.type_map.indexed();
+        let index = fields
+            .binary_search_by(|(field, _)| field.as_str().cmp(name))
+            .ok()?;
+        Some((index, &fields[index].1))
+    }
+
+    /// Return a field by canonical storage order without walking the type map.
+    pub fn field_at(&self, index: usize) -> Option<(&ClarityName, &TypeSignature)> {
+        self.type_map
+            .indexed()
+            .get(index)
+            .map(|(name, ty)| (name, ty))
+    }
+
+    /// Return the cached packed V1 width for a tuple containing only fixed-width fields.
+    pub fn packed_fixed_width(&self) -> Option<usize> {
+        self.type_map.packed_offsets()?.last().copied()
+    }
+
+    /// Address one field in a packed V1 fixed tuple without traversing preceding types.
+    pub fn packed_field_range(&self, index: usize) -> Option<Range<usize>> {
+        let offsets = self.type_map.packed_offsets()?;
+        Some(*offsets.get(index)?..*offsets.get(index.checked_add(1)?)?)
     }
 
     pub fn get_type_map(&self) -> &BTreeMap<ClarityName, TypeSignature> {
@@ -808,14 +904,18 @@ impl TupleTypeSignature {
         Ok(true)
     }
 
-    /// Merge `update`'s fields into `self`, rejecting a merged tuple whose value size
-    /// exceeds [`MAX_VALUE_SIZE`] with [`ClarityTypeError::ValueTooLarge`].
+    /// Merge fields and reject a tuple whose resulting value exceeds the size limit.
     pub fn shallow_merge(
         &mut self,
         update: &mut TupleTypeSignature,
     ) -> Result<(), ClarityTypeError> {
-        Arc::make_mut(&mut self.type_map).append(Arc::make_mut(&mut update.type_map));
-        // inner_size() returns Ok(None) exactly when the tuple is oversized.
+        let fields = Arc::make_mut(&mut self.type_map);
+        let update = Arc::make_mut(&mut update.type_map);
+        fields.indexed.take();
+        update.indexed.take();
+        fields.packed_offsets.take();
+        update.packed_offsets.take();
+        fields.map.append(&mut update.map);
         self.inner_size()?.ok_or(ClarityTypeError::ValueTooLarge)?;
         Ok(())
     }
@@ -1692,5 +1792,32 @@ impl fmt::Display for BufferLength {
 impl fmt::Display for StringUTF8Length {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(test)]
+mod projection_schema_tests {
+    use super::{TupleTypeSignature, TypeSignature};
+
+    /// Populating slots must preserve equality and invalidate changed schemas after a COW merge.
+    #[test]
+    fn cached_slots_preserve_schema_and_invalidate_on_merge() {
+        let mut original =
+            TupleTypeSignature::try_from(vec![("z".try_into().unwrap(), TypeSignature::UIntType)])
+                .unwrap();
+        let untouched = original.clone();
+        assert_eq!(original.indexed_field("z").unwrap().0, 0);
+        assert_eq!(original, untouched);
+        let mut update =
+            TupleTypeSignature::try_from(vec![("a".try_into().unwrap(), TypeSignature::BoolType)])
+                .unwrap();
+        assert_eq!(update.field_at(0).unwrap().0.as_str(), "a");
+        original.shallow_merge(&mut update).unwrap();
+        assert_eq!(original.indexed_field("z").unwrap().0, 1);
+        assert_eq!(original.field_at(0).unwrap().0.as_str(), "a");
+        assert_eq!(untouched.indexed_field("z").unwrap().0, 0);
+        assert!(untouched.indexed_field("a").is_none());
+        assert!(update.is_empty());
+        assert!(update.field_at(0).is_none());
     }
 }

@@ -2338,7 +2338,9 @@ impl Drop for ClarityTransactionConnection<'_, '_> {
             match self.cost_track.as_mut() {
                 Some(t) => t.reset_memory(),
                 None => {
-                    error!("Failed to reset the memory of the Clarity transaction's cost_track handle while thread panicking");
+                    error!(
+                        "Failed to reset the memory of the Clarity transaction's cost_track handle while thread panicking"
+                    );
                 }
             }
         } else {
@@ -2481,6 +2483,7 @@ impl ClarityTransactionConnection<'_, '_> {
     /// Commit the changes from the edit log.
     /// panics if there is more than one open savepoint
     pub fn commit(mut self) -> Result<(), ClarityError> {
+        let _phase = stacks_profiler::diagnostic_span!("Tx: Writeback");
         let log = self
             .log
             .take()
