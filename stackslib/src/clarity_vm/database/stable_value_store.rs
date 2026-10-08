@@ -103,6 +103,7 @@ impl MappedGenerationFile {
         }
         if let Some(mapping) = self.mapping.as_mut() {
             if end > mapping.len() as u64 {
+                let _mapping = stacks_profiler::span!("Values: Directory mapping growth");
                 // SAFETY: completed directory rows only append to the same file.
                 let _ = unsafe { mapping.refresh(self.file.file()) };
             }
@@ -306,7 +307,10 @@ impl PartitionView {
 
     /// Sync newly appended bytes and extend the existing virtual mapping when possible.
     fn sync_and_refresh(&mut self) -> Result<(), VmExecutionError> {
-        self.file.sync_all().map_err(store_error)?;
+        stacks_profiler::measure!("Values: Partition sync", {
+            self.file.sync_all().map_err(store_error)?;
+        });
+        let _mapping = stacks_profiler::span!("Values: Partition mapping");
         if let Some(mapping) = &mut self.mapping {
             // SAFETY: the same append-only file backs this mapping and its old prefix is immutable.
             unsafe { mapping.refresh(self.file.file()) }.map_err(store_error)?;
@@ -314,6 +318,7 @@ impl PartitionView {
             return Err(message("Published partition mapping disappeared"));
         }
         self.refresh_tail()?;
+        drop(_mapping);
         self.pending.clear();
         Ok(())
     }
@@ -1342,6 +1347,7 @@ impl StableValueStore {
     }
 
     /// Read a value by stable ID and verify its generation-relative directory row.
+    #[stacks_profiler::profile(name = "Values: Read record", sample_rate = 64)]
     pub fn read(&mut self, id: ValueId) -> Result<StableValueRecord, VmExecutionError> {
         let _read = stacks_profiler::diagnostics::wall_clock_sampled("V5: Read value", 256);
         stacks_profiler::diagnostics::count("v5_value_reads", 1);
@@ -1386,25 +1392,33 @@ impl StableValueStore {
         if !self.dirty {
             return Ok(());
         }
+        let _publish = stacks_profiler::span!("Values: Publish");
         #[cfg(test)]
         self.inject_sync_failure(0)?;
         if self.descriptor_dirty {
-            self.descriptor_segment.sync_all().map_err(store_error)?;
+            stacks_profiler::measure!("Values: Descriptor sync", {
+                self.descriptor_segment.sync_all().map_err(store_error)?;
+            });
         }
         #[cfg(test)]
         self.inject_sync_failure(1)?;
         if self.descriptor_dirty {
-            self.descriptor_directory.sync_all().map_err(store_error)?;
+            stacks_profiler::measure!("Values: Descriptor directory sync", {
+                self.descriptor_directory.sync_all().map_err(store_error)?;
+            });
         }
         #[cfg(test)]
         self.inject_sync_failure(2)?;
         self.value_partition.sync_and_refresh()?;
         #[cfg(test)]
         self.inject_sync_failure(3)?;
-        self.value_directory.sync_all().map_err(store_error)?;
+        stacks_profiler::measure!("Values: Value directory sync", {
+            self.value_directory.sync_all().map_err(store_error)?;
+        });
         #[cfg(test)]
         self.inject_sync_failure(4)?;
         if self.directory_entries_dirty {
+            let _sync = stacks_profiler::span!("Values: Directory entries sync");
             File::open(&self.paths.root)
                 .and_then(|dir| dir.sync_all())
                 .map_err(store_error)?;

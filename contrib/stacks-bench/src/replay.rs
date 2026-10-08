@@ -408,12 +408,6 @@ where
         // Setup
         let setup_start = if measure { Some(Instant::now()) } else { None };
 
-        let _setup_guard = if measure {
-            stacks_profiler::span!("Segment: Setup", seg_ix)
-        } else {
-            None
-        };
-
         let segment_tenure_change_tx: Option<
             &blockstack_lib::chainstate::stacks::StacksTransaction,
         > = segment_txs
@@ -429,8 +423,6 @@ where
         } else {
             MinerTenureInfoCause::NoTenureChange
         };
-
-        drop(_setup_guard);
 
         let exec_result = execute_segment(
             chainstate,
@@ -599,7 +591,6 @@ fn execute_segment(
     sortdb: &SortitionDB,
     input: SegmentExecutionInput<'_>,
 ) -> Result<SegmentExecResult> {
-    let _setup_diagnostic = stacks_profiler::diagnostic_span!("Replay: Full setup");
     let SegmentExecutionInput {
         cur_parent_info,
         block,
@@ -614,6 +605,7 @@ fn execute_segment(
         capacity,
         fixture,
     } = input;
+    let _setup_guard = stacks_profiler::span_if!(measure, "Segment: Setup", seg_ix);
     let state_window = stacks_profiler::state_cost::Window::new(measure);
     let state_setup = stacks_profiler::state_cost::phase("setup");
 
@@ -767,7 +759,7 @@ fn execute_segment(
     }
 
     drop(state_setup);
-    drop(_setup_diagnostic);
+    drop(_setup_guard);
     let setup_duration = setup_start.map(|s| s.elapsed()).unwrap_or(Duration::ZERO);
 
     // Transaction execution
@@ -998,6 +990,7 @@ fn execute_segment(
     drop(state_clarity_commit);
     drop(_clarity_commit_guard);
 
+    let _metadata_guard = stacks_profiler::span_if!(measure, "Segment: Commit metadata", seg_ix);
     let burn_view = NakamotoChainState::get_block_burn_view(sortdb, &mined_block, cur_parent_info)?;
 
     let sn = SortitionDB::get_block_snapshot_consensus(sortdb.conn(), &mined_consensus_hash)?
@@ -1041,6 +1034,7 @@ fn execute_segment(
         None
     };
 
+    drop(_metadata_guard);
     let state_advance_tip = stacks_profiler::state_cost::phase("advance_tip");
     let _advance_chain_tip_guard = if measure {
         stacks_profiler::span!("Segment: Advance Chain Tip", seg_ix)
@@ -1087,7 +1081,9 @@ fn execute_segment(
         miner_tenure_info;
     chainstate_tx.commit()?;
 
-    drop(builder);
+    stacks_profiler::measure!("Commit: Builder cleanup", {
+        drop(builder);
+    });
     drop(state_headers_commit);
     drop(_index_commit_guard);
 

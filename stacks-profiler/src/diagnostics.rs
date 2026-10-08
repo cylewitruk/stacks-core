@@ -134,6 +134,13 @@ pub fn wall_sample_snapshot() -> BTreeMap<&'static str, u64> {
 /// Enter a diagnostic-only timed span; ordinary timing controls leave it disabled.
 #[macro_export]
 macro_rules! diagnostic_span {
+    ($name:literal, rate: $rate:literal) => {{
+        if $crate::diagnostics::enabled() {
+            $crate::span!($name, rate: $rate)
+        } else {
+            None
+        }
+    }};
     ($name:literal) => {{
         if $crate::diagnostics::enabled() {
             $crate::span!($name)

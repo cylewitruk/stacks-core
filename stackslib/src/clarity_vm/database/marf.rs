@@ -720,12 +720,16 @@ impl ClarityMarfStoreTransaction for PersistentWritableMarfStore<'_> {
     /// Returns Err(VmInternalError(..)) on sqlite failure
     fn commit_to_processed_block(mut self, target: &StacksBlockId) -> Result<(), VmExecutionError> {
         debug!("commit_to({})", target);
-        self.commit_metadata_for_trie(target)?;
+        stacks_profiler::measure!("Clarity commit: Metadata SQL", {
+            self.commit_metadata_for_trie(target)?;
+        });
         if let Some(store) = &self.value_extents {
-            store
-                .lock()
-                .map_err(|_| extent_error("extent lock poisoned"))?
-                .publish_block()?;
+            let mut store = stacks_profiler::measure!("Clarity commit: Value store lock", {
+                store
+                    .lock()
+                    .map_err(|_| extent_error("extent lock poisoned"))?
+            });
+            store.publish_block()?;
         }
         let _ = self.marf.commit_to(target).map_err(|e| {
             error!("Failed to commit to MARF block {target}: {e:?}");
@@ -756,10 +760,12 @@ impl ClarityMarfStoreTransaction for PersistentWritableMarfStore<'_> {
         let chain_tip = self.chain_tip.clone();
         self.drop_metadata_for_trie(&chain_tip)?;
         if let Some(store) = &self.value_extents {
-            store
-                .lock()
-                .map_err(|_| extent_error("extent lock poisoned"))?
-                .publish_block()?;
+            let mut store = stacks_profiler::measure!("Clarity commit: Value store lock", {
+                store
+                    .lock()
+                    .map_err(|_| extent_error("extent lock poisoned"))?
+            });
+            store.publish_block()?;
         }
         let _ = self.marf.commit_mined(target).map_err(|e| {
             error!("Failed to commit to mined MARF block {target}: {e:?}",);
@@ -843,7 +849,6 @@ impl ReadOnlyMarfStore<'_> {
 }
 
 impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
-    #[stacks_profiler::profile(name = "Clarity backing typed read")]
     fn get_typed_value(
         &mut self,
         key: &str,
@@ -891,7 +896,6 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .transpose()
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing stored read")]
     fn get_stored_value(
         &mut self,
         key: &str,
@@ -1085,7 +1089,6 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .transpose()
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing read key")]
     fn get_data(&mut self, key: &str) -> Result<Option<String>, VmExecutionError> {
         if let Some(store) = &self.value_extents {
             let leaf = self
@@ -1131,7 +1134,6 @@ impl ClarityBackingStore for ReadOnlyMarfStore<'_> {
             .transpose()
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing read hash")]
     fn get_data_from_path(&mut self, hash: &TrieHash) -> Result<Option<String>, VmExecutionError> {
         if let Some(store) = &self.value_extents {
             let leaf = self
@@ -1232,7 +1234,6 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         self.value_storage_format.is_binary()
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing typed read")]
     fn get_typed_value(
         &mut self,
         key: &str,
@@ -1280,7 +1281,6 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             .transpose()
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing stored read")]
     fn get_stored_value(
         &mut self,
         key: &str,
@@ -1355,7 +1355,6 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
         Some(&handle_contract_call_special_cases_ref)
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing read key")]
     fn get_data(&mut self, key: &str) -> Result<Option<String>, VmExecutionError> {
         if let Some(store) = &self.value_extents {
             let leaf = self
@@ -1395,7 +1394,6 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
             .transpose()
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing read hash")]
     fn get_data_from_path(&mut self, hash: &TrieHash) -> Result<Option<String>, VmExecutionError> {
         if let Some(store) = &self.value_extents {
             let leaf = self
@@ -1646,7 +1644,7 @@ impl ClarityBackingStore for PersistentWritableMarfStore<'_> {
                     leaves[slot] = leaf;
                 }
             }
-            let _insert = stacks_profiler::diagnostic_span!("Writeback: MARF insert batch");
+            let _insert = stacks_profiler::span!("Writeback: MARF insert batch");
             stacks_profiler::diagnostics::count("marf_insert_batches", 1);
             return self
                 .marf
@@ -1838,17 +1836,14 @@ impl<'a> ClarityBackingStore for Box<dyn WritableMarfStore + 'a> {
         ClarityBackingStore::put_all_data_entries(self.deref_mut(), entries)
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing read key")]
     fn get_data(&mut self, key: &str) -> Result<Option<String>, VmExecutionError> {
         ClarityBackingStore::get_data(self.deref_mut(), key)
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing read hash")]
     fn get_data_from_path(&mut self, hash: &TrieHash) -> Result<Option<String>, VmExecutionError> {
         ClarityBackingStore::get_data_from_path(self.deref_mut(), hash)
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing typed read")]
     fn get_typed_value(
         &mut self,
         key: &str,
@@ -1858,7 +1853,6 @@ impl<'a> ClarityBackingStore for Box<dyn WritableMarfStore + 'a> {
         ClarityBackingStore::get_typed_value(self.deref_mut(), key, expected, epoch)
     }
 
-    #[stacks_profiler::profile(name = "Clarity backing stored read")]
     fn get_stored_value(
         &mut self,
         key: &str,

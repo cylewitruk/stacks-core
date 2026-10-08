@@ -3825,7 +3825,7 @@ impl NakamotoChainState {
         block_fees: u128,
         burn_view: &ConsensusHash,
     ) -> Result<StacksHeaderInfo, ChainstateError> {
-        let _tip_read = stacks_profiler::diagnostic_span!("Advance tip: Prepare");
+        let _tip_read = stacks_profiler::span!("Advance tip: Prepare");
         let new_tip = &new_block.header;
         if new_tip.parent_block_id
             != StacksBlockId::new(&FIRST_BURNCHAIN_CONSENSUS_HASH, &FIRST_STACKS_BLOCK_HASH)
@@ -3960,7 +3960,7 @@ impl NakamotoChainState {
         // store each indexed field
         test_debug!("Headers index_put_begin {parent_hash}-{index_block_hash}");
         drop(_tip_read);
-        let _tip_index = stacks_profiler::diagnostic_span!("Advance tip: Headers MARF");
+        let _tip_index = stacks_profiler::span!("Advance tip: Headers MARF");
         let root_hash = headers_tx.put_indexed_all(
             &parent_hash,
             &index_block_hash,
@@ -3970,7 +3970,7 @@ impl NakamotoChainState {
         test_debug!("Headers index_indexed_all finished {parent_hash}-{index_block_hash}");
 
         drop(_tip_index);
-        let _tip_metadata = stacks_profiler::diagnostic_span!("Advance tip: Parent metadata");
+        let _tip_metadata = stacks_profiler::span!("Advance tip: Parent metadata");
         let new_tip_info = StacksHeaderInfo {
             anchored_header: new_tip.clone().into(),
             microblock_tail: None,
@@ -4018,7 +4018,7 @@ impl NakamotoChainState {
         };
 
         drop(_tip_metadata);
-        let _tip_insert = stacks_profiler::diagnostic_span!("Advance tip: Header and rewards SQL");
+        let _tip_insert = stacks_profiler::span!("Advance tip: Header and rewards SQL");
         Self::insert_stacks_block_header(
             headers_tx.deref_mut(),
             &new_tip_info,

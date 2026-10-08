@@ -931,31 +931,25 @@ impl<'a, C: Clone, T: MarfTrieId> IndexDBTx<'a, C, T> {
         assert_eq!(keys.len(), values.len());
         match self.block_linkage {
             None => {
-                #[cfg(feature = "commit-residency-diagnostics")]
-                let _begin = stacks_profiler::diagnostic_span!("Headers index: Begin");
+                let _begin = stacks_profiler::span!("Headers index: Begin");
                 self.index_mut().begin(parent_header_hash, header_hash)?;
                 self.block_linkage = Some((parent_header_hash.clone(), header_hash.clone()));
             }
             Some(_) => panic!("Tried to put_indexed_all twice!"),
         }
 
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _values = stacks_profiler::diagnostic_span!("Headers index: Store values SQL");
+        let _values = stacks_profiler::span!("Headers index: Store values SQL");
         let mut marf_values = Vec::with_capacity(values.len());
         for value in values.iter() {
             let marf_value = self.store_indexed(value)?;
             marf_values.push(marf_value);
         }
 
-        #[cfg(feature = "commit-residency-diagnostics")]
         drop(_values);
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _insert = stacks_profiler::diagnostic_span!("Headers index: Insert batch");
+        let _insert = stacks_profiler::span!("Headers index: Insert batch");
         self.index_mut().insert_batch(keys, marf_values)?;
-        #[cfg(feature = "commit-residency-diagnostics")]
         drop(_insert);
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _seal = stacks_profiler::diagnostic_span!("Headers index: Seal");
+        let _seal = stacks_profiler::span!("Headers index: Seal");
         let root_hash = self.index_mut().seal()?;
         Ok(root_hash)
     }

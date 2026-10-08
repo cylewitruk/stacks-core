@@ -703,13 +703,10 @@ impl<T: MarfTrieId> TrieRAM<T> {
     ) -> Result<TrieHash, Error> {
         // find trie root hash
         debug!("Calculate trie root hash");
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _nodes = stacks_profiler::diagnostic_span!("Seal: Node hashes");
+        let _nodes = stacks_profiler::span!("Seal: Node hashes");
         let root_trie_hash = self.calculate_node_hashes(storage_tx, 0)?;
-        #[cfg(feature = "commit-residency-diagnostics")]
         drop(_nodes);
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _ancestors = stacks_profiler::diagnostic_span!("Seal: Ancestor hashes");
+        let _ancestors = stacks_profiler::span!("Seal: Ancestor hashes");
 
         // find marf root hash -- the hash of the trie root node hash, and the hashes of the
         // geometric series of ancestor tries.  Because the trie is already in the process of
@@ -1991,6 +1988,7 @@ fn get_block_id_caching_impl<T: MarfTrieId>(
 /// Inlines the dispatch from `inner_read_persisted_trie_item` (blobs vs. SQL, unconfirmed
 /// guard) and runs the full patch-chasing loop. Both storage types call this from their
 /// `TrieReadStorage::read_node_with_state` impls.
+#[stacks_profiler::profile(name = "MARF: Read persisted node", sample_rate = 256)]
 fn read_patched_persisted_node<'b>(
     db: &Connection,
     record_context: &RecordContext,
@@ -3008,8 +3006,7 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
             let marf_compression_enabled =
                 self.compress && !matches!(flush_options, FlushOptions::UnconfirmedTable);
 
-            #[cfg(feature = "commit-residency-diagnostics")]
-            let _serialize = stacks_profiler::diagnostic_span!("Flush: Serialize trie");
+            let _serialize = stacks_profiler::span!("Flush: Serialize trie");
             let mut cursor = Cursor::new(Vec::new());
             if marf_compression_enabled {
                 trie_ram.dump_compressed(self, &mut cursor, &bhh)?;
@@ -3017,10 +3014,8 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
                 trie_ram.dump(self, &mut cursor, &bhh)?;
             }
             let buffer = cursor.into_inner();
-            #[cfg(feature = "commit-residency-diagnostics")]
             drop(_serialize);
-            #[cfg(feature = "commit-residency-diagnostics")]
-            let _write = stacks_profiler::diagnostic_span!("Flush: Store trie");
+            let _write = stacks_profiler::span!("Flush: Store trie");
 
             trace!("Buffering block flush finished.");
             debug!("Flush: {} to {}", &bhh, flush_options);
@@ -3301,14 +3296,16 @@ impl<'a, T: MarfTrieId> TrieStorageConnection<'a, T, Transaction<'a>> {
     }
 
     pub fn commit_tx(mut self) {
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _commit = stacks_profiler::diagnostic_span!("Commit: SQLite transaction");
         if let Some(guard) = &self._direct_hash_guard {
+            let _prepare = stacks_profiler::span!("Commit: Prepare hash publication");
             guard
                 .prepare_commit(&self.db)
                 .expect("CORRUPTION: Failed to prepare hash tail");
         }
-        self.db.commit().expect("CORRUPTION: Failed to commit MARF");
+        stacks_profiler::measure!("Commit: SQLite transaction", {
+            self.db.commit().expect("CORRUPTION: Failed to commit MARF");
+        });
+        let _publish = stacks_profiler::span!("Commit: Publish caches");
         if let Some(guard) = self._direct_hash_guard.take() {
             guard.succeed();
         }
@@ -3858,6 +3855,7 @@ impl<'a, T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'a
     }
 
     /// read a persisted node's hash
+    #[stacks_profiler::profile(name = "MARF: Read persisted hash", sample_rate = 64)]
     fn inner_read_persisted_node_hash(
         &mut self,
         block_id: u32,

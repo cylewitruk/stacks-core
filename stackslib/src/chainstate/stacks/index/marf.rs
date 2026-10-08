@@ -439,19 +439,16 @@ pub trait MarfConnection<T: MarfTrieId>: MarfCore<T> + Sized {
     fn sqlite_conn(&self) -> &Connection;
 
     /// Resolve the complete leaf while retaining the caller's block context.
-    #[stacks_profiler::profile(name = "MARF lookup hash")]
     fn get_leaf(&mut self, block_hash: &T, path: &TrieHash) -> Result<Option<TrieLeaf>, Error> {
         self.with_read_ctx(|ctx| ctx.get_leaf_by_path(block_hash, path))
     }
 
     /// Resolve a key and retain its physical leaf metadata.
-    #[stacks_profiler::profile(name = "MARF lookup key")]
     fn get_leaf_by_key(&mut self, block_hash: &T, key: &str) -> Result<Option<TrieLeaf>, Error> {
         self.with_read_ctx(|ctx| ctx.get_leaf_by_path(block_hash, &TrieHash::from_key(key)))
     }
 
     /// Resolve a key from the MARF to a MARFValue with respect to the given block height.
-    #[stacks_profiler::profile(name = "MARF lookup key")]
     fn get(&mut self, block_hash: &T, key: &str) -> Result<Option<MARFValue>, Error> {
         self.with_read_ctx(|ctx| {
             let leaf = ctx.get_by_key(block_hash, key);
@@ -474,7 +471,6 @@ pub trait MarfConnection<T: MarfTrieId>: MarfCore<T> + Sized {
     }
 
     /// Resolve a TrieHash from the MARF to a MARFValue with respect to the given block height.
-    #[stacks_profiler::profile(name = "MARF lookup hash")]
     fn get_from_hash(&mut self, block_hash: &T, th: &TrieHash) -> Result<Option<MARFValue>, Error> {
         self.with_read_ctx(|ctx| ctx.get_by_path(block_hash, th))
     }

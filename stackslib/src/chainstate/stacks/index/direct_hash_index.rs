@@ -136,8 +136,7 @@ fn recover_tail(
     if durable == live {
         return Ok(tail);
     }
-    #[cfg(feature = "commit-residency-diagnostics")]
-    let _recovery = stacks_profiler::diagnostic_span!("Direct hash: Recover committed tail");
+    let _recovery = stacks_profiler::span!("Direct hash: Recover committed tail");
     let format = NodeRecordFormat::from_database(db)?;
     let size = format.reader_prefix_len();
     let mut blobs = None;
@@ -466,8 +465,7 @@ impl DirectHashIndex {
 
     /// Bind to a newly started managed transaction, before any writes or nested savepoints.
     pub fn begin(&mut self, db: &Connection) -> Result<DirectHashGuard, Error> {
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _span = stacks_profiler::diagnostic_span!("Direct hash: Publication check");
+        let _span = stacks_profiler::span!("Direct hash: Publication check");
         let publication = publication(db)?;
         self.view = None;
         self.tail = Tail::default();
@@ -498,8 +496,7 @@ impl DirectHashIndex {
                 self.tail = match state.tail.bounded(max_id, live) {
                     Some(tail) => {
                         #[cfg(feature = "commit-residency-diagnostics")]
-                        let _hit =
-                            stacks_profiler::diagnostic_span!("Direct hash: Shared tail view hit");
+                        stacks_profiler::diagnostics::count("direct_hash_shared_tail_hits", 1);
                         tail
                     }
                     None => {
@@ -592,8 +589,7 @@ impl DirectHashIndex {
         root: &TrieHash,
         parent: Option<&T>,
     ) -> Result<(), Error> {
-        #[cfg(feature = "commit-residency-diagnostics")]
-        let _span = stacks_profiler::diagnostic_span!("Direct hash: Append publication");
+        let _span = stacks_profiler::span!("Direct hash: Append publication");
         let Some(session) = &self.session else {
             return Ok(());
         };
@@ -666,9 +662,7 @@ impl DirectHashIndex {
         Arc::make_mut(&mut item.tail.slots).push(slot);
         item.live = id;
         if id - durable >= CHECKPOINT_SLOTS {
-            #[cfg(feature = "commit-residency-diagnostics")]
-            let _checkpoint =
-                stacks_profiler::diagnostic_span!("Direct hash: Durable batch checkpoint");
+            let _checkpoint = stacks_profiler::span!("Direct hash: Durable batch checkpoint");
             let mut state = self
                 .file
                 .state
@@ -680,7 +674,9 @@ impl DirectHashIndex {
             for slot in item.tail.slots.iter() {
                 state.file.write_all(&slot[..self.file.slot_size])?;
             }
-            state.file.sync_data()?;
+            stacks_profiler::measure!("Direct hash: File sync", {
+                state.file.sync_data()?;
+            });
             db.execute("UPDATE marf_direct_hash_index SET max_id=?1 WHERE singleton=1 AND token=?2 AND max_id=?3 AND valid=1", params![id,self.file.token,durable])?;
             item.durable = id;
             item.tail = Tail {
@@ -711,13 +707,13 @@ impl DirectHashIndex {
         id: u32,
     ) -> Result<T, Error> {
         #[cfg(feature = "commit-residency-diagnostics")]
-        let _span = stacks_profiler::diagnostic_span!("Direct hash: Block lookup");
+        let _span = stacks_profiler::diagnostic_span!("Direct hash: Block lookup", rate: 256);
         if let Some(slot) = index.and_then(|i| i.slot(db, id)) {
             #[cfg(feature = "commit-residency-diagnostics")]
-            let _hit = stacks_profiler::diagnostic_span!("Direct hash: Block hit");
+            stacks_profiler::diagnostics::count("direct_hash_block_hits", 1);
             #[cfg(feature = "commit-residency-diagnostics")]
             if index.is_some_and(|i| id > i.file.initial_max) {
-                let _online = stacks_profiler::diagnostic_span!("Direct hash: Online block hit");
+                stacks_profiler::diagnostics::count("direct_hash_online_block_hits", 1);
             }
             return Ok(T::from_bytes(slot[..32].try_into().expect("fixed slot")));
         }
@@ -785,7 +781,7 @@ impl DirectHashIndex {
         block: &T,
     ) -> Result<Option<TrieHash>, Error> {
         #[cfg(feature = "commit-residency-diagnostics")]
-        let _span = stacks_profiler::diagnostic_span!("Direct hash: Root lookup");
+        let _span = stacks_profiler::diagnostic_span!("Direct hash: Root lookup", rate: 256);
         let Some(slot) = self.slot(db, id) else {
             return Ok(None);
         };
@@ -793,10 +789,10 @@ impl DirectHashIndex {
             return Ok(None);
         }
         #[cfg(feature = "commit-residency-diagnostics")]
-        let _hit = stacks_profiler::diagnostic_span!("Direct hash: Root hit");
+        stacks_profiler::diagnostics::count("direct_hash_root_hits", 1);
         #[cfg(feature = "commit-residency-diagnostics")]
         if id > self.file.initial_max {
-            let _online = stacks_profiler::diagnostic_span!("Direct hash: Online root hit");
+            stacks_profiler::diagnostics::count("direct_hash_online_root_hits", 1);
         }
         Ok(Some(TrieHash(slot[32..64].try_into().expect("fixed slot"))))
     }

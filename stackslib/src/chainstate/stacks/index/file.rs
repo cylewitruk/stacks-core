@@ -468,13 +468,10 @@ impl TrieFile {
     /// No-op for RAM-backed TrieFiles.
     pub fn sync_data(&mut self) -> Result<(), io::Error> {
         if let TrieFile::Disk(ref mut data) = self {
-            #[cfg(feature = "commit-residency-diagnostics")]
-            let _sync = stacks_profiler::diagnostic_span!("Commit: Blob sync");
+            let _sync = stacks_profiler::span!("Commit: Blob sync");
             data.fd.sync_data()?;
-            #[cfg(feature = "commit-residency-diagnostics")]
             drop(_sync);
-            #[cfg(feature = "commit-residency-diagnostics")]
-            let _map = stacks_profiler::diagnostic_span!("Commit: Blob mapping");
+            let _map = stacks_profiler::span!("Commit: Blob mapping");
             data.refresh_mapping()?;
         }
         Ok(())
@@ -765,7 +762,20 @@ mod tests {
             panic!("disk expected")
         };
         pwrite_all(&disk.fd, &vec![2; page + 3], page as u64).unwrap();
-        file.sync_data().unwrap();
+        stacks_profiler::Profiler::clear();
+        stacks_profiler::measure!("Test commit", {
+            file.sync_data().unwrap();
+            file.sync_data().unwrap();
+        });
+        let profile = stacks_profiler::Profiler::take_results().unwrap();
+        let children = &profile[0].children;
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0].name(), "Commit: Blob sync");
+        assert_eq!(children[1].name(), "Commit: Blob mapping");
+        for child in children {
+            assert_eq!(child.entered_count, 2);
+            assert_eq!(child.sampled_count, 2);
+        }
         assert_eq!(file.mmap_slice_at(0, page).unwrap().as_ptr(), original);
         assert_eq!(
             file.mmap_slice_at(page as u64, page).unwrap(),

@@ -165,7 +165,7 @@ impl SqliteConnection {
         sqlite_put(conn, key, value)
     }
 
-    #[stacks_profiler::profile(name = "Clarity side-store SQLite get")]
+    #[stacks_profiler::profile(name = "Clarity side-store SQLite get", sample_rate = 64)]
     pub fn get(conn: &Connection, key: &str) -> Result<Option<String>, VmExecutionError> {
         sqlite_get(conn, key)
     }
