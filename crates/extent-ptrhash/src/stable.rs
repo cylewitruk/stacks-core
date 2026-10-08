@@ -31,6 +31,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use stable_value_format::files::GenerationFile;
 use stable_value_format::{FileHeader, FileKind, FILE_HEADER_BYTES, VALUE_ROW_BYTES};
+use stacks_mmap::AccessPattern;
 
 use super::{
     digest, fingerprint, invalid, write_new, Function, Result, ShardInfo, MAX_PARTITION_KEYS,
@@ -188,6 +189,7 @@ impl Base {
             }
             // SAFETY: published generation files are immutable for all readers' lifetimes.
             let slots = unsafe { MmapOptions::new().map(&file)? };
+            AccessPattern::Random.apply(&slots);
             shards.push(Some(Shard { function, slots }));
         }
         Ok(Self { manifest, shards })
@@ -586,9 +588,10 @@ pub fn build_and_activate(db_path: &Path, output: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use sha2::{Digest, Sha256};
     use stable_value_format::files::GenerationPaths;
+
+    use super::*;
 
     /// Create the minimal registered V5 directory needed by the streaming base builder.
     fn pair_fixture() -> (tempfile::TempDir, std::path::PathBuf, [[u8; 40]; 2]) {

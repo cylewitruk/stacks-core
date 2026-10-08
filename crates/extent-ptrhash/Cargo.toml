@@ -8,6 +8,7 @@ license = "GPL-3.0"
 diagnostics = ["dep:stacks-profiler", "dep:libc"]
 
 [dependencies]
+stacks-mmap = { path = "../stacks-mmap" }
 stacks-profiler = { workspace = true, optional = true }
 libc = { version = "0.2", optional = true }
 ptr_hash = { version = "=2.1.1", default-features = false, features = ["epserde"] }

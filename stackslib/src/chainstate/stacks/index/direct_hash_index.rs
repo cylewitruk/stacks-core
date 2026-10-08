@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, OptionalExtension};
+use stacks_mmap::AccessPattern;
 
 use super::ancestry::{self, Ancestry};
 use super::blob_layout::{BlobHeader, MAX_READER_PREFIX_LEN};
@@ -225,7 +226,7 @@ impl View {
             map
         } else {
             // SAFETY: Committed prefix bytes are immutable and never truncated by this implementation.
-            unsafe { FileMapping::map_prefix(file, end)? }
+            unsafe { FileMapping::map_prefix_with_access(file, end, AccessPattern::Random)? }
         };
         let tail_start = map.len();
         let mut tail = vec![0; end as usize - tail_start];

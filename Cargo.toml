@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "stackslib",
     "crates/extent-ptrhash",
+    "crates/stacks-mmap",
     "crates/stable-value-format",
     "stacks-common",
     "stacks-marf",

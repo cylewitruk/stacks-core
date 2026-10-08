@@ -3,20 +3,21 @@
 use std::fs::File;
 use std::io;
 use std::ops::Deref;
+#[cfg(all(unix, target_pointer_width = "64"))]
+use std::os::fd::AsRawFd;
 use std::sync::Arc;
 #[cfg(all(unix, target_pointer_width = "64"))]
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Mutex,
 };
+#[cfg(all(unix, target_pointer_width = "64"))]
+use std::{ptr, slice};
 
 use memmap2::{Mmap, MmapOptions};
 #[cfg(all(unix, target_pointer_width = "64"))]
 use nix::libc;
-#[cfg(all(unix, target_pointer_width = "64"))]
-use std::os::fd::AsRawFd;
-#[cfg(all(unix, target_pointer_width = "64"))]
-use std::{ptr, slice};
+use stacks_mmap::AccessPattern;
 
 /// Read-only mapping of an append-only file, with a conventional mapping fallback.
 #[derive(Clone, Debug)]
@@ -25,7 +26,7 @@ pub enum FileMapping {
     #[cfg(all(unix, target_pointer_width = "64"))]
     Stable(Arc<ReservedMapping>),
     /// Mapping used when reservations are unavailable or exhausted.
-    Conventional(Arc<Mmap>),
+    Conventional(Arc<Mmap>, AccessPattern),
 }
 
 impl FileMapping {
@@ -40,7 +41,9 @@ impl FileMapping {
         }
         #[cfg(all(unix, target_pointer_width = "64"))]
         if let Ok(capacity) = usize::try_from(capacity) {
-            if let Ok(mapping) = unsafe { ReservedMapping::new_prefix(file, capacity, length) } {
+            if let Ok(mapping) = unsafe {
+                ReservedMapping::new_prefix(file, capacity, length, AccessPattern::Normal)
+            } {
                 return Ok(Self::Stable(Arc::new(mapping)));
             }
         }
@@ -53,7 +56,15 @@ impl FileMapping {
     /// # Safety
     /// The file must not be truncated or modify bytes borrowed from this mapping.
     pub unsafe fn map(file: &File) -> io::Result<Self> {
-        unsafe { Self::map_prefix(file, file.metadata()?.len()) }
+        unsafe { Self::map_with_access(file, AccessPattern::Normal) }
+    }
+
+    /// Map an immutable file prefix with a persistent access policy.
+    ///
+    /// # Safety
+    /// The same immutable-prefix contract as `map` applies.
+    pub unsafe fn map_with_access(file: &File, access: AccessPattern) -> io::Result<Self> {
+        unsafe { Self::map_prefix_with_access(file, file.metadata()?.len(), access) }
     }
 
     /// Map only a published prefix; an unpublished suffix may subsequently be overwritten.
@@ -61,23 +72,41 @@ impl FileMapping {
     /// # Safety
     /// Bytes below `len` must remain immutable and the file must not shrink below `len`.
     pub unsafe fn map_prefix(file: &File, len: u64) -> io::Result<Self> {
+        unsafe { Self::map_prefix_with_access(file, len, AccessPattern::Normal) }
+    }
+
+    /// Map a published prefix with a policy retained across growth and fallback.
+    ///
+    /// # Safety
+    /// The same immutable-prefix contract as `map_prefix` applies.
+    pub unsafe fn map_prefix_with_access(
+        file: &File,
+        len: u64,
+        access: AccessPattern,
+    ) -> io::Result<Self> {
         if len > file.metadata()?.len() {
             return Err(io::Error::other("invalid published mapping length"));
         }
         #[cfg(all(unix, target_pointer_width = "64"))]
         if let Some(capacity) = reservation_capacity(len) {
-            if let Ok(mapping) = unsafe { ReservedMapping::new_prefix(file, capacity, len) } {
+            if let Ok(mapping) = unsafe { ReservedMapping::new_prefix(file, capacity, len, access) }
+            {
                 return Ok(Self::Stable(Arc::new(mapping)));
             }
         }
         let len = usize::try_from(len).map_err(|_| io::Error::other("mapping too large"))?;
         // SAFETY: Only the caller's immutable published prefix is exposed.
-        unsafe {
-            MmapOptions::new()
-                .len(len)
-                .map(file)
-                .map(Arc::new)
-                .map(Self::Conventional)
+        let mapping = unsafe { MmapOptions::new().len(len).map(file)? };
+        access.apply(&mapping);
+        Ok(Self::Conventional(Arc::new(mapping), access))
+    }
+
+    /// Return the policy used for this mapping and any future extension.
+    pub fn access_pattern(&self) -> AccessPattern {
+        match self {
+            #[cfg(all(unix, target_pointer_width = "64"))]
+            Self::Stable(mapping) => mapping.access,
+            Self::Conventional(_, access) => *access,
         }
     }
 
@@ -106,8 +135,10 @@ impl FileMapping {
         }
         let len = usize::try_from(len).map_err(|_| io::Error::other("mapping too large"))?;
         // SAFETY: Old views keep their mapping; only the immutable prefix is exposed.
+        let access = self.access_pattern();
         let replacement = unsafe { MmapOptions::new().len(len).map(file)? };
-        *self = Self::Conventional(Arc::new(replacement));
+        access.apply(&replacement);
+        *self = Self::Conventional(Arc::new(replacement), access);
         Ok(())
     }
 }
@@ -119,7 +150,7 @@ impl Deref for FileMapping {
         match self {
             #[cfg(all(unix, target_pointer_width = "64"))]
             Self::Stable(mapping) => mapping.bytes(),
-            Self::Conventional(mapping) => mapping,
+            Self::Conventional(mapping, _) => mapping,
         }
     }
 }
@@ -140,6 +171,8 @@ fn reservation_capacity(file_len: u64) -> Option<usize> {
 pub struct ReservedMapping {
     /// Base of the reservation, including the inaccessible suffix.
     base: *mut libc::c_void,
+    /// Advice applied to each newly backed interval.
+    access: AccessPattern,
     /// Total reserved virtual address space, in bytes.
     capacity: usize,
     /// Number of file-backed bytes; always a multiple of the host page size.
@@ -166,11 +199,23 @@ impl ReservedMapping {
     /// The file must remain untruncated and its exposed bytes immutable.
     #[cfg(test)]
     unsafe fn new(file: &File, capacity: usize) -> io::Result<Self> {
-        unsafe { Self::new_prefix(file, capacity, file.metadata()?.len()) }
+        unsafe {
+            Self::new_prefix(
+                file,
+                capacity,
+                file.metadata()?.len(),
+                AccessPattern::Normal,
+            )
+        }
     }
 
     /// Reserve address space for an immutable published prefix.
-    unsafe fn new_prefix(file: &File, capacity: usize, len: u64) -> io::Result<Self> {
+    unsafe fn new_prefix(
+        file: &File,
+        capacity: usize,
+        len: u64,
+        access: AccessPattern,
+    ) -> io::Result<Self> {
         // SAFETY: sysconf has no pointer arguments.
         let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
         if page_size <= 0 {
@@ -215,6 +260,7 @@ impl ReservedMapping {
         }
         let mapping = Self {
             base,
+            access,
             capacity,
             mapped_len: AtomicUsize::new(0),
             extension: Mutex::new(()),
@@ -277,6 +323,8 @@ impl ReservedMapping {
         if mapped == libc::MAP_FAILED {
             return Err(io::Error::last_os_error());
         }
+        // SAFETY: only the newly backed, page-aligned interval is advised.
+        unsafe { self.access.apply_raw(mapped, end - mapped_len) };
         self.mapped_len.store(end, Ordering::Release);
         Ok(())
     }
@@ -303,8 +351,12 @@ impl Drop for ReservedMapping {
 
 #[cfg(all(test, unix, target_pointer_width = "64"))]
 mod tests {
-    use super::*;
     use std::os::unix::fs::FileExt;
+
+    #[cfg(target_os = "linux")]
+    use stacks_mmap::advice_stats;
+
+    use super::*;
 
     /// Appending within/across pages preserves old addresses and exposes only complete pages.
     #[test]
@@ -369,10 +421,86 @@ mod tests {
         unsafe {
             mapping.refresh(&file).unwrap();
         }
-        std::assert_matches!(mapping, FileMapping::Conventional(_));
+        std::assert_matches!(mapping, FileMapping::Conventional(..));
         assert_eq!(&*mapping, vec![7; 2 * page + 3]);
         assert!(unsafe { ReservedMapping::new(&file, page) }.is_err());
     }
+    /// Random advice survives append, clone, reservation exhaustion, and fallback growth.
+    #[test]
+    fn random_policy_survives_growth_and_fallback() {
+        #[cfg(target_os = "linux")]
+        let before = advice_stats();
+        let file = tempfile::tempfile().unwrap();
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        file.write_all_at(&vec![9; page], 0).unwrap();
+        let mut mapping = FileMapping::Stable(Arc::new(unsafe {
+            ReservedMapping::new_prefix(&file, page * 2, page as u64, AccessPattern::Random)
+                .unwrap()
+        }));
+        let reader = mapping.clone();
+        let address = reader.as_ptr();
+        assert_eq!(mapping.access_pattern(), AccessPattern::Random);
+        assert_random_mapping(&mapping);
+        file.write_all_at(&vec![8; page], page as u64).unwrap();
+        unsafe { mapping.refresh(&file).unwrap() };
+        assert_eq!(address, mapping.as_ptr());
+        assert_random_mapping(&mapping);
+        file.write_all_at(&vec![7; page], (2 * page) as u64)
+            .unwrap();
+        unsafe { mapping.refresh(&file).unwrap() };
+        std::assert_matches!(mapping, FileMapping::Conventional(_, AccessPattern::Random));
+        assert_random_mapping(&mapping);
+        file.write_all_at(&[6], (3 * page) as u64).unwrap();
+        unsafe { mapping.refresh(&file).unwrap() };
+        assert_eq!(mapping.access_pattern(), AccessPattern::Random);
+        assert_random_mapping(&mapping);
+        assert_eq!(&reader[..page], vec![9; page]);
+        assert_eq!(mapping[3 * page], 6);
+        #[cfg(target_os = "linux")]
+        {
+            let after = advice_stats();
+            assert!(after.advised >= before.advised + 4);
+            assert_eq!(after.failed, before.failed);
+        }
+    }
+
+    /// Check the kernel's actual VMA advice on every page, including appended regions.
+    fn assert_random_mapping(mapping: &FileMapping) {
+        #[cfg(target_os = "linux")]
+        {
+            let smaps = std::fs::read_to_string("/proc/self/smaps").unwrap();
+            let begin = mapping.as_ptr() as usize;
+            let end = begin + mapping.len();
+            let mut interval = None;
+            let mut covered = 0;
+            for line in smaps.lines() {
+                if let Some((start, stop)) = line
+                    .split_whitespace()
+                    .next()
+                    .and_then(|range| range.split_once('-'))
+                {
+                    interval = usize::from_str_radix(start, 16)
+                        .ok()
+                        .zip(usize::from_str_radix(stop, 16).ok());
+                } else if let Some(flags) = line.strip_prefix("VmFlags:") {
+                    if let Some((start, stop)) = interval {
+                        let overlap = end.min(stop).saturating_sub(begin.max(start));
+                        if overlap > 0 {
+                            assert!(
+                                flags.split_whitespace().any(|flag| flag == "rr"),
+                                "missing random advice: {line}"
+                            );
+                            covered += overlap;
+                        }
+                    }
+                }
+            }
+            assert_eq!(covered, mapping.len());
+        }
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(mapping.access_pattern(), AccessPattern::Random);
+    }
+
     /// Capacity tracks file size without overflowing the slice address-space limit.
     #[test]
     fn reservation_headroom_is_bounded() {
@@ -437,7 +565,7 @@ mod tests {
         unsafe {
             writer.refresh(&file).unwrap();
         }
-        std::assert_matches!(writer, FileMapping::Conventional(_));
+        std::assert_matches!(writer, FileMapping::Conventional(..));
         assert_eq!(&writer[page..], vec![2; page]);
         drop(writer);
         assert_eq!(retained, vec![1; page]);

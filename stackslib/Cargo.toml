@@ -16,6 +16,7 @@ name = "blockstack_lib"
 path = "src/lib.rs"
 
 [dependencies]
+stacks-mmap = { path = "../crates/stacks-mmap" }
 extent-ptrhash = { path = "../crates/extent-ptrhash" }
 stable-value-format = { path = "../crates/stable-value-format" }
 stacks-profiler.workspace = true

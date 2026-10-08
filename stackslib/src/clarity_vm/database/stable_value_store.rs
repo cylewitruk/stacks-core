@@ -37,6 +37,7 @@ use stable_value_format::{
     FileKind, ValueDirectoryRow, ValueId, DESCRIPTOR_ROW_BYTES, FILE_HEADER_BYTES,
     MAX_DESCRIPTOR_BYTES, MAX_PARTITION_BYTES, MAX_RECORD_BYTES, VALUE_ROW_BYTES,
 };
+use stacks_mmap::AccessPattern;
 
 use super::binary_value_store::{self, EncodedRecord};
 use super::value_extents::canonical_from_encoded_parts;
@@ -53,6 +54,8 @@ struct MappedGenerationFile {
     /// Stable mapped prefix for the large, frequently indexed value directory.
     mapping: Option<FileMapping>,
     windows: VecDeque<(u64, Mmap)>,
+    /// Value-directory lookups are random; descriptor files retain OS defaults.
+    access: AccessPattern,
 }
 
 impl MappedGenerationFile {
@@ -62,17 +65,20 @@ impl MappedGenerationFile {
             file,
             mapping: None,
             windows: VecDeque::new(),
+            access: AccessPattern::Normal,
         }
     }
 
     /// Prefer one demand-paged mapping for random fixed-width directory reads.
     fn new_value_directory(file: GenerationFile) -> Self {
         // SAFETY: published rows are immutable and the directory only appends.
-        let mapping = unsafe { FileMapping::map(file.file()).ok() };
+        let mapping =
+            unsafe { FileMapping::map_with_access(file.file(), AccessPattern::Random).ok() };
         Self {
             file,
             mapping,
             windows: VecDeque::new(),
+            access: AccessPattern::Random,
         }
     }
 
@@ -125,6 +131,7 @@ impl MappedGenerationFile {
                 .len(map_length)
                 .map(self.file.file())?
         };
+        self.access.apply(&mapping);
         let start = (offset - base) as usize;
         let row = mapping[start..start + length].to_vec();
         self.windows.push_back((base, mapping));
@@ -2050,10 +2057,9 @@ fn message(text: &str) -> VmExecutionError {
 
 #[cfg(test)]
 mod tests {
-    use super::super::value_extents::StableMappedValueRecord;
-    use super::super::value_extents::ValueBackend;
+    use std::io::Write;
+    use std::process::Command;
 
-    use super::*;
     #[cfg(not(feature = "direct-value-eager"))]
     use clarity::vm::database::StoredValue;
     use clarity::vm::database::TypedValueData;
@@ -2062,8 +2068,9 @@ mod tests {
     use clarity::vm::types::Value;
     #[cfg(not(feature = "direct-value-eager"))]
     use stacks_common::types::StacksEpochId;
-    use std::io::Write;
-    use std::process::Command;
+
+    use super::super::value_extents::{StableMappedValueRecord, ValueBackend};
+    use super::*;
 
     /// A cached directory window must not hide later appended ID rows.
     #[test]

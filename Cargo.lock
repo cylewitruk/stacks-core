@@ -1814,6 +1814,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "stable-value-format",
+ "stacks-mmap",
  "stacks-profiler",
  "tempfile",
 ]
@@ -5440,6 +5441,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stacks-mmap"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "memmap2",
+ "tempfile",
+]
+
+[[package]]
 name = "stacks-node"
 version = "4.0.3"
 dependencies = [
@@ -5650,6 +5660,7 @@ dependencies = [
  "stable-value-format",
  "stacks-codec",
  "stacks-common 4.0.3",
+ "stacks-mmap",
  "stacks-profiler",
  "stacks-transactions",
  "stdext",

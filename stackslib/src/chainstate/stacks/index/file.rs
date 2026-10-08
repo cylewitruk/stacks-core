@@ -24,9 +24,10 @@ use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
+use std::{env, fs, io};
 
 use memmap2::{Mmap, MmapOptions};
-use std::{env, fs, io};
+use stacks_mmap::AccessPattern;
 
 #[cfg(test)]
 thread_local! {
@@ -96,15 +97,13 @@ use stacks_common::types::chainstate::{TrieHash, TRIEHASH_ENCODED_SIZE};
 use crate::chainstate::stacks::index::blob_layout::{self, BlobHeader};
 use crate::chainstate::stacks::index::inline_value::{self, InlineValue};
 use crate::chainstate::stacks::index::mapped_file::FileMapping;
-use crate::chainstate::stacks::index::node::TrieNodeType;
-use crate::chainstate::stacks::index::node::{clear_ctrl_bits, TrieNodeID, TriePtr};
+use crate::chainstate::stacks::index::node::{clear_ctrl_bits, TrieNodeID, TrieNodeType, TriePtr};
 use crate::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
 use crate::chainstate::stacks::index::storage::NodeHashReader;
 use crate::chainstate::stacks::index::{
     bits, trie_sql, BorrowedNodeBytes, Error, MarfDataEntry, MarfTrieId, NodeDecodeScratch,
-    ReadTrieItem, ReadTrieNode,
+    NodePath, ReadTrieItem, ReadTrieNode, TrieLeaf,
 };
-use crate::chainstate::stacks::index::{NodePath, TrieLeaf};
 use crate::util_lib::db::sql_vacuum;
 
 /// Reader-thread count for the bulk header fan-out.
@@ -271,7 +270,8 @@ impl TrieFileDisk {
             unsafe { mapping.refresh(&self.fd)? };
         } else {
             // SAFETY: The first synchronized append establishes an immutable prefix.
-            self.mmap = Some(unsafe { FileMapping::map(&self.fd)? });
+            self.mmap =
+                Some(unsafe { FileMapping::map_with_access(&self.fd, AccessPattern::Random)? });
         }
         let prefix = self.mmap.as_ref().map_or(0, |mapping| mapping.len()) as u64;
         if prefix < file_len {
@@ -284,6 +284,7 @@ impl TrieFileDisk {
                     .len(usize::try_from(file_len - start).map_err(io::Error::other)?)
                     .map(&self.fd)?
             };
+            AccessPattern::Random.apply(&mapping);
             *self
                 .tail
                 .write()
@@ -383,11 +384,11 @@ impl TrieFile {
         let mmap = if file_len > 0 {
             // SAFETY: The .blobs file is append-only and single-writer. Existing data
             // at existing offsets never changes. The mmap is read-only.
-            Some(unsafe { FileMapping::map(&fd)? })
+            Some(unsafe { FileMapping::map_with_access(&fd, AccessPattern::Random)? })
         } else {
             // Stable reservations can be shared even before the first write.
             // Conventional mmap cannot map an empty file and remains deferred.
-            unsafe { FileMapping::map(&fd).ok() }
+            unsafe { FileMapping::map_with_access(&fd, AccessPattern::Random).ok() }
         };
         let mut disk = TrieFileDisk {
             record_context: RecordContext::default(),
