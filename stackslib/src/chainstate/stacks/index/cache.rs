@@ -18,7 +18,17 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use rapidhash::RapidHashMap;
+
 use crate::chainstate::stacks::index::MarfTrieId;
+
+/// A cached hash and whether its reverse lookup has been published.
+struct CachedBlockHash<T> {
+    /// Hash resolved for the owner-local block ID.
+    hash: T,
+    /// Whether eager lookup already populated the reverse cache.
+    reverse_cached: bool,
+}
 
 /// Cache MARF block hash/block ID lookups.
 pub struct BlockHashCache<T: MarfTrieId> {
@@ -26,7 +36,7 @@ pub struct BlockHashCache<T: MarfTrieId> {
     ///
     /// Contents are never evicted; the size of this map grows only at the rate of new Stacks
     /// blocks.
-    block_hash_cache: HashMap<u32, T>,
+    block_hash_cache: RapidHashMap<u32, CachedBlockHash<T>>,
 
     /// Mapping between trie blob hashes and their IDs
     block_id_cache: HashMap<T, u32>,
@@ -35,39 +45,94 @@ pub struct BlockHashCache<T: MarfTrieId> {
 impl<T: MarfTrieId> BlockHashCache<T> {
     pub fn new() -> BlockHashCache<T> {
         BlockHashCache {
-            block_hash_cache: HashMap::new(),
+            block_hash_cache: RapidHashMap::default(),
             block_id_cache: HashMap::new(),
         }
     }
 
-    /// Get cached entry for a block hash, given its ID, or, if not found, use `lookup` to get the
-    /// corresponding block hash and store it in the cache
+    /// Resolve a hash and populate both lookup directions after success.
     pub fn get_block_hash_caching<E, F: FnOnce(u32) -> Result<T, E>>(
         &mut self,
         id: u32,
         lookup: F,
     ) -> Result<&T, E> {
+        self.get_block_hash_caching_impl::<E, F, true>(id, lookup)
+    }
+
+    /// Resolve a hash without requiring or populating its reverse lookup.
+    pub fn get_block_hash_forward_only<E, F: FnOnce(u32) -> Result<T, E>>(
+        &mut self,
+        id: u32,
+        lookup: F,
+    ) -> Result<&T, E> {
+        self.get_block_hash_caching_impl::<E, F, false>(id, lookup)
+    }
+
+    /// Share lookup/error handling while keeping reverse work off forward-only hits.
+    fn get_block_hash_caching_impl<E, F, const CACHE_REVERSE: bool>(
+        &mut self,
+        id: u32,
+        lookup: F,
+    ) -> Result<&T, E>
+    where
+        F: FnOnce(u32) -> Result<T, E>,
+    {
         match self.block_hash_cache.entry(id) {
-            Entry::Occupied(occupied_entry) => Ok(occupied_entry.into_mut()),
+            Entry::Occupied(occupied_entry) => {
+                let entry = occupied_entry.into_mut();
+                if CACHE_REVERSE && !entry.reverse_cached {
+                    self.block_id_cache.entry(entry.hash.clone()).or_insert(id);
+                    entry.reverse_cached = true;
+                }
+                Ok(&entry.hash)
+            }
             Entry::Vacant(vacant_entry) => {
-                let block_hash = lookup(id)?;
-                let block_hash_ref = vacant_entry.insert(block_hash.clone());
-                self.block_id_cache.insert(block_hash, id);
-                Ok(block_hash_ref)
+                let hash = lookup(id)?;
+                if CACHE_REVERSE {
+                    self.block_id_cache.insert(hash.clone(), id);
+                }
+                Ok(&vacant_entry
+                    .insert(CachedBlockHash {
+                        hash,
+                        reverse_cached: CACHE_REVERSE,
+                    })
+                    .hash)
             }
         }
     }
 
-    /// Cache a block hash provided its ID
+    /// Publish both directions, accepting a matching existing forward entry.
+    /// Returns false without mutation when the ID already resolves to another hash.
+    pub fn publish_block_hash(&mut self, block_id: u32, block_hash: T) -> bool {
+        match self.block_hash_cache.entry(block_id) {
+            Entry::Occupied(mut entry) => {
+                if entry.get().hash != block_hash {
+                    return false;
+                }
+                entry.get_mut().reverse_cached = true;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(CachedBlockHash {
+                    hash: block_hash.clone(),
+                    reverse_cached: true,
+                });
+            }
+        }
+        self.block_id_cache.insert(block_hash, block_id);
+        true
+    }
+
+    /// Cache a new block ID and hash, rejecting a duplicate ID.
     pub fn store_block_hash(&mut self, block_id: u32, block_hash: T) {
         assert!(!self.block_hash_cache.contains_key(&block_id));
-        self.block_id_cache.insert(block_hash.clone(), block_id);
-        self.block_hash_cache.insert(block_id, block_hash);
+        assert!(self.publish_block_hash(block_id, block_hash));
     }
 
     /// Get an immutable reference to a block hash, given the ID
     pub fn ref_block_hash(&self, block_id: u32) -> Option<&T> {
-        self.block_hash_cache.get(&block_id)
+        self.block_hash_cache
+            .get(&block_id)
+            .map(|entry| &entry.hash)
     }
 
     /// Get a block ID provided its hash
@@ -367,5 +432,217 @@ impl<K: Eq, V> Drop for SharedLruGuard<K, V> {
         if !self.succeeded {
             self.cache.clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod block_hash_tests {
+    use super::BlockHashCache;
+    use crate::chainstate::stacks::BlockHeaderHash;
+
+    /// Successful lookups populate both directions and hits never call storage again.
+    #[test]
+    fn block_hash_hits_and_reverse_lookup() {
+        let mut cache = BlockHashCache::new();
+        for (i, id) in [0, 1, 256, 65536, u32::MAX].into_iter().enumerate() {
+            let expected = BlockHeaderHash([i as u8; 32]);
+            let found = cache
+                .get_block_hash_caching(id, |requested| {
+                    assert_eq!(requested, id);
+                    Ok::<_, ()>(expected.clone())
+                })
+                .unwrap();
+            assert_eq!(found, &expected);
+            assert_eq!(cache.ref_block_hash(id), Some(&expected));
+            assert_eq!(cache.load_block_id(&expected), Some(id));
+            assert_eq!(
+                cache.get_block_hash_caching(id, |_| Err(())).unwrap(),
+                &expected
+            );
+        }
+    }
+
+    /// Storage errors remain retryable and cannot publish a cache entry.
+    #[test]
+    fn failed_block_hash_lookup_is_not_cached() {
+        let mut cache = BlockHashCache::new();
+        let expected = BlockHeaderHash([7; 32]);
+        assert_eq!(
+            cache.get_block_hash_caching(7, |_| Err("missing")),
+            Err("missing")
+        );
+        assert_eq!(cache.ref_block_hash(7), None);
+        assert_eq!(cache.load_block_id(&expected), None);
+        assert_eq!(
+            cache
+                .get_block_hash_caching(7, |_| Ok::<_, &str>(expected.clone()))
+                .unwrap(),
+            &expected
+        );
+        assert_eq!(cache.load_block_id(&expected), Some(7));
+    }
+
+    /// Independent storage owners may resolve the same local ID to different hashes.
+    #[test]
+    fn block_hash_cache_owners_remain_independent() {
+        let mut first = BlockHashCache::new();
+        let mut second = BlockHashCache::new();
+        let a = BlockHeaderHash([1; 32]);
+        let b = BlockHeaderHash([2; 32]);
+        first.store_block_hash(1, a.clone());
+        second.store_block_hash(1, b.clone());
+        assert_eq!(first.get_block_hash_caching(1, |_| Err(())).unwrap(), &a);
+        assert_eq!(second.get_block_hash_caching(1, |_| Err(())).unwrap(), &b);
+        assert_eq!(first.load_block_id(&b), None);
+        assert_eq!(second.load_block_id(&a), None);
+    }
+
+    /// Forward-only lookups cache sparse IDs without allocating a reverse entry.
+    #[test]
+    fn forward_only_hits_and_sparse_ids() {
+        let mut cache = BlockHashCache::new();
+        for (i, id) in [0, 1, 256, 65536, u32::MAX].into_iter().enumerate() {
+            let expected = BlockHeaderHash([i as u8; 32]);
+            assert_eq!(
+                cache
+                    .get_block_hash_forward_only(id, |requested| {
+                        assert_eq!(requested, id);
+                        Ok::<_, ()>(expected.clone())
+                    })
+                    .unwrap(),
+                &expected
+            );
+            assert_eq!(cache.ref_block_hash(id), Some(&expected));
+            assert_eq!(cache.load_block_id(&expected), None);
+            assert_eq!(
+                cache.get_block_hash_forward_only(id, |_| Err(())).unwrap(),
+                &expected
+            );
+            assert!(!cache.block_hash_cache.get(&id).unwrap().reverse_cached);
+        }
+        assert_eq!(cache.block_hash_cache.len(), 5);
+        assert_eq!(cache.block_id_cache.len(), 0);
+    }
+
+    /// Eager hits promote forward-only entries without invoking their lookup closure.
+    #[test]
+    fn eager_lookup_promotes_forward_only_entry() {
+        let mut cache = BlockHashCache::new();
+        let expected = BlockHeaderHash([7; 32]);
+        cache
+            .get_block_hash_forward_only(7, |_| Ok::<_, ()>(expected.clone()))
+            .unwrap();
+        assert_eq!(cache.load_block_id(&expected), None);
+        assert_eq!(
+            cache.get_block_hash_caching(7, |_| Err(())).unwrap(),
+            &expected
+        );
+        assert_eq!(cache.load_block_id(&expected), Some(7));
+        assert!(cache.block_hash_cache.get(&7).unwrap().reverse_cached);
+        assert_eq!(
+            cache.get_block_hash_caching(7, |_| Err(())).unwrap(),
+            &expected
+        );
+        assert_eq!(cache.block_hash_cache.len(), 1);
+        assert_eq!(cache.block_id_cache.len(), 1);
+    }
+
+    /// Publication promotes equal pairs and rejects conflicts without changing either map.
+    #[test]
+    fn pair_publication_checks_existing_forward_hash() {
+        let mut cache = BlockHashCache::new();
+        let expected = BlockHeaderHash([7; 32]);
+        let other = BlockHeaderHash([8; 32]);
+        cache
+            .get_block_hash_forward_only(7, |_| Ok::<_, ()>(expected.clone()))
+            .unwrap();
+        assert!(!cache.publish_block_hash(7, other.clone()));
+        assert_eq!(cache.ref_block_hash(7), Some(&expected));
+        assert_eq!(cache.load_block_id(&expected), None);
+        assert_eq!(cache.load_block_id(&other), None);
+        assert!(!cache.block_hash_cache.get(&7).unwrap().reverse_cached);
+        assert!(cache.publish_block_hash(7, expected.clone()));
+        assert_eq!(cache.load_block_id(&expected), Some(7));
+        assert!(cache.block_hash_cache.get(&7).unwrap().reverse_cached);
+        assert!(cache.publish_block_hash(8, other.clone()));
+        assert_eq!(cache.ref_block_hash(8), Some(&other));
+        assert_eq!(cache.load_block_id(&other), Some(8));
+    }
+
+    /// Failed forward-only reads publish nothing and remain retryable.
+    #[test]
+    fn failed_forward_only_lookup_is_not_cached() {
+        let mut cache = BlockHashCache::new();
+        let expected = BlockHeaderHash([7; 32]);
+        std::assert_matches!(
+            cache.get_block_hash_forward_only(7, |_| Err::<BlockHeaderHash, _>("missing")),
+            Err("missing")
+        );
+        assert_eq!(cache.ref_block_hash(7), None);
+        assert_eq!(cache.load_block_id(&expected), None);
+        assert_eq!(cache.block_hash_cache.len(), 0);
+        assert_eq!(cache.block_id_cache.len(), 0);
+        assert_eq!(
+            cache
+                .get_block_hash_forward_only(7, |_| Ok::<_, &str>(expected.clone()))
+                .unwrap(),
+            &expected
+        );
+        assert_eq!(cache.load_block_id(&expected), None);
+    }
+
+    /// Forward-only promotion remains local to the storage owner.
+    #[test]
+    fn forward_only_cache_owners_remain_independent() {
+        let mut first = BlockHashCache::new();
+        let mut second = BlockHashCache::new();
+        let a = BlockHeaderHash([1; 32]);
+        let b = BlockHeaderHash([2; 32]);
+        first
+            .get_block_hash_forward_only(1, |_| Ok::<_, ()>(a.clone()))
+            .unwrap();
+        second
+            .get_block_hash_forward_only(1, |_| Ok::<_, ()>(b.clone()))
+            .unwrap();
+        assert_eq!(first.get_block_hash_caching(1, |_| Err(())).unwrap(), &a);
+        assert_eq!(first.load_block_id(&a), Some(1));
+        assert_eq!(second.load_block_id(&b), None);
+        assert_eq!(first.load_block_id(&b), None);
+        assert_eq!(second.ref_block_hash(1), Some(&b));
+        assert_eq!(second.get_block_hash_caching(1, |_| Err(())).unwrap(), &b);
+        assert_eq!(second.load_block_id(&b), Some(1));
+        assert_eq!(second.load_block_id(&a), None);
+    }
+
+    /// Existing eager hits preserve the reverse map's last-published ID for equal hashes.
+    #[test]
+    fn eager_promotion_preserves_existing_reverse_alias() {
+        let mut cache = BlockHashCache::new();
+        let hash = BlockHeaderHash([1; 32]);
+        cache.store_block_hash(1, hash.clone());
+        cache.store_block_hash(2, hash.clone());
+        assert_eq!(cache.get_block_hash_caching(1, |_| Err(())).unwrap(), &hash);
+        assert_eq!(cache.load_block_id(&hash), Some(2));
+        cache
+            .get_block_hash_forward_only(3, |_| Ok::<_, ()>(hash.clone()))
+            .unwrap();
+        assert_eq!(cache.get_block_hash_caching(3, |_| Err(())).unwrap(), &hash);
+        assert_eq!(cache.load_block_id(&hash), Some(2));
+        cache
+            .get_block_hash_caching(4, |_| Ok::<_, ()>(hash.clone()))
+            .unwrap();
+        assert_eq!(cache.load_block_id(&hash), Some(4));
+    }
+
+    /// Direct store retains its duplicate-ID assertion after a forward-only insertion.
+    #[test]
+    #[should_panic]
+    fn store_rejects_existing_forward_only_id() {
+        let mut cache = BlockHashCache::new();
+        let hash = BlockHeaderHash([1; 32]);
+        cache
+            .get_block_hash_forward_only(1, |_| Ok::<_, ()>(hash.clone()))
+            .unwrap();
+        cache.store_block_hash(1, hash);
     }
 }

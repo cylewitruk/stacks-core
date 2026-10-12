@@ -1,0 +1,1 @@
+Reduce deferred MARF node-hashing overhead with one child-pointer snapshot per branch, faster integer-key block-hash cache lookups, and on-demand reverse-cache publication for seal-only lookups.

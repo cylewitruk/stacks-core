@@ -798,17 +798,22 @@ impl<T: MarfTrieId> TrieRAM<T> {
         node_ptr: u32,
     ) -> Result<TrieHash, Error> {
         let child_count = N;
+        // Release the node borrow before recursion without redispatching for every child.
+        let ptrs: [TriePtr; N] = self
+            .get_nodetype(node_ptr)?
+            .0
+            .ptrs()
+            .try_into()
+            .expect("branch capacity matches the selected hash traversal");
         let mut child_hashes = [TrieHash::EMPTY; N];
-        for (slot, hash) in child_hashes.iter_mut().enumerate().take(child_count) {
-            // Copy only this pointer, releasing the node borrow before recursion.
-            let ptr = self.get_nodetype(node_ptr)?.0.ptrs()[slot];
+        for (ptr, hash) in ptrs.iter().zip(&mut child_hashes) {
             if ptr.is_empty() {
                 continue;
             }
             if is_backptr(ptr.id()) {
                 hash.0.copy_from_slice(
                     storage_tx
-                        .get_block_hash_caching(ptr.back_block())?
+                        .get_block_hash_forward_only(ptr.back_block())?
                         .as_bytes(),
                 );
             } else {
@@ -1977,7 +1982,11 @@ fn get_block_id_caching_impl<T: MarfTrieId>(
         Ok(id)
     } else {
         let id = trie_sql::get_block_identifier(db, block_hash)?;
-        cache.store_block_hash(id, block_hash.clone());
+        if !cache.publish_block_hash(id, block_hash.clone()) {
+            return Err(Error::CorruptionError(format!(
+                "Cached block hash disagrees with block ID {id}"
+            )));
+        }
         Ok(id)
     }
 }
@@ -2093,6 +2102,13 @@ fn read_patched_persisted_node<'b>(
 }
 
 impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieStorageConnection<'_, T, Db> {
+    /// Read seal backpointer commitments without eagerly caching reverse lookup keys.
+    fn get_block_hash_forward_only(&mut self, id: u32) -> Result<&T, Error> {
+        self.cache.get_block_hash_forward_only(id, |id| {
+            DirectHashIndex::block_hash(self.data.direct_hash_index.as_ref(), &self.db, id)
+        })
+    }
+
     /// Identify a committed ancestor-index base, falling back on unsupported trie views.
     fn indexed_ancestor_base(
         &mut self,
@@ -4154,10 +4170,267 @@ pub mod testing {
 }
 
 #[cfg(test)]
+mod block_hash_promotion_tests {
+    use rusqlite::params;
+    use sha2::Digest;
+
+    use super::{
+        get_block_id_caching_impl, BlockHashCache, ClarityMarfTrieId, Error, MARFOpenOpts,
+        TrieFileStorage, TrieHash, TrieHasher, TrieNodeID, TrieNodeType, TriePtr, TrieRAM,
+    };
+    use crate::chainstate::stacks::index::node::TrieNode4;
+    use crate::chainstate::stacks::BlockHeaderHash;
+
+    /// Create a confirmed or unconfirmed SQL pair for reverse-lookup tests.
+    fn storage_with_hash(
+        hash: &BlockHeaderHash,
+        unconfirmed: bool,
+    ) -> TrieFileStorage<BlockHeaderHash> {
+        let storage = TrieFileStorage::new_memory(MARFOpenOpts::default()).unwrap();
+        storage
+            .db
+            .execute(
+                "INSERT INTO marf_data (block_id, block_hash, data, unconfirmed) VALUES (7, ?1, zeroblob(0), ?2)",
+                params![hash, unconfirmed],
+            )
+            .unwrap();
+        storage
+    }
+
+    /// Sealing a cold SQL-backed backpointer preserves consensus bytes without reverse publication.
+    #[test]
+    fn seal_backpointer_lookup_keeps_reverse_unpublished() {
+        let hash = BlockHeaderHash([7; 32]);
+        let mut storage = storage_with_hash(&hash, false);
+        let mut node = TrieNodeType::Node4(TrieNode4::new(&[]));
+        assert!(node.insert(&TriePtr::new_backptr(TrieNodeID::Node4 as u8, 9, 123, 7)));
+        let mut bytes = Vec::new();
+        node.write_consensus_bytes(&mut storage, &mut bytes)
+            .unwrap();
+        for ptr in node.ptrs() {
+            let child = if ptr.is_empty() {
+                TrieHash::EMPTY
+            } else {
+                TrieHash(hash.0)
+            };
+            bytes.extend_from_slice(child.as_bytes());
+        }
+        let expected = TrieHash(TrieHasher::digest(&bytes).into());
+        storage.cache = BlockHashCache::new();
+        let mut ram = TrieRAM::new(
+            &BlockHeaderHash([0x11; 32]),
+            1,
+            &BlockHeaderHash::sentinel(),
+        );
+        ram.write_nodetype(0, &node, TrieHash::EMPTY).unwrap();
+        {
+            let mut tx = storage.transaction().unwrap();
+            assert_eq!(ram.calculate_node_hashes(&mut tx, 0).unwrap(), expected);
+        }
+        assert_eq!(storage.cache.ref_block_hash(7), Some(&hash));
+        assert_eq!(storage.cache.load_block_id(&hash), None);
+    }
+
+    /// A confirmed reverse SQL miss promotes an existing forward pair and then hits cache.
+    #[test]
+    fn confirmed_reverse_lookup_promotes_forward_entry() {
+        let hash = BlockHeaderHash([7; 32]);
+        let mut storage = storage_with_hash(&hash, false);
+        storage
+            .cache
+            .get_block_hash_forward_only(7, |_| Ok::<_, ()>(hash.clone()))
+            .unwrap();
+        assert_eq!(storage.cache.load_block_id(&hash), None);
+        assert_eq!(
+            get_block_id_caching_impl(false, &mut storage.cache, &storage.db, &hash).unwrap(),
+            7
+        );
+        assert_eq!(storage.cache.load_block_id(&hash), Some(7));
+        storage.db.execute("DELETE FROM marf_data", []).unwrap();
+        assert_eq!(
+            get_block_id_caching_impl(false, &mut storage.cache, &storage.db, &hash).unwrap(),
+            7
+        );
+    }
+
+    /// Unconfirmed reverse lookups continue to consult SQL without promoting a forward pair.
+    #[test]
+    fn unconfirmed_reverse_lookup_bypasses_forward_entry() {
+        let hash = BlockHeaderHash([7; 32]);
+        let mut storage = storage_with_hash(&hash, true);
+        storage
+            .cache
+            .get_block_hash_forward_only(7, |_| Ok::<_, ()>(hash.clone()))
+            .unwrap();
+        assert_eq!(
+            get_block_id_caching_impl(true, &mut storage.cache, &storage.db, &hash).unwrap(),
+            7
+        );
+        assert_eq!(storage.cache.load_block_id(&hash), None);
+        storage.db.execute("DELETE FROM marf_data", []).unwrap();
+        assert!(get_block_id_caching_impl(true, &mut storage.cache, &storage.db, &hash).is_err());
+        assert_eq!(storage.cache.load_block_id(&hash), None);
+    }
+
+    /// A SQL pair conflicting with the cached forward hash fails without publication.
+    #[test]
+    fn reverse_lookup_rejects_conflicting_forward_hash() {
+        let hash = BlockHeaderHash([7; 32]);
+        let other = BlockHeaderHash([8; 32]);
+        let mut storage = storage_with_hash(&hash, false);
+        storage
+            .cache
+            .get_block_hash_forward_only(7, |_| Ok::<_, ()>(other.clone()))
+            .unwrap();
+        std::assert_matches!(
+            get_block_id_caching_impl(false, &mut storage.cache, &storage.db, &hash),
+            Err(Error::CorruptionError(_))
+        );
+        assert_eq!(storage.cache.ref_block_hash(7), Some(&other));
+        assert_eq!(storage.cache.load_block_id(&hash), None);
+        assert_eq!(storage.cache.load_block_id(&other), None);
+    }
+}
+
+#[cfg(test)]
 mod sealing_hash_tests {
+    use std::thread;
+
     use super::*;
     use crate::chainstate::stacks::index::node::{TrieNode16, TrieNode256, TrieNode4, TrieNode48};
     use crate::chainstate::stacks::BlockHeaderHash;
+
+    /// Maximum key depth keeps fanout-sized scratch within a normal worker stack.
+    #[test]
+    fn node256_hashing_fits_two_megabyte_stack_at_maximum_depth() {
+        thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let mut storage = TrieFileStorage::<BlockHeaderHash>::new_memory(MARFOpenOpts {
+                    hash_calculation_mode: TrieHashCalculationMode::Deferred,
+                    ..MARFOpenOpts::default()
+                })
+                .unwrap();
+                let mut ram = TrieRAM::new(
+                    &BlockHeaderHash([0x11; 32]),
+                    33,
+                    &BlockHeaderHash::sentinel(),
+                );
+                let leaf = TrieNodeType::Leaf(TrieLeaf::new(&[], &[0x12; 40]));
+                let mut bytes = Vec::new();
+                leaf.write_consensus_bytes(&mut storage, &mut bytes)
+                    .unwrap();
+                let mut expected = TrieHash(TrieHasher::digest(&bytes).into());
+                for index in 0..=32 {
+                    ram.write_nodetype(index, &leaf, expected).unwrap();
+                }
+                for index in (0..32).rev() {
+                    let mut node = TrieNodeType::Node256(Box::new(TrieNode256::new(&[])));
+                    let child_id = if index == 31 {
+                        TrieNodeID::Leaf
+                    } else {
+                        TrieNodeID::Node256
+                    };
+                    assert!(node.insert(&TriePtr::new(child_id as u8, 0, (index + 1) as u64)));
+                    bytes.clear();
+                    node.write_consensus_bytes(&mut storage, &mut bytes)
+                        .unwrap();
+                    for ptr in node.ptrs() {
+                        let hash = if ptr.is_empty() {
+                            TrieHash::EMPTY
+                        } else {
+                            expected
+                        };
+                        bytes.extend_from_slice(hash.as_bytes());
+                    }
+                    expected = TrieHash(TrieHasher::digest(&bytes).into());
+                    ram.write_nodetype(index, &node, TrieHash::EMPTY).unwrap();
+                }
+                let mut tx = storage.transaction().unwrap();
+                assert_eq!(ram.calculate_node_hashes(&mut tx, 0).unwrap(), expected);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    /// Mixed fanouts retain consensus hashes and mode-specific intermediate hash writes.
+    #[test]
+    fn recursive_branch_hashes_match_consensus_encoding() {
+        for path in [Vec::new(), vec![0x34; 32]] {
+            for mode in [
+                TrieHashCalculationMode::Deferred,
+                TrieHashCalculationMode::All,
+            ] {
+                let mut storage = TrieFileStorage::<BlockHeaderHash>::new_memory(MARFOpenOpts {
+                    hash_calculation_mode: mode,
+                    ..MARFOpenOpts::default()
+                })
+                .unwrap();
+                storage
+                    .cache
+                    .store_block_hash(7, BlockHeaderHash([0xa5; 32]));
+                let mut nodes = vec![
+                    TrieNodeType::Node256(Box::new(TrieNode256::new(&path))),
+                    TrieNodeType::Node48(Box::new(TrieNode48::new(&path))),
+                    TrieNodeType::Node16(TrieNode16::new(&path)),
+                    TrieNodeType::Node4(TrieNode4::new(&path)),
+                    TrieNodeType::Leaf(TrieLeaf::new(&[], &[0x12; 40])),
+                ];
+                for index in 0..4 {
+                    let child = TriePtr::new(nodes[index + 1].id(), 0, (index + 1) as u64);
+                    assert!(nodes[index].insert(&child));
+                    for chr in (1..nodes[index].max_ptrs()).step_by(2) {
+                        let back = TriePtr::new_backptr(TrieNodeID::Node4 as u8, chr as u8, 123, 7);
+                        assert!(nodes[index].insert(&back));
+                    }
+                }
+                // Use the original consensus encoder and independently assembled child hashes.
+                let mut expected = [TrieHash::EMPTY; 5];
+                for index in (0..nodes.len()).rev() {
+                    let mut bytes = Vec::new();
+                    nodes[index]
+                        .write_consensus_bytes(&mut storage, &mut bytes)
+                        .unwrap();
+                    for ptr in nodes[index].ptrs() {
+                        let hash = if ptr.is_empty() {
+                            TrieHash::EMPTY
+                        } else if is_backptr(ptr.id()) {
+                            TrieHash([0xa5; 32])
+                        } else {
+                            expected[index + 1]
+                        };
+                        bytes.extend_from_slice(hash.as_bytes());
+                    }
+                    expected[index] = TrieHash(TrieHasher::digest(&bytes).into());
+                }
+                let mut ram = TrieRAM::new(
+                    &BlockHeaderHash([0x11; 32]),
+                    5,
+                    &BlockHeaderHash::sentinel(),
+                );
+                for (index, node) in nodes.iter().enumerate() {
+                    let hash = if node.is_leaf() {
+                        expected[index]
+                    } else {
+                        TrieHash::EMPTY
+                    };
+                    ram.write_nodetype(index as u32, node, hash).unwrap();
+                }
+                let mut tx = storage.transaction().unwrap();
+                assert_eq!(ram.calculate_node_hashes(&mut tx, 0).unwrap(), expected[0]);
+                for (index, hash) in expected.iter().enumerate().take(4).skip(1) {
+                    let stored = if mode == TrieHashCalculationMode::Deferred {
+                        *hash
+                    } else {
+                        TrieHash::EMPTY
+                    };
+                    assert_eq!(ram.get_nodetype(index as u32).unwrap().1, stored);
+                }
+                assert_eq!(ram.get_nodetype(4).unwrap().1, expected[4]);
+            }
+        }
+    }
 
     /// Resolved-hash encoding must preserve every consensus byte for every branch size.
     #[test]

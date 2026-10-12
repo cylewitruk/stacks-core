@@ -4,7 +4,9 @@ Normal builds include fixed-name wall/thread-CPU spans for sealing, trie seriali
 blob sync/mapping, value publication, SQLite commit, hash publication and advance-tip work.
 The surrounding Segment spans distinguish Clarity from header-index commits without
 file paths, block hashes or keys as profiler tags. These timings do not change durability,
-read-ahead or database behavior.
+read-ahead or database behavior. The disk trie-append path records separate
+`Commit: Blob write`, `Commit: Blob sync` and `Commit: Blob mapping` children of
+`Flush: Store trie`, including appends that bypass the general sync wrapper.
 
 Use a profiled historical replay with `--no-profiler-kv`. Do **not** pass
 `--bench-spans-only` (alias `--no-profiler`) when investigating storage: that option

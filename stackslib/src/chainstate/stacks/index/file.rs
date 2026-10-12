@@ -738,6 +738,8 @@ impl TrieFile {
 
 #[cfg(test)]
 mod tests {
+    use stacks_common::types::chainstate::StacksBlockId;
+
     use super::*;
 
     fn remove_if_exists(path: &str) {
@@ -793,6 +795,61 @@ mod tests {
         assert_eq!(PREAD_FALLBACKS.with(Cell::get), 0);
         file.sync_data().unwrap();
         assert_eq!(file.mmap_slice_at(0, page).unwrap().as_ptr(), original);
+    }
+
+    /// The storage append path times each I/O phase and retains the mapped prefix.
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    #[test]
+    fn store_trie_blob_profiles_append_io() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("blobs");
+        let page = unsafe { nix::libc::sysconf(nix::libc::_SC_PAGESIZE) } as usize;
+        let mut db = Connection::open_in_memory().unwrap();
+        trie_sql::create_tables_if_needed(&mut db).unwrap();
+        trie_sql::migrate_tables_if_needed::<StacksBlockId>(&mut db).unwrap();
+        let mut file = TrieFile::new_mmap(path.to_str().unwrap(), false).unwrap();
+        let first = StacksBlockId([1; 32]);
+        file.store_trie_blob(&db, &first, &vec![1; page]).unwrap();
+        let original = file.mmap_slice_at(0, page).unwrap().as_ptr();
+        let second = StacksBlockId([2; 32]);
+        stacks_profiler::Profiler::clear();
+        stacks_profiler::measure!("Test append commit", {
+            file.store_trie_blob(&db, &second, &vec![2; page + 3])
+                .unwrap();
+        });
+        let profile = stacks_profiler::Profiler::take_results().unwrap();
+        let children = &profile[0].children;
+        assert_eq!(children.len(), 3);
+        for (child, name) in children.iter().zip([
+            "Commit: Blob write",
+            "Commit: Blob sync",
+            "Commit: Blob mapping",
+        ]) {
+            assert_eq!(child.name(), name);
+            assert_eq!(child.entered_count, 1);
+            assert_eq!(child.sampled_count, 1);
+        }
+        assert_eq!(
+            trie_sql::get_external_trie_offset_length_by_bhh(&db, &second).unwrap(),
+            (page as u64, (page + 3) as u64)
+        );
+        assert_eq!(file.mmap_slice_at(0, page).unwrap().as_ptr(), original);
+        assert_eq!(
+            file.mmap_slice_at(page as u64, page).unwrap(),
+            vec![2; page]
+        );
+        let mut tail = [0; 6];
+        assert_eq!(
+            file.read_bytes_at(&mut tail, (2 * page - 3) as u64)
+                .unwrap(),
+            6
+        );
+        assert_eq!(tail, [2; 6]);
+        drop(file);
+        assert_eq!(
+            fs::read(path).unwrap(),
+            [vec![1; page], vec![2; page + 3]].concat()
+        );
     }
 
     /// Reopened readers share append visibility and retain the mapping after the writer drops.
@@ -1283,9 +1340,15 @@ impl TrieFile {
 
         match self {
             TrieFile::Disk(ref mut disk) => {
-                pwrite_all(&disk.fd, buf, offset)?;
-                disk.fd.sync_data()?;
-                disk.refresh_mapping()?;
+                stacks_profiler::measure!("Commit: Blob write", {
+                    pwrite_all(&disk.fd, buf, offset)?;
+                });
+                stacks_profiler::measure!("Commit: Blob sync", {
+                    disk.fd.sync_data()?;
+                });
+                stacks_profiler::measure!("Commit: Blob mapping", {
+                    disk.refresh_mapping()?;
+                });
             }
             TrieFile::RAM(ref mut ram) => {
                 let data = ram.fd.get_mut();
