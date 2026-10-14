@@ -20,7 +20,10 @@ use std::fs;
 use clarity::vm::database::{
     DataStoreEntry, DataStoreValue, SqliteConnection, StoredValue, TypedValueData,
 };
-use clarity::vm::types::{StacksAddressExtensions, TupleData, TypeSignature, Value};
+use clarity::vm::types::{
+    PrincipalData, QualifiedContractIdentifier, StacksAddressExtensions, TupleData, TypeSignature,
+    Value,
+};
 use clarity::vm::{ClarityName, ContractName};
 use pinny::tag;
 use proptest::prelude::*;
@@ -38,9 +41,6 @@ use crate::chainstate::nakamoto::miner::{MinerTenureInfoCause, NakamotoBlockBuil
 use crate::chainstate::nakamoto::tests::node::TestStacker;
 use crate::chainstate::nakamoto::{NakamotoBlock, NakamotoChainState};
 use crate::chainstate::stacks::db::StacksChainState;
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MARF};
-use crate::chainstate::stacks::index::storage::TrieHashCalculationMode;
-use crate::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
 use crate::chainstate::stacks::miner::{
     BlockBuilder, BlockLimitFunction, TransactionResourceBudgets, TransactionResult,
 };
@@ -58,6 +58,9 @@ use crate::net::test::TestEventObserver;
 use crate::net::tests::inv::nakamoto::make_nakamoto_peer_from_invs;
 use crate::net::tests::{NakamotoBootPlan, NakamotoBootStep, NakamotoBootTenure};
 use crate::util_lib::strings::StacksString;
+use stacks_marf::marf::{MARFOpenOpts, MarfConnection, MARF};
+use stacks_marf::storage::TrieHashCalculationMode;
+use stacks_marf::{ClarityMarfTrieId, MARFValue};
 
 /// Verify that an ephemeral MARF can be created off of an already-written block of an on-disk
 /// MARF.
@@ -134,9 +137,7 @@ fn test_ephemeral_marf_store() {
         }
         debug!("ephemeral: open block #{}: {}", i, block_id);
         let ephemeral_tip = StacksBlockId([0xf0; 32]);
-        let mut marf_ephemeral = marfed_kv
-            .begin_ephemeral(&block_id, &ephemeral_tip)
-            .unwrap();
+        let mut marf_ephemeral = marfed_kv.begin_ephemeral(block_id, &ephemeral_tip).unwrap();
         for keys_and_values in &block_data[..i + 1] {
             // all values up to those inserted in the block with this ID are present
             for (key, expected_value) in keys_and_values.iter() {
@@ -182,9 +183,7 @@ fn test_ephemeral_marf_store() {
             "ephemeral: open block #{}: {} --> {}",
             i, block_id, &ephemeral_tip
         );
-        let mut marf_ephemeral = marfed_kv
-            .begin_ephemeral(&block_id, &ephemeral_tip)
-            .unwrap();
+        let mut marf_ephemeral = marfed_kv.begin_ephemeral(block_id, &ephemeral_tip).unwrap();
         marf_ephemeral
             .put_all_data(keys_and_values.clone())
             .unwrap();
@@ -245,9 +244,7 @@ fn test_ephemeral_marf_store() {
             .unwrap();
 
         // data is _not_ persisted
-        let mut marf_ephemeral = marfed_kv
-            .begin_ephemeral(&block_id, &ephemeral_tip)
-            .unwrap();
+        let mut marf_ephemeral = marfed_kv.begin_ephemeral(block_id, &ephemeral_tip).unwrap();
         for (key, _) in keys_and_values.iter() {
             assert!(marf_ephemeral.get_data(key).unwrap().is_none());
             debug!(
@@ -278,6 +275,91 @@ fn test_ephemeral_marf_store() {
                     "ephemeral: at block #{} {} --> {} post-commit: {} not mapped",
                     i, block_id, &ephemeral_tip, key
                 );
+            }
+        }
+    }
+}
+
+/// Persistent and ephemeral SQL-backed Binary V1 reads accept historical contract names.
+#[test]
+fn test_ephemeral_binary_store_legacy_contract_names() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().to_str().unwrap();
+    // Open an existing Binary V1 store so fresh-database stable IDs do not bypass SQL reads.
+    let legacy =
+        MARF::<StacksBlockId>::from_path(&format!("{path}/marf.sqlite"), MARFOpenOpts::default())
+            .unwrap();
+    SqliteConnection::initialize_conn(legacy.sqlite_conn()).unwrap();
+    binary_value_store::initialize_empty(legacy.sqlite_conn()).unwrap();
+    drop(legacy);
+    let mut marfed_kv = MarfedKV::open(path, None, None).unwrap();
+    let values: Vec<_> = [40, 41, 128]
+        .into_iter()
+        .map(|name_len| {
+            Value::Principal(PrincipalData::Contract(
+                QualifiedContractIdentifier::local(&"a".repeat(name_len)).unwrap(),
+            ))
+        })
+        .collect();
+    let entries = |prefix: &str| {
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| DataStoreEntry {
+                key: format!("{prefix}-{index}"),
+                value: DataStoreValue::Canonical(value.serialize_to_hex().unwrap()),
+            })
+            .collect()
+    };
+    let base_tip = StacksBlockId([1; 32]);
+    let staging_tip = StacksBlockId([0xf0; 32]);
+    let mut base = marfed_kv.begin(&StacksBlockId::sentinel(), &staging_tip);
+    base.put_all_data_entries(entries("base")).unwrap();
+    base.commit_to_processed_block(&base_tip).unwrap();
+    {
+        let mut read_only = marfed_kv.begin_read_only(Some(&base_tip));
+        assert!(!read_only.uses_value_extents());
+        for epoch in [StacksEpochId::Epoch40, StacksEpochId::Epoch41] {
+            for (index, value) in values.iter().enumerate() {
+                let key = format!("base-{index}");
+                assert_eq!(
+                    read_only
+                        .get_typed_value(&key, &TypeSignature::PrincipalType, &epoch)
+                        .unwrap()
+                        .unwrap()
+                        .value,
+                    *value
+                );
+                let stored = read_only
+                    .get_stored_value(&key, &TypeSignature::PrincipalType, &epoch)
+                    .unwrap()
+                    .unwrap();
+                std::assert_matches!(stored.value, StoredValue::Owned(decoded) if decoded == *value);
+            }
+        }
+    }
+    let ephemeral_tip = StacksBlockId([0xe0; 32]);
+    let mut ephemeral = marfed_kv
+        .begin_ephemeral(&base_tip, &ephemeral_tip)
+        .unwrap();
+    ephemeral.put_all_data_entries(entries("local")).unwrap();
+    for epoch in [StacksEpochId::Epoch40, StacksEpochId::Epoch41] {
+        for prefix in ["base", "local"] {
+            for (index, value) in values.iter().enumerate() {
+                let key = format!("{prefix}-{index}");
+                assert_eq!(
+                    ephemeral
+                        .get_typed_value(&key, &TypeSignature::PrincipalType, &epoch)
+                        .unwrap()
+                        .unwrap()
+                        .value,
+                    *value
+                );
+                let stored = ephemeral
+                    .get_stored_value(&key, &TypeSignature::PrincipalType, &epoch)
+                    .unwrap()
+                    .unwrap();
+                std::assert_matches!(stored.value, StoredValue::Owned(decoded) if decoded == *value);
             }
         }
     }
@@ -481,9 +563,9 @@ fn replay_block(
         .iter()
         .find(|tx| matches!(tx.payload, TransactionPayload::Coinbase(..)));
     let tenure_cause = tenure_change
-        .and_then(|tx| match &tx.payload {
-            TransactionPayload::TenureChange(tc) => Some(MinerTenureInfoCause::from(tc.cause)),
-            _ => Some(MinerTenureInfoCause::NoTenureChange),
+        .map(|tx| match &tx.payload {
+            TransactionPayload::TenureChange(tc) => MinerTenureInfoCause::from(tc.cause),
+            _ => MinerTenureInfoCause::NoTenureChange,
         })
         .unwrap_or(MinerTenureInfoCause::NoTenureChange);
 
@@ -497,7 +579,7 @@ fn replay_block(
         None,
         Some(100),
         Some(original_block.header.timestamp),
-        u64::from(DEFAULT_MAX_TENURE_BYTES),
+        DEFAULT_MAX_TENURE_BYTES,
     )
     .unwrap();
 
@@ -802,7 +884,7 @@ fn test_ephemeral_nakamoto_block_replay_smart_contract() {
         let smart_contract_payload = TransactionPayload::SmartContract(
             TransactionSmartContract {
                 name: ContractName::try_from("test-clarity-db").unwrap(),
-                code_body: StacksString::from_str(&code_body).expect("FATAL: invalid code body"),
+                code_body: StacksString::from_str(code_body).expect("FATAL: invalid code body"),
             },
             None,
         );
@@ -819,9 +901,8 @@ fn test_ephemeral_nakamoto_block_replay_smart_contract() {
 
         let mut tx_signer = StacksTransactionSigner::new(&smart_contract);
         tx_signer.sign_origin(&private_key).unwrap();
-        let smart_contract_signed = tx_signer.get_tx().unwrap();
 
-        smart_contract_signed
+        tx_signer.get_tx().unwrap()
     };
 
     let mut sender_nonce = 1;
@@ -845,9 +926,8 @@ fn test_ephemeral_nakamoto_block_replay_smart_contract() {
 
         let mut tx_signer = StacksTransactionSigner::new(&cc);
         tx_signer.sign_origin(&private_key).unwrap();
-        let cc_signed = tx_signer.get_tx().unwrap();
 
-        cc_signed
+        tx_signer.get_tx().unwrap()
     };
 
     let mut boot_tenures = vec![];

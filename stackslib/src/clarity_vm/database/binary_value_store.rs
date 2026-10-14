@@ -1042,7 +1042,7 @@ fn decode_consensus_payload(
     expected: &TypeSignature,
     epoch: &StacksEpochId,
 ) -> Result<Value, VmExecutionError> {
-    match Value::try_deserialize_bytes_exact_at_epoch(payload, expected, epoch) {
+    match Value::try_deserialize_bytes_exact_stored_at_epoch(payload, expected, epoch) {
         Ok(value) => Ok(value),
         Err(error)
             if matches!(
@@ -1050,7 +1050,7 @@ fn decode_consensus_payload(
                 TypeSignature::CallableType(_) | TypeSignature::TraitReferenceType(_)
             ) =>
         {
-            let principal = Value::try_deserialize_bytes_exact_at_epoch(
+            let principal = Value::try_deserialize_bytes_exact_stored_at_epoch(
                 payload,
                 &TypeSignature::PrincipalType,
                 epoch,
@@ -1119,13 +1119,113 @@ fn storage_error(message: impl Into<String>) -> VmExecutionError {
 #[cfg(test)]
 mod tests {
     use clarity::vm::types::codec::packed::PackedRecordError;
-    use clarity::vm::types::TypeSignature;
+    use clarity::vm::types::signatures::CallableSubtype;
+    use clarity::vm::types::{CallableData, TupleData, TupleTypeSignature, TypeSignature};
+    use clarity::vm::ClarityName;
     use stacks_common::types::StacksEpochId;
     use stacks_common::util::hash::to_hex;
 
     use super::*;
 
     const EPOCH: StacksEpochId = StacksEpochId::Epoch40;
+
+    /// Raw Binary V1 rows retain historical names, including callable restoration.
+    #[test]
+    fn raw_stored_contract_names_survive_epoch41() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_completed(&conn);
+        for name_len in [40, 41, 128] {
+            let contract = QualifiedContractIdentifier::local(&"a".repeat(name_len)).unwrap();
+            let value = Value::Principal(PrincipalData::Contract(contract.clone()));
+            let canonical = value.serialize_to_hex().unwrap();
+            let hash = MARFValue::from_value(&canonical);
+            store_generic(&conn, &hash, &canonical);
+            let callable_type =
+                TypeSignature::CallableType(CallableSubtype::Principal(contract.clone()));
+            let callable = Value::CallableContract(CallableData {
+                contract_identifier: contract,
+                trait_identifier: None,
+            });
+            let trailing = format!("{canonical}00");
+            let trailing_hash = MARFValue::from_value(&trailing);
+            store_generic(&conn, &trailing_hash, &trailing);
+            for epoch in [StacksEpochId::Epoch40, StacksEpochId::Epoch41] {
+                for (expected, value) in [
+                    (&TypeSignature::PrincipalType, &value),
+                    (&callable_type, &callable),
+                ] {
+                    assert_eq!(
+                        get_typed(&conn, &hash, expected, &epoch)
+                            .unwrap()
+                            .unwrap()
+                            .value,
+                        *value
+                    );
+                    let stored = get_stored(&conn, &hash, expected, &epoch).unwrap().unwrap();
+                    let StoredValue::Owned(decoded) = stored.value else {
+                        panic!("raw consensus row must decode to an owned value");
+                    };
+                    assert_eq!(decoded, *value);
+                    assert_eq!(stored.serialized_byte_len, (canonical.len() / 2) as u64);
+                    assert!(get_stored(&conn, &trailing_hash, expected, &epoch).is_err());
+                }
+            }
+        }
+    }
+
+    /// Schema projection forces audited packed fallback while preserving legacy principals.
+    #[test]
+    fn packed_compatibility_contract_names_survive_epoch41() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize_completed(&conn);
+        let field = ClarityName::from_literal("contract");
+        let expected = TypeSignature::TupleType(
+            TupleTypeSignature::try_from(vec![(field.clone(), TypeSignature::PrincipalType)])
+                .unwrap(),
+        );
+        for name_len in [40, 41, 128] {
+            let principal = Value::Principal(PrincipalData::Contract(
+                QualifiedContractIdentifier::local(&"a".repeat(name_len)).unwrap(),
+            ));
+            let projected = Value::Tuple(
+                TupleData::from_data(vec![(field.clone(), principal.clone())]).unwrap(),
+            );
+            let historical = Value::Tuple(
+                TupleData::from_data(vec![
+                    (field.clone(), principal),
+                    (ClarityName::from_literal("obsolete"), Value::UInt(42)),
+                ])
+                .unwrap(),
+            );
+            let canonical = historical.serialize_to_hex().unwrap();
+            let hash = MARFValue::from_value(&canonical);
+            let encoded = encode_migrated(&canonical).unwrap();
+            let (kind, payload) = parse_record(encoded.record()).unwrap();
+            assert_eq!(kind, KIND_CANONICAL_PACKED);
+            assert!(parse_packed_value(payload)
+                .unwrap()
+                .decode(&expected)
+                .is_err());
+            reconcile(&conn, &hash, &canonical, &encoded);
+            for epoch in [StacksEpochId::Epoch40, StacksEpochId::Epoch41] {
+                assert_eq!(
+                    get_typed(&conn, &hash, &expected, &epoch)
+                        .unwrap()
+                        .unwrap()
+                        .value,
+                    projected
+                );
+                let stored = get_stored(&conn, &hash, &expected, &epoch)
+                    .unwrap()
+                    .unwrap();
+                let StoredValue::Owned(decoded) = stored.value else {
+                    panic!("schema projection must exercise compatibility decoding");
+                };
+                assert_eq!(decoded, projected);
+                assert_eq!(stored.serialized_byte_len, (canonical.len() / 2) as u64);
+            }
+        }
+    }
 
     /// Retain an admitted packed owner for write-admission fixtures.
     fn shared_fixture(value: &Value) -> SharedPackedValue {
@@ -1609,7 +1709,8 @@ mod tests {
             .unwrap(),
         );
         let sanitized =
-            Value::try_deserialize_bytes_exact_at_epoch(&consensus, &expected, &EPOCH).unwrap();
+            Value::try_deserialize_bytes_exact_stored_at_epoch(&consensus, &expected, &EPOCH)
+                .unwrap();
 
         let encoded = encode_migrated(&canonical).unwrap();
         reconcile(&conn, &hash, &canonical, &encoded);

@@ -71,4 +71,4 @@ pub mod test {
 }
 
 #[cfg(feature = "dedup-io-diagnostics")]
-pub mod db_io_probe;
+pub use stacks_marf::db_io_probe;

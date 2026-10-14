@@ -908,7 +908,7 @@ dependencies = [
  "serde_json",
  "serde_stacker",
  "slog",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stacks-profiler",
 ]
 
@@ -945,7 +945,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "slog",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stackslib 0.0.1",
 ]
 
@@ -963,7 +963,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "slog",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stacks-profiler",
  "thiserror 1.0.65",
  "variant_count",
@@ -2986,7 +2986,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "slog",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stackslib 0.0.1",
  "thiserror 1.0.65",
  "tiny_http",
@@ -3030,7 +3030,7 @@ dependencies = [
  "clarity 0.0.1",
  "serde",
  "sha2 0.10.9",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
 ]
 
 [[package]]
@@ -3113,7 +3113,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "sha2 0.10.9",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stackslib 0.0.1",
  "tempfile",
  "toml 0.5.11",
@@ -3818,7 +3818,7 @@ dependencies = [
  "pinny",
  "proptest",
  "slog",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
 ]
 
 [[package]]
@@ -5309,7 +5309,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stacks-profiler",
  "stackslib 0.0.1",
  "stx-genesis",
@@ -5326,7 +5326,7 @@ dependencies = [
  "clarity-cli",
  "serde_json",
  "stacks-codec",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stackslib 0.0.1",
  "tempfile",
  "thiserror 1.0.65",
@@ -5338,7 +5338,7 @@ version = "0.1.0"
 dependencies = [
  "clarity-types 0.0.1",
  "serde",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "variant_count",
  "wasm-bindgen-test",
 ]
@@ -5374,7 +5374,7 @@ dependencies = [
 
 [[package]]
 name = "stacks-common"
-version = "4.0.3"
+version = "4.0.5"
 dependencies = [
  "chrono",
  "curve25519-dalek",
@@ -5405,7 +5405,7 @@ dependencies = [
 
 [[package]]
 name = "stacks-inspect"
-version = "4.0.3"
+version = "4.0.5"
 dependencies = [
  "clap",
  "clarity 0.0.1",
@@ -5417,7 +5417,7 @@ dependencies = [
  "rusqlite",
  "serde_json",
  "slog",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stacks-storage-migrate",
  "stackslib 0.0.1",
  "tempfile",
@@ -5426,8 +5426,12 @@ dependencies = [
 
 [[package]]
 name = "stacks-marf"
-version = "4.0.3"
+version = "4.0.5"
 dependencies = [
+ "memmap2",
+ "nix 0.23.2",
+ "rand 0.8.5",
+ "rapidhash",
  "rstest",
  "rstest_reuse",
  "rusqlite",
@@ -5435,7 +5439,9 @@ dependencies = [
  "serde_derive",
  "sha2 0.10.9",
  "slog",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
+ "stacks-mmap",
+ "stacks-profiler",
  "stdext",
  "tempfile",
 ]
@@ -5451,7 +5457,7 @@ dependencies = [
 
 [[package]]
 name = "stacks-node"
-version = "4.0.3"
+version = "4.0.5"
 dependencies = [
  "async-h1",
  "async-std",
@@ -5482,10 +5488,10 @@ dependencies = [
  "slog",
  "stacks-codec",
  "stacks-common 0.0.1",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stacks-inspect",
  "stacks-signer 0.0.1",
- "stacks-signer 4.0.3",
+ "stacks-signer 4.0.5",
  "stackslib 0.0.1",
  "stackslib 0.0.1 (git+https://github.com/stacks-network/stacks-core.git?rev=ecaaf5c4d397a691e5155eef01b59ddfeaba4ddd)",
  "stdext",
@@ -5555,7 +5561,7 @@ dependencies = [
 
 [[package]]
 name = "stacks-signer"
-version = "4.0.3"
+version = "4.0.5"
 dependencies = [
  "backoff",
  "clap",
@@ -5575,7 +5581,7 @@ dependencies = [
  "slog",
  "slog-json",
  "slog-term",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stackslib 0.0.1",
  "stdext",
  "thiserror 1.0.65",
@@ -5601,7 +5607,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "stable-value-format",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
  "stackslib 0.0.1",
  "tempfile",
 ]
@@ -5614,7 +5620,7 @@ dependencies = [
  "pinny",
  "proptest",
  "stacks-codec",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
 ]
 
 [[package]]
@@ -5659,7 +5665,8 @@ dependencies = [
  "slog",
  "stable-value-format",
  "stacks-codec",
- "stacks-common 4.0.3",
+ "stacks-common 4.0.5",
+ "stacks-marf",
  "stacks-mmap",
  "stacks-profiler",
  "stacks-transactions",

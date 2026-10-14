@@ -1429,7 +1429,7 @@ dependencies = [
 
 [[package]]
 name = "stacks-common"
-version = "4.0.3"
+version = "4.0.5"
 dependencies = [
  "chrono",
  "curve25519-dalek",
@@ -1452,6 +1452,19 @@ dependencies = [
  "slog-term",
  "thiserror",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "stacks-marf"
+version = "4.0.5"
+dependencies = [
+ "nix",
+ "rusqlite",
+ "serde",
+ "serde_derive",
+ "sha2 0.10.9",
+ "slog",
+ "stacks-common",
 ]
 
 [[package]]
@@ -1490,6 +1503,7 @@ dependencies = [
  "slog",
  "stacks-codec",
  "stacks-common",
+ "stacks-marf",
  "stacks-transactions",
  "time",
  "toml",

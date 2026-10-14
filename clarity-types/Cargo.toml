@@ -26,6 +26,7 @@ variant_count = { workspace = true }
 mutants = "0.0.3"
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
 rstest = "0.17.0"
+serde_json = "1.0"
 
 [features]
 direct-value-diagnostics = []

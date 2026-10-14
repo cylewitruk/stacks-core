@@ -20,8 +20,8 @@ use std::time::Instant;
 use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Connection};
 
-use crate::chainstate::stacks::index::Error;
 use crate::util_lib::db::{sqlite_readonly_uri, sqlite_schema_objects, Error as db_error};
+use stacks_marf::Error;
 
 /// Convert shared SQLite errors to the MARF error reported by snapshot operations.
 pub fn marf_err(error: db_error) -> Error {

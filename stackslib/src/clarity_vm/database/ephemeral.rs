@@ -36,8 +36,6 @@ use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash}
 use stacks_common::types::sqlite::NO_PARAMS;
 use stacks_common::types::StacksEpochId;
 
-use crate::chainstate::stacks::index::marf::{MarfConnection, MarfCore, MarfTransaction, MARF};
-use crate::chainstate::stacks::index::{Error, MARFValue};
 use crate::clarity_vm::clarity::{
     ClarityMarfStore, ClarityMarfStoreTransaction, WritableMarfStore,
 };
@@ -46,6 +44,8 @@ use crate::clarity_vm::database::marf::ReadOnlyMarfStore;
 use crate::clarity_vm::database::value_extents::OwnedValueRecord;
 use crate::clarity_vm::special::handle_contract_call_special_cases_ref;
 use crate::core::{FIRST_BURNCHAIN_CONSENSUS_HASH, FIRST_STACKS_BLOCK_HASH};
+use stacks_marf::marf::{MarfConnection, MarfCore, MarfTransaction, MARF};
+use stacks_marf::{Error, MARFValue};
 
 /// Ephemeral MARF store.
 ///

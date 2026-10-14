@@ -32,6 +32,7 @@ use crate::chainstate::nakamoto::{
 };
 use crate::chainstate::stacks::address::StacksAddressExtensions;
 use crate::chainstate::stacks::db::blocks::{DummyEventDispatcher, MAX_RECEIPT_SIZES};
+use crate::chainstate::stacks::db::transactions::TransactionProcessor;
 use crate::chainstate::stacks::db::{
     ChainstateTx, ClarityTx, StacksBlockHeaderTypes, StacksChainState, StacksHeaderInfo,
 };
@@ -137,10 +138,7 @@ impl From<TenureChangeCause> for MinerTenureInfoCause {
 impl MinerTenureInfoCause {
     /// Is this the start of a new tenure?
     pub fn is_new_tenure(&self) -> bool {
-        match self {
-            MinerTenureInfoCause::BlockFound => true,
-            _ => false,
-        }
+        matches!(self, MinerTenureInfoCause::BlockFound)
     }
 
     /// Is this a tenure extension of any kind?
@@ -201,7 +199,7 @@ pub struct MinerTenureInfo<'a> {
     pub coinbase_height: u64,
     pub cause: MinerTenureInfoCause,
     pub active_reward_set: Arc<boot::RewardSet>,
-    pub tenure_block_commit_opt: Option<LeaderBlockCommitOp>,
+    pub tenure_block_commit: LeaderBlockCommitOp,
     pub ephemeral: bool,
 }
 
@@ -232,7 +230,7 @@ impl NakamotoBlockBuilder {
             header: NakamotoBlockHeader::genesis(),
             soft_limit: None,
             contract_limit_percentage: None,
-            max_tenure_bytes: u64::from(DEFAULT_MAX_TENURE_BYTES),
+            max_tenure_bytes: DEFAULT_MAX_TENURE_BYTES,
         }
     }
 
@@ -319,7 +317,7 @@ impl NakamotoBlockBuilder {
         burn_dbconn: &'a SortitionHandleConn,
         cause: MinerTenureInfoCause,
     ) -> Result<MinerTenureInfo<'a>, Error> {
-        self.inner_load_tenure_info(chainstate, burn_dbconn, cause, false, false)
+        self.inner_load_tenure_info(chainstate, burn_dbconn, cause, false)
     }
 
     /// This function should be called before `tenure_begin`.
@@ -332,7 +330,7 @@ impl NakamotoBlockBuilder {
         burn_dbconn: &'a SortitionHandleConn,
         cause: MinerTenureInfoCause,
     ) -> Result<MinerTenureInfo<'a>, Error> {
-        self.inner_load_tenure_info(chainstate, burn_dbconn, cause, false, true)
+        self.inner_load_tenure_info(chainstate, burn_dbconn, cause, true)
     }
 
     /// This function should be called before `tenure_begin`.
@@ -344,10 +342,9 @@ impl NakamotoBlockBuilder {
         chainstate: &'a mut StacksChainState,
         burn_dbconn: &'a SortitionHandleConn,
         cause: MinerTenureInfoCause,
-        shadow_block: bool,
         ephemeral: bool,
     ) -> Result<MinerTenureInfo<'a>, Error> {
-        debug!("Nakamoto miner tenure begin"; "shadow" => shadow_block, "tenure_change" => ?cause, "ephemeral" => ephemeral);
+        debug!("Nakamoto miner tenure begin"; "tenure_change" => ?cause, "ephemeral" => ephemeral);
 
         let Some(tenure_election_sn) =
             SortitionDB::get_block_snapshot_consensus(burn_dbconn, &self.header.consensus_hash)?
@@ -360,24 +357,19 @@ impl NakamotoBlockBuilder {
             return Err(Error::NoSuchBlockError);
         };
 
-        let tenure_block_commit_opt = if shadow_block {
-            None
-        } else {
-            let Some(tenure_block_commit) = SortitionDB::get_block_commit(
-                burn_dbconn,
-                &tenure_election_sn.winning_block_txid,
-                &tenure_election_sn.sortition_id,
-            )?
-            else {
-                warn!("Could not find winning block commit for burn block that elected the miner";
-                    "consensus_hash" => %self.header.consensus_hash,
-                    "stacks_block_hash" => %self.header.block_hash(),
-                    "stacks_block_id" => %self.header.block_id(),
-                    "winning_txid" => %tenure_election_sn.winning_block_txid
-                );
-                return Err(Error::NoSuchBlockError);
-            };
-            Some(tenure_block_commit)
+        let Some(tenure_block_commit) = SortitionDB::get_block_commit(
+            burn_dbconn,
+            &tenure_election_sn.winning_block_txid,
+            &tenure_election_sn.sortition_id,
+        )?
+        else {
+            warn!("Could not find winning block commit for burn block that elected the miner";
+                "consensus_hash" => %self.header.consensus_hash,
+                "stacks_block_hash" => %self.header.block_hash(),
+                "stacks_block_id" => %self.header.block_id(),
+                "winning_txid" => %tenure_election_sn.winning_block_txid
+            );
+            return Err(Error::NoSuchBlockError);
         };
 
         let elected_height = tenure_election_sn.block_height;
@@ -483,7 +475,7 @@ impl NakamotoBlockBuilder {
             cause,
             coinbase_height,
             active_reward_set,
-            tenure_block_commit_opt,
+            tenure_block_commit,
             ephemeral,
         })
     }
@@ -498,11 +490,7 @@ impl NakamotoBlockBuilder {
         burn_dbconn: &'a SortitionHandleConn,
         info: &'b mut MinerTenureInfo<'a>,
     ) -> Result<ClarityTx<'b, 'b>, Error> {
-        let Some(block_commit) = info.tenure_block_commit_opt.as_ref() else {
-            return Err(Error::InvalidStacksBlock(
-                "Block-commit is required; cannot mine a shadow block".into(),
-            ));
-        };
+        let block_commit = &info.tenure_block_commit;
 
         let SetupBlockResult {
             clarity_tx,
@@ -585,11 +573,8 @@ impl NakamotoBlockBuilder {
 
         self.header.tx_merkle_root = tx_merkle_root;
         self.header.state_index_root = state_root_hash;
-        // Keep the shadow bit, but set the version to the expected version for
-        // this epoch.
-        let shadow_flag = self.header.version & 0x80;
         self.header.version =
-            NakamotoBlockHeader::expected_version_for_epoch(clarity_tx.get_epoch()) | shadow_flag;
+            NakamotoBlockHeader::expected_version_for_epoch(clarity_tx.get_epoch());
 
         let block = NakamotoBlock {
             header: self.header.clone(),
@@ -807,13 +792,19 @@ impl BlockBuilder for NakamotoBlockBuilder {
         resource_budgets: &TransactionResourceBudgets,
         total_receipts_size: &mut u64,
     ) -> TransactionResult {
-        if self.bytes_so_far + tx_len >= u64::from(MAX_EPOCH_SIZE) {
+        let block_size = self.bytes_so_far + tx_len;
+        let exceeds_size_limit = if clarity_tx.get_epoch().fixes_block_size_off_by_one() {
+            block_size > u64::from(MAX_EPOCH_SIZE)
+        } else {
+            block_size >= u64::from(MAX_EPOCH_SIZE)
+        };
+        if exceeds_size_limit {
             debug!("Transaction {} would be too big to include", tx.txid());
             return TransactionResult::skipped_due_to_error(tx, Error::TxWouldNotFitError);
         }
 
         if let Some(parent_header) = &self.parent_header {
-            let mut total_tenure_size = self.bytes_so_far + tx_len;
+            let mut total_tenure_size = block_size;
 
             // if we are in the same tenure of the parent, accumulate the parent total_tenure_size
             // note that total_tenure_size is reset whenever a new tenure extend happens
@@ -865,12 +856,13 @@ impl BlockBuilder for NakamotoBlockBuilder {
             }
 
             let cost_before = clarity_tx.cost_so_far();
-            let (_fee, receipt) = match StacksChainState::process_transaction_with_check(
-                clarity_tx,
-                tx,
-                quiet,
-                resource_budgets,
-                |receipt| {
+
+            let tx_processor = TransactionProcessor::from(tx)
+                .for_execution()
+                .using_clarity_tx(clarity_tx)
+                .with_resource_policy(*resource_budgets)
+                .quiet(quiet)
+                .with_check(|receipt| {
                     if !receipt.post_condition_aborted {
                         let all_events_valid = receipt.events.iter().all(|event| {
                             crate::net::api::postblock_proposal::is_event_pox_addr_valid(
@@ -894,8 +886,9 @@ impl BlockBuilder for NakamotoBlockBuilder {
                         *total_receipts_size = next_size;
                         Ok(())
                     }
-                },
-            ) {
+                });
+
+            let (_fee, receipt) = match tx_processor.process() {
                 Ok(x) => x,
                 Err(e) => {
                     return parse_process_transaction_error(

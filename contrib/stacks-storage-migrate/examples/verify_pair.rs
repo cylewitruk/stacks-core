@@ -20,7 +20,7 @@ use std::env;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use blockstack_lib::chainstate::stacks::index::direct_hash_index::DirectHashIndex;
 use blockstack_lib::chainstate::stacks::index::marf::{
@@ -32,7 +32,7 @@ use blockstack_lib::chainstate::stacks::index::record::{NodeRecordFormat, Record
 use blockstack_lib::chainstate::stacks::index::scratch::MarfReadState;
 use blockstack_lib::chainstate::stacks::index::storage::TrieFileStorage;
 use blockstack_lib::chainstate::stacks::index::{MARFValue, ReadTrieItemKind, bits};
-use blockstack_lib::clarity_vm::database::value_extents::ValueBackend;
+use blockstack_lib::clarity_vm::database::value_extents::{LockedValueBackend, ValueBackend};
 use blockstack_lib::util_lib::db::sqlite_readonly_uri;
 use memmap2::Mmap;
 use rusqlite::{Connection, OpenFlags};
@@ -83,7 +83,7 @@ impl Input {
             value_resolver: None,
         };
         if let Some(values) = ValueBackend::open_registered(&db, path)? {
-            let resolver = Arc::new(Mutex::new(values));
+            let resolver = Arc::new(LockedValueBackend::new(values));
             marf.set_value_resolver(resolver.clone());
             context.value_resolver = Some(resolver);
         }

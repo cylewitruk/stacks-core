@@ -28,8 +28,8 @@ use super::common::{
 };
 use super::fork_storage::{collect_canonical_leaf_hashes, copy_canonical_fork_storage};
 use crate::burnchains::PoxConstants;
-use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue, MARF_SQLITE_TABLES};
 use crate::util_lib::db::{sqlite_open, u64_to_sql};
+use stacks_marf::{trie_sql, Error, MARFValue, MARF_SQLITE_TABLES};
 
 /// The index snapshot's `?N` bind: the `signer_stats` reward-cycle bound.
 #[derive(Clone, Copy)]

@@ -12,7 +12,7 @@ cargo build -p stacks-inspect
 
 ```
 --config <CONFIG_FILE>       Path to stacks-node configuration file
---network-config <NETWORK>   Use a predefined network (helium, mainnet, mocknet, xenon)
+--network-config <NETWORK>   Use a predefined network (mainnet, xenon)
 --version                    Show version information
 --help                       Show help
 ```
@@ -68,26 +68,6 @@ check-deser-data <CHECK_FILE>
 
 get-ancestors <DB_PATH> <BLOCK_HASH> <CONSENSUS_HASH>
     Trace block ancestry through staging database
-```
-
-### Shadow Block Commands
-
-Tools for shadow chainstate operations (use with caution).
-
-```
-make-shadow-block <CHAINSTATE_DIR> <NETWORK> <CHAIN_TIP> [TX_HEX...]
-    Create a shadow block from transactions
-    NETWORK: mainnet, krypton, naka3
-
-shadow-chainstate-repair <CHAINSTATE_DIR> <NETWORK>
-    Repair shadow chainstate by generating and applying shadow blocks
-
-shadow-chainstate-patch <CHAINSTATE_DIR> <NETWORK> <SHADOW_BLOCKS_JSON>
-    Apply shadow blocks from JSON to chainstate
-    Use "-" to read JSON from stdin
-
-add-shadow-block <CHAINSTATE_DIR> <NETWORK> <SHADOW_BLOCK_HEX>
-    Add a shadow block to chainstate
 ```
 
 ### Nakamoto Commands
@@ -258,5 +238,5 @@ cargo run -p stacks-inspect -- docgen > clarity-api.json
 ## Notes
 
 - Some commands expect mainnet data paths by default and may require specific network contexts.
-- Operations that write data (e.g., shadow chain tools) are destructive—use copies of data directories when experimenting.
+- Operations that write data are destructive—use copies of data directories when experimenting.
 - Use `--help` on any command for detailed argument information: `cargo run -p stacks-inspect -- <command> --help`

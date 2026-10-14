@@ -24,7 +24,7 @@ use stacks_common::util::retry::BoundReader;
 
 use super::{ListTypeData, TupleTypeSignature};
 use crate::errors::{ClarityTypeError, IncomparableError};
-use crate::representations::{ClarityName, ContractName, MAX_STRING_LEN};
+use crate::representations::{CONTRACT_MAX_NAME_LENGTH, ClarityName, ContractName, MAX_STRING_LEN};
 use crate::types::{
     BOUND_VALUE_SERIALIZATION_BYTES, BufferLength, CallableData, CharType, MAX_TYPE_DEPTH,
     MAX_VALUE_SIZE, OptionalData, PrincipalData, QualifiedContractIdentifier, SequenceData,
@@ -263,6 +263,26 @@ macro_rules! serialize_guarded_string {
 
 serialize_guarded_string!(ClarityName);
 serialize_guarded_string!(ContractName);
+
+/// How value deserialization treats contract names longer than
+/// [`CONTRACT_MAX_NAME_LENGTH`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContractNameLimit {
+    /// Accept names up to [`MAX_STRING_LEN`], as all epochs before 4.1 do.
+    Legacy,
+    /// Epoch 4.1+: reject names longer than [`CONTRACT_MAX_NAME_LENGTH`].
+    Enforced,
+}
+
+impl ContractNameLimit {
+    fn from_epoch(epoch: &StacksEpochId) -> Self {
+        if epoch.enforces_contract_name_length_limit() {
+            Self::Enforced
+        } else {
+            Self::Legacy
+        }
+    }
+}
 
 impl PrincipalData {
     fn inner_consensus_serialize<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
@@ -560,6 +580,7 @@ impl Value {
             sanitize,
             TupleFieldsBehavior::LEGACY,
             deserialization_depth_limit(sanitize),
+            ContractNameLimit::Legacy,
         )
     }
 
@@ -569,6 +590,7 @@ impl Value {
         sanitize: bool,
         behavior: TupleFieldsBehavior,
         depth_limit: usize,
+        contract_name_limit: ContractNameLimit,
     ) -> Result<(Value, u64), SerializationError> {
         let bound_value_serialization_bytes = if sanitize && expected_type.is_some() {
             SANITIZATION_READ_BOUND
@@ -582,6 +604,7 @@ impl Value {
             sanitize,
             behavior,
             depth_limit,
+            contract_name_limit,
         )?;
         let bytes_read = bound_reader.num_read();
         if let Some(expected_type) = expected_type {
@@ -613,6 +636,7 @@ impl Value {
         sanitize: bool,
         behavior: TupleFieldsBehavior,
         depth_limit: usize,
+        contract_name_limit: ContractNameLimit,
     ) -> Result<Value, SerializationError> {
         use super::Value::*;
 
@@ -688,6 +712,13 @@ impl Value {
                     check_match!(expected_type, TypeSignature::PrincipalType)?;
                     let issuer = StandardPrincipalData::deserialize_read(r)?;
                     let name = ContractName::deserialize_read(r)?;
+                    if contract_name_limit == ContractNameLimit::Enforced
+                        && usize::from(name.len()) > CONTRACT_MAX_NAME_LENGTH
+                    {
+                        return Err(SerializationError::DeserializationFailure(
+                            "Contract name too long".to_string(),
+                        ));
+                    }
                     Ok(Value::from(QualifiedContractIdentifier { issuer, name }))
                 }
                 TypePrefix::ResponseOk | TypePrefix::ResponseErr => {
@@ -1187,11 +1218,13 @@ impl Value {
         Value::deserialize_read(&mut bytes.as_slice(), Some(expected), sanitize)
     }
 
-    /// Epoch-aware typed deserialization from a borrowed byte slice.
+    /// Behaves like [`Self::try_deserialize_bytes`], selecting historical
+    /// tuple-field handling before Epoch 4.1 and exact field-set enforcement
+    /// from Epoch 4.1 onward.
     ///
-    /// This selects historical tuple-field handling before Epoch 4.1 and exact field-set
-    /// enforcement from Epoch 4.1 onward. Like [`Self::try_deserialize_bytes`], it permits trailing
-    /// bytes.
+    /// Contract names up to [`MAX_STRING_LEN`] are accepted in every epoch:
+    /// this reads values back from chainstate, which may have been stored
+    /// before the Epoch 4.1 contract-name limit and must remain readable.
     pub fn try_deserialize_bytes_at_epoch(
         bytes: &[u8],
         expected: &TypeSignature,
@@ -1203,6 +1236,7 @@ impl Value {
             epoch.value_sanitizing(),
             TupleFieldsBehavior::from_epoch(epoch),
             deserialization_depth_limit(epoch.value_sanitizing()),
+            ContractNameLimit::Legacy,
         )
         .map(|(value, _)| value)
     }
@@ -1232,15 +1266,50 @@ impl Value {
         Value::try_deserialize_bytes_at_epoch(&data, expected, epoch)
     }
 
-    /// Deserialize a borrowed byte slice into a Clarity Value of `expected` type, requiring the
-    /// whole slice to be consumed.
+    /// Deserialize a byte buffer into a Clarity Value of `expected` type,
+    /// requiring the whole buffer to be consumed. Sanitization (Epoch 2.4+),
+    /// strict typed-tuple field enforcement (Epoch 4.1+), and the contract-name
+    /// length limit (Epoch 4.1+) are derived from `epoch` so consensus behavior
+    /// is gated entirely by the execution epoch.
     ///
-    /// Sanitization (Epoch 2.4+) and strict typed-tuple field enforcement (Epoch 4.1+) are derived
-    /// from `epoch`, so consensus behavior is gated entirely by the execution epoch.
+    /// Unlike [`Self::try_deserialize_bytes_at_epoch`], this decodes new,
+    /// untrusted input (`from-consensus-buff?`), so it enforces the contract-name
+    /// limit.
     pub fn try_deserialize_bytes_exact_at_epoch(
         bytes: &[u8],
         expected: &TypeSignature,
         epoch: &StacksEpochId,
+    ) -> Result<Value, SerializationError> {
+        Self::try_deserialize_bytes_exact_with_name_limit(
+            bytes,
+            expected,
+            epoch,
+            ContractNameLimit::from_epoch(epoch),
+        )
+    }
+
+    /// Deserialize exactly one stored value, preserving historical contract names.
+    /// Uses the same epoch-aware type and sanitization rules as
+    /// [`Self::try_deserialize_bytes_at_epoch`], but rejects trailing bytes.
+    pub fn try_deserialize_bytes_exact_stored_at_epoch(
+        bytes: &[u8],
+        expected: &TypeSignature,
+        epoch: &StacksEpochId,
+    ) -> Result<Value, SerializationError> {
+        Self::try_deserialize_bytes_exact_with_name_limit(
+            bytes,
+            expected,
+            epoch,
+            ContractNameLimit::Legacy,
+        )
+    }
+
+    /// Decode a complete typed buffer with the caller's contract-name policy.
+    fn try_deserialize_bytes_exact_with_name_limit(
+        bytes: &[u8],
+        expected: &TypeSignature,
+        epoch: &StacksEpochId,
+        contract_name_limit: ContractNameLimit,
     ) -> Result<Value, SerializationError> {
         let input_length = bytes.len();
         let (value, read_count) = Value::deserialize_read_count_with_options(
@@ -1249,6 +1318,7 @@ impl Value {
             epoch.value_sanitizing(),
             TupleFieldsBehavior::from_epoch(epoch),
             deserialization_depth_limit(epoch.value_sanitizing()),
+            contract_name_limit,
         )?;
         if read_count != (input_length as u64) {
             Err(SerializationError::LeftoverBytesInDeserialization)
@@ -1278,6 +1348,7 @@ impl Value {
             false,
             TupleFieldsBehavior::LEGACY,
             MAX_TYPE_DEPTH as usize,
+            ContractNameLimit::Legacy,
         )?;
         if read_count != bytes.len() as u64 {
             Err(SerializationError::LeftoverBytesInDeserialization)

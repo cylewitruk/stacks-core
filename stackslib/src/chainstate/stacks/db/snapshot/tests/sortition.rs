@@ -43,9 +43,9 @@ use crate::chainstate::burn::db::sortdb::tests::{
     test_set_snapshot_consensus_hash,
 };
 use crate::chainstate::burn::db::sortdb::{SortitionDB, SortitionTipCopyBoundary};
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MARF};
-use crate::chainstate::stacks::index::{trie_sql, ClarityMarfTrieId, Error, MARFValue};
 use crate::core::{StacksEpoch, StacksEpochExtension};
+use stacks_marf::marf::{MARFOpenOpts, MARF};
+use stacks_marf::{trie_sql, ClarityMarfTrieId, Error, MARFValue};
 
 /// Create a sortition source DB. `connect` also seeds the genesis
 /// snapshot and the epoch rows. Returns a connection to the sqlite

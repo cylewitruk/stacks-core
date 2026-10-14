@@ -457,7 +457,7 @@ impl SharedPackedValue {
             return Err(PackedValueError::BorrowedView("expected list"));
         };
         let mut list = list.clone();
-        list.reduce_max_len(max_len);
+        list.reduce_max_len(max_len)?;
         self.expected = TypeSignature::SequenceType(SequenceSubtype::ListType(list));
         self.materialized = OnceLock::new();
         Ok(self)
@@ -710,13 +710,13 @@ impl SharedPackedValue {
         update: Self,
         epoch: &StacksEpochId,
     ) -> Result<Self, PackedValueError> {
-        let TypeSignature::TupleType(mut schema) = self.logical_type()? else {
+        let TypeSignature::TupleType(schema) = self.logical_type()? else {
             return Err(PackedValueError::BorrowedView("expected tuple"));
         };
-        let TypeSignature::TupleType(mut update_schema) = update.logical_type()? else {
+        let TypeSignature::TupleType(update_schema) = update.logical_type()? else {
             return Err(PackedValueError::BorrowedView("expected tuple"));
         };
-        schema.shallow_merge(&mut update_schema)?;
+        let schema = schema.shallow_merge(update_schema)?;
         let fields = schema
             .get_type_map()
             .keys()
@@ -774,11 +774,13 @@ impl SharedPackedValue {
                 else {
                     unreachable!("list kind")
                 };
-                let schema = ListTypeData::new_list(
-                    target.get_list_item_type().clone(),
-                    source.get_max_len(),
-                )?;
                 let len = self.as_view().as_list()?.len();
+                let max_len = if epoch.fixes_implicit_cast_list_bound() {
+                    u32::try_from(len).map_err(|_| ClarityTypeError::ValueTooLarge)?
+                } else {
+                    source.get_max_len()
+                };
+                let schema = ListTypeData::new_list(target.get_list_item_type().clone(), max_len)?;
                 let mut items = Vec::with_capacity(len);
                 for i in 0..len {
                     let Some(child) = self

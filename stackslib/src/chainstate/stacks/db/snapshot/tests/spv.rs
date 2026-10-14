@@ -27,7 +27,7 @@ use tempfile::tempdir;
 use super::super::spv::{assert_source_tables_classified, copy_spv_headers, spv_copy_specs};
 use crate::burnchains::bitcoin::spv::{SpvClient, BLOCK_DIFFICULTY_CHUNK_SIZE, SPV_DB_VERSION};
 use crate::burnchains::bitcoin::BitcoinNetworkType;
-use crate::chainstate::stacks::index::Error;
+use stacks_marf::Error;
 
 /// Drift guard: every table the SPV migrations create must be classified, so a
 /// future migration can't silently drop one from the copy. Runs the exact

@@ -30,9 +30,36 @@ use crate::vm::tests::test_clarity_versions;
 use crate::vm::types::SequenceSubtype::BufferType;
 use crate::vm::types::TypeSignature::SequenceType;
 use crate::vm::types::{
-    ASCIIData, BuffData, BufferLength, CharType, SequenceData, TypeSignature, UTF8Data, Value,
+    ASCIIData, BuffData, BufferLength, CharType, PrincipalData, QualifiedContractIdentifier,
+    SequenceData, TypeSignature, UTF8Data, Value,
 };
 use crate::vm::{ClarityVersion, execute_v2, execute_with_parameters};
+
+/// New consensus input keeps the Epoch 4.1 name limit despite legacy stored-value support.
+#[test]
+fn from_consensus_buff_contract_name_boundary() {
+    for name_len in [40, 41, 128] {
+        let value = Value::Principal(PrincipalData::Contract(
+            QualifiedContractIdentifier::local(&"a".repeat(name_len)).unwrap(),
+        ));
+        let program = format!(
+            "(from-consensus-buff? principal 0x{})",
+            value.serialize_to_hex().unwrap()
+        );
+        for epoch in [StacksEpochId::Epoch40, StacksEpochId::Epoch41] {
+            let expected = if epoch == StacksEpochId::Epoch41 && name_len > 40 {
+                Value::none()
+            } else {
+                Value::some(value.clone()).unwrap()
+            };
+            assert_eq!(
+                execute_with_parameters(&program, ClarityVersion::Clarity4, epoch, false).unwrap(),
+                Some(expected),
+                "name length {name_len}, epoch {epoch:?}"
+            );
+        }
+    }
+}
 
 #[test]
 fn test_simple_buff_to_int_le() {

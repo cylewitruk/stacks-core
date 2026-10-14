@@ -1,0 +1,1 @@
+Preserve historical contract principals in Binary V1 stored-value reads after Epoch 4.1, while retaining exact decoding and the stricter contract-name limit for new consensus input.

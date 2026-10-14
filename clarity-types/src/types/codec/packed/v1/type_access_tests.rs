@@ -172,20 +172,19 @@ fn fixed_layout_cache_invalidates_on_merge() {
             .unwrap();
     let original = schema.clone();
     assert_eq!(schema.packed_field_range(0), Some(0..1));
-    let mut update =
+    let update =
         TupleTypeSignature::try_from(vec![("a".try_into().unwrap(), TypeSignature::BoolType)])
             .unwrap();
     assert_eq!(update.packed_fixed_width(), Some(1));
-    schema.shallow_merge(&mut update).unwrap();
+    schema = schema.shallow_merge(update).unwrap();
     assert_eq!(schema.packed_fixed_width(), Some(2));
     assert_eq!(schema.packed_field_range(1), Some(1..2));
     assert_eq!(original.packed_fixed_width(), Some(1));
     assert_eq!(original.packed_field_range(1), None);
-    assert_eq!(update.packed_fixed_width(), Some(0));
-    let mut variable =
+    let variable =
         TupleTypeSignature::try_from(vec![("b".try_into().unwrap(), TypeSignature::UIntType)])
             .unwrap();
-    schema.shallow_merge(&mut variable).unwrap();
+    schema = schema.shallow_merge(variable).unwrap();
     assert_eq!(schema.packed_fixed_width(), None);
 }
 

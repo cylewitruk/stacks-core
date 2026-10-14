@@ -997,11 +997,14 @@ fn lookup_variable<'a>(
     Err(RuntimeCheckErrorKind::Unreachable(bounded_format!("Undefined variable: {name}")).into())
 }
 
-pub fn lookup_function(
+/// Resolves `name` to a builtin, or to a user function borrowed from the contract context.
+/// Charges the `LookupFunction` cost, unlike `ContractContext::lookup_function`, and fails
+/// with `UndefinedFunction` when neither matches.
+pub fn lookup_function<'a>(
     name: &str,
     exec_state: &mut ExecutionState,
-    invoke_ctx: &InvocationContext,
-) -> Result<CallableType, VmExecutionError> {
+    invoke_ctx: &InvocationContext<'a>,
+) -> Result<CallableType<'a>, VmExecutionError> {
     runtime_cost(ClarityCostFunction::LookupFunction, exec_state, 0)?;
 
     if let Some(result) = functions::lookup_reserved_functions(
@@ -1013,7 +1016,7 @@ pub fn lookup_function(
         let user_function = invoke_ctx
             .contract_context
             .lookup_function(name)
-            .ok_or(RuntimeCheckErrorKind::UndefinedFunction(name.to_string()))?;
+            .ok_or_else(|| RuntimeCheckErrorKind::UndefinedFunction(name.to_string()))?;
         Ok(CallableType::UserFunction(user_function))
     }
 }
@@ -1030,7 +1033,7 @@ fn add_stack_trace<T>(result: &mut Result<T, VmExecutionError>, exec_state: &mut
 /// [`apply_evaluated`], returning the function's identifier and whether recursion is tracked.
 #[inline]
 fn check_call_preconditions(
-    function: &CallableType,
+    function: &CallableType<'_>,
     exec_state: &ExecutionState,
 ) -> Result<(FunctionIdentifier, bool), VmExecutionError> {
     // Aaron: in non-debug executions, we shouldn't track a full call-stack.
@@ -1053,7 +1056,7 @@ fn check_call_preconditions(
 /// `used_memory` is the total already charged via [`ExecutionState::add_memory`] for the
 /// argument values; it is released before returning.
 fn dispatch_args(
-    function: &CallableType,
+    function: &CallableType<'_>,
     identifier: FunctionIdentifier,
     track_recursion: bool,
     args: Vec<Value>,
@@ -1280,7 +1283,7 @@ pub fn apply_evaluated_refs(
 ///
 /// Enforces recursion detection and max stack-depth limits before dispatch.
 pub fn apply<'a>(
-    function: &CallableType,
+    function: &CallableType<'_>,
     args: &'a [SymbolicExpression],
     exec_state: &mut ExecutionState,
     invoke_ctx: &'a InvocationContext,
@@ -1460,7 +1463,7 @@ pub fn apply<'a>(
 /// `SymbolicExpression::atom_value` so the special function can evaluate them normally
 /// with `eval`.
 pub fn apply_evaluated(
-    function: &CallableType,
+    function: &CallableType<'_>,
     args: Vec<Value>,
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
@@ -1919,7 +1922,7 @@ pub fn execute_with_limited_execution_time(
         false,
         clarity_types::types::StandardPrincipalData::transient(),
         |g| {
-            let budget = ResourceBudget::new().with_max_duration(Some(max_execution_time));
+            let budget = ResourceBudget::unlimited().with_max_duration(Some(max_execution_time));
             g.set_execution_resource_limiter(budget.start_tracking());
             Ok(())
         },

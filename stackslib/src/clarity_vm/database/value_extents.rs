@@ -3,7 +3,7 @@
 use std::io;
 use std::ops::Range;
 use std::path::{Component, Path};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LockResult, Mutex, MutexGuard};
 
 use clarity::vm::database::{DataStoreValue, StoredValue, StoredValueResult};
 use clarity::vm::errors::{VmExecutionError, VmInternalError};
@@ -172,7 +172,22 @@ impl ValueBackend {
     }
 }
 
-impl ValueResolver for Mutex<ValueBackend> {
+/// Synchronized value backend shared by Clarity and the MARF's lazy commitment resolver.
+pub struct LockedValueBackend(Mutex<ValueBackend>);
+
+impl LockedValueBackend {
+    /// Wrap an activated backend for shared access.
+    pub fn new(backend: ValueBackend) -> Self {
+        Self(Mutex::new(backend))
+    }
+
+    /// Acquire exclusive access to the value backend.
+    pub fn lock(&self) -> LockResult<MutexGuard<'_, ValueBackend>> {
+        self.0.lock()
+    }
+}
+
+impl ValueResolver for LockedValueBackend {
     fn inline_commitment(&self, value: &InlineValue) -> Result<MARFValue, IndexError> {
         InlineValueRecord::from_inline(value)
             .commitment()

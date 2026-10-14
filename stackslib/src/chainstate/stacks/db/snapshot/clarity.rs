@@ -19,7 +19,7 @@ use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Component, Path};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use clarity::vm::database::clarity_store::make_contract_hash_key;
@@ -27,6 +27,8 @@ use clarity::vm::database::{SqliteConnection, DATA_TABLE_NAME, METADATA_TABLE_NA
 use clarity::vm::types::QualifiedContractIdentifier;
 use rusqlite::{Connection, OpenFlags};
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_marf::marf::{MARFOpenOpts, MarfConnection as _, MARF};
+use stacks_marf::storage::{TrieFileStorage, TrieHashCalculationMode};
 
 use super::common::{
     assert_source_schema, clone_schemas_from_source, with_indexes_dropped,
@@ -35,12 +37,10 @@ use super::common::{
 use super::fork_storage::{
     collect_leaf_value_hashes, copy_leaf_referenced_rows, ReferencedRowLayout,
 };
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection as _, MARF};
-use crate::chainstate::stacks::index::storage::{TrieFileStorage, TrieHashCalculationMode};
-use crate::chainstate::stacks::index::{trie_sql, Error, ValueResolver, MARF_SQLITE_TABLES};
 use crate::clarity_vm::database::binary_value_store::{self, ValueStorageFormat};
-use crate::clarity_vm::database::value_extents::ValueBackend;
+use crate::clarity_vm::database::value_extents::{LockedValueBackend, ValueBackend};
 use crate::util_lib::db::sqlite_open;
+use stacks_marf::{trie_sql, Error, ValueResolver, MARF_SQLITE_TABLES};
 
 /// Canonical registration and transactional membership copied without renumbering IDs.
 const STABLE_TABLES: &[&str] = &[
@@ -225,7 +225,7 @@ pub fn open_clarity_value_resolver(db_path: &str) -> Result<Option<Arc<dyn Value
     let db = open_readonly_clarity_db(db_path)?;
     let store = ValueBackend::open_registered(&db, Path::new(db_path))
         .map_err(|error| Error::CorruptionError(error.to_string()))?;
-    Ok(store.map(|store| Arc::new(Mutex::new(store)) as Arc<dyn ValueResolver>))
+    Ok(store.map(|store| Arc::new(LockedValueBackend::new(store)) as Arc<dyn ValueResolver>))
 }
 
 /// Open the MARF at `db_path` strictly read-only: contract probes must

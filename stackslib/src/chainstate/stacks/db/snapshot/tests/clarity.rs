@@ -31,12 +31,12 @@ use tempfile::tempdir;
 
 use super::super::clarity::assert_source_tables_classified;
 use super::super::copy_clarity_side_tables;
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MarfConnection, MARF};
-use crate::chainstate::stacks::index::storage::TrieHashCalculationMode;
-use crate::chainstate::stacks::index::{ClarityMarfTrieId as _, Error, MARFValue};
 use crate::clarity_vm::clarity::ClarityMarfStoreTransaction as _;
 use crate::clarity_vm::database::binary_value_store::{self, MetadataBlockId, MetadataRow};
 use crate::clarity_vm::database::marf::MarfedKV;
+use stacks_marf::marf::{MARFOpenOpts, MarfConnection, MARF};
+use stacks_marf::storage::TrieHashCalculationMode;
+use stacks_marf::{ClarityMarfTrieId as _, Error, MARFValue};
 
 fn packed_snapshot_fixture() -> (Value, TypeSignature, Vec<u8>) {
     let value = Value::Tuple(

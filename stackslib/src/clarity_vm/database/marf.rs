@@ -19,7 +19,7 @@
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use clarity::util::hash::Sha512Trunc256Sum;
 use clarity::vm::database::sqlite::{
@@ -40,15 +40,8 @@ use stacks_common::types::StacksEpochId;
 
 use super::stable_value_store::StableValueStore;
 use super::value_extents::{
-    ExternalValueRef, InlineValueRecord, StableMappedValueRecord, ValueBackend,
+    ExternalValueRef, InlineValueRecord, LockedValueBackend, StableMappedValueRecord, ValueBackend,
 };
-use crate::chainstate::stacks::index::inline_value::{InlineValue, INLINE_BYTES};
-use crate::chainstate::stacks::index::marf::{
-    test_override_marf_compression, MARFOpenOpts, MarfConnection, MarfCore, MarfTransaction, MARF,
-};
-use crate::chainstate::stacks::index::record::NodeRecordFormat;
-use crate::chainstate::stacks::index::storage::{TrieFileStorage, TrieHashCalculationMode};
-use crate::chainstate::stacks::index::{ClarityMarfTrieId, Error, MARFValue, TrieLeaf};
 use crate::clarity_vm::clarity::{
     ClarityMarfStore, ClarityMarfStoreTransaction, WritableMarfStore,
 };
@@ -57,6 +50,13 @@ use crate::clarity_vm::database::ephemeral::EphemeralMarfStore;
 use crate::clarity_vm::special::handle_contract_call_special_cases_ref;
 use crate::core::{FIRST_BURNCHAIN_CONSENSUS_HASH, FIRST_STACKS_BLOCK_HASH};
 use crate::util_lib::db::{Error as DatabaseError, IndexDBConn};
+use stacks_marf::inline_value::{InlineValue, INLINE_BYTES};
+use stacks_marf::marf::{
+    test_override_marf_compression, MARFOpenOpts, MarfConnection, MarfCore, MarfTransaction, MARF,
+};
+use stacks_marf::record::NodeRecordFormat;
+use stacks_marf::storage::{TrieFileStorage, TrieHashCalculationMode};
+use stacks_marf::{ClarityMarfTrieId, Error, MARFValue, TrieLeaf};
 
 /// The MarfedKV struct is used to wrap a MARF data structure and side-storage
 ///   for use as a K/V store for ClarityDB or the AnalysisDB.
@@ -76,7 +76,7 @@ pub struct MarfedKV {
     ephemeral_marf: Option<MARF<StacksBlockId>>,
     value_storage_format: ValueStorageFormat,
     /// Extent mappings shared by the parent and its read/write contexts.
-    value_extents: Option<Arc<Mutex<ValueBackend>>>,
+    value_extents: Option<Arc<LockedValueBackend>>,
 }
 
 impl MarfedKV {
@@ -290,7 +290,7 @@ impl MarfedKV {
         tx.commit()
             .map_err(|error| extent_error(&error.to_string()))?;
         self.marf.set_record_format(NodeRecordFormat::Optimized);
-        let store = Arc::new(Mutex::new(ValueBackend::Stable(store)));
+        let store = Arc::new(LockedValueBackend::new(ValueBackend::Stable(store)));
         self.marf.set_value_resolver(store.clone());
         self.value_extents = Some(store);
         Ok(())
@@ -450,7 +450,7 @@ impl MarfedKV {
     ) -> Result<EphemeralMarfStore<'a>, VmExecutionError> {
         self.refresh_value_extents()?;
         // sanity check -- `base_tip` must be mapped
-        self.marf.open_block(&base_tip).map_err(|e| {
+        self.marf.open_block(base_tip).map_err(|e| {
             debug!(
                 "Failed to open read only connection at {}: {:?}",
                 &base_tip, &e
@@ -494,7 +494,7 @@ impl MarfedKV {
         };
 
         // attach the disk-backed MARF to the ephemeral MARF
-        EphemeralMarfStore::attach_read_only_marf(&ephemeral_marf, &read_only_marf).map_err(
+        EphemeralMarfStore::attach_read_only_marf(ephemeral_marf, &read_only_marf).map_err(
             |e| {
                 VmInternalError::Expect(format!(
                     "Failed to attach read-only MARF to ephemeral MARF: {:?}",
@@ -553,7 +553,7 @@ pub struct PersistentWritableMarfStore<'a> {
     /// Immutable physical format selected when the side store opened.
     value_storage_format: ValueStorageFormat,
     /// Extent mappings shared by the parent and its read/write contexts.
-    value_extents: Option<Arc<Mutex<ValueBackend>>>,
+    value_extents: Option<Arc<LockedValueBackend>>,
 }
 
 /// A wrapper around a MARF handle which allows only read access to the MARF's keys off of a given
@@ -566,7 +566,7 @@ pub struct ReadOnlyMarfStore<'a> {
     /// Immutable physical format selected when the side store opened.
     value_storage_format: ValueStorageFormat,
     /// Extent mappings shared by the parent and its read/write contexts.
-    value_extents: Option<Arc<Mutex<ValueBackend>>>,
+    value_extents: Option<Arc<LockedValueBackend>>,
 }
 
 impl ClarityMarfStore for ReadOnlyMarfStore<'_> {}
@@ -1944,7 +1944,7 @@ impl<'a> WritableMarfStore for Box<dyn WritableMarfStore + 'a> {}
 /// Load the explicit completion marker; the presence of a partial extent file never activates it.
 fn open_value_extents(
     marf: &mut MARF<StacksBlockId>,
-) -> Result<Option<Arc<Mutex<ValueBackend>>>, VmExecutionError> {
+) -> Result<Option<Arc<LockedValueBackend>>, VmExecutionError> {
     let Some(store) =
         ValueBackend::open_registered(marf.sqlite_conn(), Path::new(marf.get_db_path()))?
     else {
@@ -1960,7 +1960,7 @@ fn open_value_extents(
             "MARF record format and stable value generation disagree",
         ));
     }
-    let store = Arc::new(Mutex::new(store));
+    let store = Arc::new(LockedValueBackend::new(store));
     marf.set_value_resolver(store.clone());
     Ok(Some(store))
 }
@@ -1997,7 +1997,7 @@ impl LeafValueRecord {
 
 /// Resolve bytes from the historical leaf reached by traversal, never from the current tip.
 fn read_value_extent(
-    store: &Arc<Mutex<ValueBackend>>,
+    store: &Arc<LockedValueBackend>,
     leaf: &TrieLeaf,
 ) -> Result<LeafValueRecord, VmExecutionError> {
     if let Some(inline) = &leaf.inline {
@@ -2033,7 +2033,7 @@ mod extent_tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::chainstate::stacks::index::TrieMerkleProof;
+    use stacks_marf::TrieMerkleProof;
 
     /// Typed external value shared by publication and readback assertions.
     fn publication_fixture_value() -> DataStoreValue {

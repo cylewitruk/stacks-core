@@ -28,8 +28,8 @@ use super::common::{
 };
 use super::fork_storage::{collect_canonical_leaf_hashes, copy_canonical_fork_storage};
 use crate::chainstate::burn::db::sortdb::SortitionTipCopyBoundary;
-use crate::chainstate::stacks::index::{trie_sql, Error, MARFValue, MARF_SQLITE_TABLES};
 use crate::util_lib::db::{sqlite_open, u64_to_sql, Error as db_error};
+use stacks_marf::{trie_sql, Error, MARFValue, MARF_SQLITE_TABLES};
 
 /// Snapshot-only reads over a sortition DB connection.
 pub trait SortitionSnapshotExt {
