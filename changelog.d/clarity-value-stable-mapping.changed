@@ -1,0 +1,1 @@
+Preserve Clarity value-file mappings across block appends using a shared address-space reservation, with a retained EOF mmap window for contiguous lazy reads of boundary-spanning records.

@@ -1,0 +1,23 @@
+[package]
+name = "stacks-storage-migrate"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+blockstack_lib = { package = "stackslib", path = "../../stackslib" }
+stacks-common = { path = "../../stacks-common" }
+rusqlite = { workspace = true }
+memmap2 = "0.9"
+reflink-copy.workspace = true
+libc.workspace = true
+sha2 = { workspace = true }
+
+rand = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+stable-value-format = { path = "../../crates/stable-value-format" }
+extent-ptrhash = { path = "../../crates/extent-ptrhash" }
+
+[dev-dependencies]
+clarity = { path = "../../clarity", features = ["rusqlite"] }
+tempfile = { workspace = true }

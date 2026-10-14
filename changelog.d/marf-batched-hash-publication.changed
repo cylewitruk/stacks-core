@@ -1,0 +1,1 @@
+Batch direct MARF hash-index durability checkpoints every 256 slots and retain a bounded, recoverable committed tail across related reopens.

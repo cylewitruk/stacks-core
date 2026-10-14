@@ -35,7 +35,7 @@ use crate::vm::errors::{
 use crate::vm::functions::{buff_to_array, buff_to_vec};
 use crate::vm::representations::SymbolicExpression;
 use crate::vm::types::{BuffData, SequenceData, TypeSignature, Value};
-use crate::vm::{ClarityVersion, LocalContext, eval};
+use crate::vm::{ClarityVersion, LocalContext, ValueRef, eval};
 
 macro_rules! native_hash_func {
     ($name:ident, $module:ty) => {
@@ -65,6 +65,39 @@ native_hash_func!(native_sha256, hash::Sha256Sum);
 native_hash_func!(native_sha512, hash::Sha512Sum);
 native_hash_func!(native_sha512trunc256, hash::Sha512Trunc256Sum);
 native_hash_func!(native_keccak256, hash::Keccak256Hash);
+
+macro_rules! borrowed_hash_func {
+    ($name:ident, $module:ty) => {
+        pub fn $name(input: ValueRef<'_>) -> Result<ValueRef<'_>, VmExecutionError> {
+            let digest = if let Some(value) = input.as_int()? {
+                <$module>::from_data(&value.to_le_bytes())
+            } else if let Some(value) = input.as_uint()? {
+                <$module>::from_data(&value.to_le_bytes())
+            } else if let Some(bytes) = input.as_buffer_bytes()? {
+                <$module>::from_data(bytes)
+            } else {
+                return Err(RuntimeCheckErrorKind::UnionTypeValueError(
+                    vec![
+                        TypeSignature::IntType,
+                        TypeSignature::UIntType,
+                        TypeSignature::BUFFER_MAX,
+                    ],
+                    input.as_ref().to_error_string(),
+                )
+                .into());
+            };
+            Ok(ValueRef::Owned(Value::buff_from(
+                digest.as_bytes().to_vec(),
+            )?))
+        }
+    };
+}
+
+borrowed_hash_func!(native_hash160_ref, hash::Hash160);
+borrowed_hash_func!(native_sha256_ref, hash::Sha256Sum);
+borrowed_hash_func!(native_sha512_ref, hash::Sha512Sum);
+borrowed_hash_func!(native_sha512trunc256_ref, hash::Sha512Trunc256Sum);
+borrowed_hash_func!(native_keccak256_ref, hash::Keccak256Hash);
 
 // Note: Clarity1 had a bug in how the address is computed (issues/2619).
 // This method preserves the old, incorrect behavior for those running Clarity1.
@@ -111,8 +144,8 @@ pub fn special_principal_of(
     runtime_cost(ClarityCostFunction::PrincipalOf, exec_state, 0)?;
 
     let param0 = eval(&args[0], exec_state, invoke_ctx, context)?;
-    let pub_key = match param0.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) if data.len() == 33 => data,
+    let pub_key = match param0.as_buffer_bytes()? {
+        Some(data) if data.len() == 33 => data,
         _ => {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(TypeSignature::BUFFER_33),
@@ -152,8 +185,8 @@ pub fn special_secp256k1_recover(
     runtime_cost(ClarityCostFunction::Secp256k1recover, exec_state, 0)?;
 
     let param0 = eval(&args[0], exec_state, invoke_ctx, context)?;
-    let message = match param0.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) if data.len() == 32 => data,
+    let message = match param0.as_buffer_bytes()? {
+        Some(data) if data.len() == 32 => data,
         _ => {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(TypeSignature::BUFFER_32),
@@ -164,8 +197,8 @@ pub fn special_secp256k1_recover(
     };
 
     let param1 = eval(&args[1], exec_state, invoke_ctx, context)?;
-    let signature = match param1.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) => {
+    let signature = match param1.as_buffer_bytes()? {
+        Some(data) => {
             if data.len() > 65 {
                 return Err(RuntimeCheckErrorKind::TypeValueError(
                     Box::new(TypeSignature::BUFFER_65),
@@ -210,8 +243,8 @@ pub fn special_secp256k1_verify(
     runtime_cost(ClarityCostFunction::Secp256k1verify, exec_state, 0)?;
 
     let param0 = eval(&args[0], exec_state, invoke_ctx, context)?;
-    let message = match param0.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) if data.len() == 32 => data,
+    let message = match param0.as_buffer_bytes()? {
+        Some(data) if data.len() == 32 => data,
         _ => {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(TypeSignature::BUFFER_32),
@@ -222,8 +255,8 @@ pub fn special_secp256k1_verify(
     };
 
     let param1 = eval(&args[1], exec_state, invoke_ctx, context)?;
-    let signature = match param1.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) => {
+    let signature = match param1.as_buffer_bytes()? {
+        Some(data) => {
             if data.len() > 65 {
                 return Err(RuntimeCheckErrorKind::TypeValueError(
                     Box::new(TypeSignature::BUFFER_65),
@@ -249,8 +282,8 @@ pub fn special_secp256k1_verify(
     };
 
     let param2 = eval(&args[2], exec_state, invoke_ctx, context)?;
-    let pubkey = match param2.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) if data.len() == 33 => data,
+    let pubkey = match param2.as_buffer_bytes()? {
+        Some(data) if data.len() == 33 => data,
         _ => {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(TypeSignature::BUFFER_33),
@@ -281,8 +314,8 @@ pub fn special_secp256r1_verify(
         .first()
         .ok_or(RuntimeCheckErrorKind::IncorrectArgumentCount(0, 3))?;
     let message_value = eval(arg0, exec_state, invoke_ctx, context)?;
-    let message = match message_value.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) if data.len() == 32 => data,
+    let message = match message_value.as_buffer_bytes()? {
+        Some(data) if data.len() == 32 => data,
         _ => {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(TypeSignature::BUFFER_32),
@@ -296,8 +329,8 @@ pub fn special_secp256r1_verify(
         .get(1)
         .ok_or(RuntimeCheckErrorKind::IncorrectArgumentCount(1, 3))?;
     let signature_value = eval(arg1, exec_state, invoke_ctx, context)?;
-    let signature = match signature_value.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) if data.len() <= 64 => {
+    let signature = match signature_value.as_buffer_bytes()? {
+        Some(data) if data.len() <= 64 => {
             if data.len() != 64 {
                 return Ok(Value::Bool(false));
             }
@@ -316,8 +349,8 @@ pub fn special_secp256r1_verify(
         .get(2)
         .ok_or(RuntimeCheckErrorKind::IncorrectArgumentCount(2, 3))?;
     let pubkey_value = eval(arg2, exec_state, invoke_ctx, context)?;
-    let pubkey = match pubkey_value.as_ref() {
-        Value::Sequence(SequenceData::Buffer(BuffData { data })) if data.len() == 33 => data,
+    let pubkey = match pubkey_value.as_buffer_bytes()? {
+        Some(data) if data.len() == 33 => data,
         _ => {
             return Err(RuntimeCheckErrorKind::TypeValueError(
                 Box::new(TypeSignature::BUFFER_33),

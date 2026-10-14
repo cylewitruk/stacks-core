@@ -18,9 +18,9 @@ use crate::vm::contexts::{ExecutionState, InvocationContext, LocalContext};
 use crate::vm::costs::cost_functions::ClarityCostFunction;
 use crate::vm::costs::runtime_cost;
 use crate::vm::errors::{RuntimeCheckErrorKind, VmExecutionError, check_arguments_at_least};
-use crate::vm::eval;
 use crate::vm::representations::SymbolicExpression;
 use crate::vm::types::{TypeSignature, Value};
+use crate::vm::{ValueRef, eval};
 
 fn type_force_bool(value: &Value) -> Result<bool, RuntimeCheckErrorKind> {
     match *value {
@@ -30,6 +30,17 @@ fn type_force_bool(value: &Value) -> Result<bool, RuntimeCheckErrorKind> {
             value.to_error_string(),
         )),
     }
+}
+
+/// Read a Boolean from an owned or packed value without materializing packed storage.
+fn type_force_bool_ref(value: &ValueRef<'_>) -> Result<bool, VmExecutionError> {
+    value.as_bool()?.ok_or_else(|| {
+        RuntimeCheckErrorKind::TypeValueError(
+            Box::new(TypeSignature::BoolType),
+            value.as_ref().to_error_string(),
+        )
+        .into()
+    })
 }
 
 pub fn special_or(
@@ -44,7 +55,7 @@ pub fn special_or(
 
     for arg in args.iter() {
         let evaluated = eval(arg, exec_state, invoke_ctx, context)?;
-        let result = type_force_bool(evaluated.as_ref())?;
+        let result = type_force_bool_ref(&evaluated)?;
         if result {
             return Ok(Value::Bool(true));
         }
@@ -65,7 +76,7 @@ pub fn special_and(
 
     for arg in args.iter() {
         let evaluated = eval(arg, exec_state, invoke_ctx, context)?;
-        let result = type_force_bool(evaluated.as_ref())?;
+        let result = type_force_bool_ref(&evaluated)?;
         if !result {
             return Ok(Value::Bool(false));
         }
@@ -77,4 +88,9 @@ pub fn special_and(
 pub fn native_not(input: Value) -> Result<Value, VmExecutionError> {
     let value = type_force_bool(&input)?;
     Ok(Value::Bool(!value))
+}
+
+/// Negate a Boolean without materializing packed storage.
+pub fn native_not_ref(input: ValueRef<'_>) -> Result<ValueRef<'_>, VmExecutionError> {
+    Ok(ValueRef::Owned(Value::Bool(!type_force_bool_ref(&input)?)))
 }

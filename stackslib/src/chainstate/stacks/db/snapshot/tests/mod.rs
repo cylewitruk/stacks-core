@@ -26,8 +26,8 @@ use tempfile::tempdir;
 
 use crate::chainstate::nakamoto::{NakamotoBlockHeader, NakamotoChainState};
 use crate::chainstate::stacks::db::{StacksChainState, StacksHeaderInfo};
-use crate::chainstate::stacks::index::marf::{MARFOpenOpts, MARF};
-use crate::chainstate::stacks::index::{trie_sql, ClarityMarfTrieId, Error, MARFValue};
+use stacks_marf::marf::{MARFOpenOpts, MARF};
+use stacks_marf::{trie_sql, ClarityMarfTrieId, Error, MARFValue};
 
 mod blocks;
 mod burnchain;

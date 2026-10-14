@@ -69,3 +69,6 @@ pub mod test {
         })
     }
 }
+
+#[cfg(feature = "dedup-io-diagnostics")]
+pub use stacks_marf::db_io_probe;

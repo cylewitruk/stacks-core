@@ -534,3 +534,46 @@ fn test_count_only_preserves_hierarchy_and_counts() {
         "Child must not attach to Root when Parent is count-only"
     );
 }
+
+/// Hot storage sampling bounds per-transaction nodes while barriers remain fully observed.
+#[test]
+fn sampled_storage_keeps_barriers_and_bounds_nodes() {
+    Profiler::clear();
+    stacks_profiler::measure!("Commit", {
+        for _ in 0..4096 {
+            let _read = span!("Persisted read", rate: 64);
+        }
+        for _ in 0..3 {
+            let _sync = span!("Sync");
+        }
+    });
+    let roots = Profiler::take_results().unwrap();
+    let root = &roots[0];
+    assert_eq!(root.children.len(), 2);
+    let read = find_child(root, "Persisted read").unwrap();
+    assert_eq!(read.sampled_count, 64);
+    assert_eq!(read.entered_count, 64);
+    assert!(read.children.is_empty());
+    assert_eq!(find_child(root, "Sync").unwrap().sampled_count, 3);
+}
+
+/// Optional sampled diagnostics respect suppression and the environment switch.
+#[test]
+fn sampled_diagnostic_spans_respect_controls() {
+    Profiler::clear();
+    for _ in 0..256 {
+        let _span = stacks_profiler::diagnostic_span!("Sampled diagnostic", rate: 64);
+    }
+    let roots = Profiler::take_results().unwrap();
+    if stacks_profiler::diagnostics::enabled() {
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].sampled_count, 4);
+    } else {
+        assert!(roots.is_empty());
+    }
+    {
+        let _suppressed = Profiler::begin_suppression();
+        let _span = stacks_profiler::diagnostic_span!("Suppressed diagnostic", rate: 64);
+    }
+    assert!(Profiler::take_results().unwrap().is_empty());
+}

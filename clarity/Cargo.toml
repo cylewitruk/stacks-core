@@ -16,6 +16,7 @@ name = "clarity"
 path = "./src/libclarity.rs"
 
 [dependencies]
+stacks-profiler.workspace = true
 clarity-types = { package = "clarity-types", path = "../clarity-types", default-features = false }
 serde = { workspace = true }
 serde_derive = { workspace = true }
@@ -57,10 +58,19 @@ harness = false
 name = "variadic_concat"
 harness = false
 
+[[bench]]
+name = "function_lookup"
+harness = false
+
+[[bench]]
+name = "trait_lookup"
+harness = false
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 serde_stacker = "0.1"
 
 [features]
+direct-value-diagnostics = ["clarity-types/direct-value-diagnostics"]
 default = ["rusqlite"]
 asset-map-json = ["clarity-types/asset-map-json"]
 developer-mode = ["stacks_common/developer-mode", "clarity-types/developer-mode"]

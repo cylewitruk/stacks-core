@@ -527,6 +527,13 @@ impl LimitedCostTracker {
             Self::Free => panic!("Cannot set total on free tracker"),
         }
     }
+    /// Change only the benchmark allowance while preserving spent cost and memory.
+    pub fn benchmark_set_limit(&mut self, limit: ExecutionCost) {
+        match self {
+            Self::Limited(data) => data.limit = limit,
+            Self::Free => panic!("Benchmark requires a metered tracker"),
+        }
+    }
     pub fn get_limit(&self) -> ExecutionCost {
         match self {
             Self::Limited(TrackerData { limit, .. }) => limit.clone(),

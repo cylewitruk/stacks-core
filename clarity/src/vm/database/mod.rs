@@ -13,6 +13,8 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+//! Clarity backing-store interfaces and persistence-neutral database abstractions.
 #[cfg(feature = "rusqlite")]
 pub use sqlite::MemoryBackingStore;
 
@@ -21,7 +23,10 @@ pub use self::clarity_db::{
     BurnStateDB, ClarityDatabase, HeadersDB, NULL_BURN_STATE_DB, NULL_HEADER_DB,
     STORE_CONTRACT_SRC_INTERFACE, StoreType,
 };
-pub use self::clarity_store::{ClarityBackingStore, SpecialCaseHandler};
+pub use self::clarity_store::{
+    ClarityBackingStore, DataStoreEntry, DataStoreValue, SpecialCaseHandler, StoredValue,
+    StoredValueResult, TypedValueData, TypedValueResult,
+};
 pub use self::key_value_wrapper::{RollbackWrapper, RollbackWrapperPersistedLog};
 #[cfg(feature = "rusqlite")]
 pub use self::sqlite::{DATA_TABLE_NAME, METADATA_TABLE_NAME, MetadataRow, SqliteConnection};

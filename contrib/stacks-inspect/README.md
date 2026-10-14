@@ -12,7 +12,7 @@ cargo build -p stacks-inspect
 
 ```
 --config <CONFIG_FILE>       Path to stacks-node configuration file
---network-config <NETWORK>   Use a predefined network (helium, mainnet, mocknet, xenon)
+--network-config <NETWORK>   Use a predefined network (mainnet, xenon)
 --version                    Show version information
 --help                       Show help
 ```
@@ -70,26 +70,6 @@ get-ancestors <DB_PATH> <BLOCK_HASH> <CONSENSUS_HASH>
     Trace block ancestry through staging database
 ```
 
-### Shadow Block Commands
-
-Tools for shadow chainstate operations (use with caution).
-
-```
-make-shadow-block <CHAINSTATE_DIR> <NETWORK> <CHAIN_TIP> [TX_HEX...]
-    Create a shadow block from transactions
-    NETWORK: mainnet, krypton, naka3
-
-shadow-chainstate-repair <CHAINSTATE_DIR> <NETWORK>
-    Repair shadow chainstate by generating and applying shadow blocks
-
-shadow-chainstate-patch <CHAINSTATE_DIR> <NETWORK> <SHADOW_BLOCKS_JSON>
-    Apply shadow blocks from JSON to chainstate
-    Use "-" to read JSON from stdin
-
-add-shadow-block <CHAINSTATE_DIR> <NETWORK> <SHADOW_BLOCK_HEX>
-    Add a shadow block to chainstate
-```
-
 ### Nakamoto Commands
 
 Nakamoto-specific chain inspection and peer queries.
@@ -139,6 +119,33 @@ validate-block <DATABASE_PATH> [--early-exit] [--ignore-costs] [MODE]
       index-range [START] [END]      Validate Epoch2 blocks by index (omit args to show count)
       naka-index-range [START] [END] Validate Nakamoto blocks by index (omit args to show count)
 ```
+
+On this optimized branch, `validate-block` prepares every applicable MARF in
+an **offline, writable disposable chainstate** before opening validation handles.
+It uses the [canonical migrator](../stacks-storage-migrate/README.md) directly:
+legacy tries become compact canonical tries, and Clarity values become a
+partitioned stable-ID store. Generic MARF side tables retain their semantics.
+Direct hash indexes and the colocated Clarity PtrHash base are built before
+validation. No intermediate format databases are produced.
+
+Conversion creates a private sibling destination. The verified replacement and
+its file inventory are durable before cutover begins; old files remain until
+the active replacement verifies. Interrupted file publication rolls forward.
+Incomplete conversion is all-or-nothing and must be inspected/discarded before
+retrying. Already canonical stores receive registration verification. Unknown
+experimental formats fail explicitly. Preparation needs free space for the
+completed destination and scratch and is not part of node-work timing.
+
+### Moving a converted chainstate
+
+Move the complete chainstate with every registered sibling directory. Stable
+value and PtrHash registrations are relative. PtrHash functions use native
+serialization; verify compatibility with the target-built reader before any
+benchmark. If a native rebuild is required, use
+`scripts/rebuild-stable-ptrhash.py` on a disposable clone with a verified
+committed-membership stream. Preserve the original template, and repeat
+validation after rebuilding. Do not use the retired extent-index rebuild path
+for stable-ID storage.
 
 ### Chain State Commands
 
@@ -231,5 +238,5 @@ cargo run -p stacks-inspect -- docgen > clarity-api.json
 ## Notes
 
 - Some commands expect mainnet data paths by default and may require specific network contexts.
-- Operations that write data (e.g., shadow chain tools) are destructive—use copies of data directories when experimenting.
+- Operations that write data are destructive—use copies of data directories when experimenting.
 - Use `--help` on any command for detailed argument information: `cargo run -p stacks-inspect -- <command> --help`

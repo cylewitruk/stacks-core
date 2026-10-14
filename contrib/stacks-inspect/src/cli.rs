@@ -119,7 +119,7 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "CONFIG_FILE")]
     pub config: Option<String>,
 
-    /// Use a predefined network configuration (helium, mainnet, mocknet, xenon)
+    /// Use a predefined network configuration (mainnet, xenon)
     #[arg(long = "network-config", global = true, value_name = "NETWORK")]
     pub network_config: Option<String>,
 
@@ -284,71 +284,6 @@ pub enum Command {
         /// Consensus hash
         #[arg(value_name = "CONSENSUS_HASH")]
         consensus_hash: String,
-    },
-
-    // ================ Shadow Block Commands ================
-    /// Create a shadow block from transactions
-    #[command(name = "make-shadow-block")]
-    MakeShadowBlock {
-        /// Path to chainstate directory
-        #[arg(value_name = "CHAINSTATE_DIR")]
-        chainstate_dir: String,
-
-        /// Network (mainnet, krypton, naka3)
-        #[arg(value_name = "NETWORK")]
-        network: String,
-
-        /// Chain tip block hash
-        #[arg(value_name = "CHAIN_TIP")]
-        chain_tip: String,
-
-        /// Transaction hex strings to include
-        #[arg(value_name = "TX_HEX")]
-        txs: Vec<String>,
-    },
-
-    /// Repair shadow chainstate by generating and applying shadow blocks
-    #[command(name = "shadow-chainstate-repair")]
-    ShadowChainstateRepair {
-        /// Path to chainstate directory
-        #[arg(value_name = "CHAINSTATE_DIR")]
-        chainstate_dir: String,
-
-        /// Network (mainnet, krypton, naka3)
-        #[arg(value_name = "NETWORK")]
-        network: String,
-    },
-
-    /// Apply shadow blocks from JSON to chainstate
-    #[command(name = "shadow-chainstate-patch")]
-    ShadowChainstatePatch {
-        /// Path to chainstate directory
-        #[arg(value_name = "CHAINSTATE_DIR")]
-        chainstate_dir: String,
-
-        /// Network (mainnet, krypton, naka3)
-        #[arg(value_name = "NETWORK")]
-        network: String,
-
-        /// Path to shadow blocks JSON file or "-" for stdin
-        #[arg(value_name = "SHADOW_BLOCKS_JSON")]
-        shadow_blocks_path: String,
-    },
-
-    /// Add a shadow block to chainstate
-    #[command(name = "add-shadow-block")]
-    AddShadowBlock {
-        /// Path to chainstate directory
-        #[arg(value_name = "CHAINSTATE_DIR")]
-        chainstate_dir: String,
-
-        /// Network (mainnet, krypton, naka3)
-        #[arg(value_name = "NETWORK")]
-        network: String,
-
-        /// Shadow block hex
-        #[arg(value_name = "SHADOW_BLOCK_HEX")]
-        shadow_block_hex: String,
     },
 
     // ================ Nakamoto Commands ================

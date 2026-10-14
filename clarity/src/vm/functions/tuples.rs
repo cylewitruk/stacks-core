@@ -24,7 +24,58 @@ use crate::vm::errors::{
 };
 use crate::vm::representations::SymbolicExpression;
 use crate::vm::types::{TupleData, TypeSignature, Value};
-use crate::vm::{LocalContext, eval};
+use crate::vm::{LocalContext, PackedValueCow, ValueRef, eval};
+
+/// Read one tuple field while retaining packed backing storage when the input is a packed tuple.
+pub fn tuple_get_ref(
+    args: &[SymbolicExpression],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+    context: &LocalContext,
+) -> Result<ValueRef<'static>, VmExecutionError> {
+    check_argument_count(2, args)?;
+    let arg_name = args[0]
+        .match_atom()
+        .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
+    let value = eval(&args[1], exec_state, invoke_ctx, context)?;
+    value.charge_clone_cost(exec_state)?;
+
+    if value.is_optional()? {
+        let Some(tuple) = value.optional_child()? else {
+            return Ok(ValueRef::Owned(Value::none()));
+        };
+        if !tuple.is_tuple()? {
+            return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+                "Expected tuple: {}",
+                tuple.type_signature()?
+            ))
+            .into());
+        }
+        let len = tuple.tuple_len()?;
+        runtime_cost(ClarityCostFunction::TupleGet, exec_state, len)?;
+        return tuple.tuple_field(arg_name)?.into_optional().map_err(|_| {
+            VmInternalError::Expect("Tuple contents should always fit in a some wrapper".into())
+                .into()
+        });
+    }
+
+    if !value.is_tuple()? {
+        return Err(RuntimeCheckErrorKind::Unreachable(bounded_format!(
+            "Expected tuple: {}",
+            value.type_signature()?
+        ))
+        .into());
+    }
+
+    let len = value.tuple_len()?;
+    runtime_cost(ClarityCostFunction::TupleGet, exec_state, len)?;
+    match value.tuple_field(arg_name)? {
+        ValueRef::Packed(value) => Ok(ValueRef::Packed(PackedValueCow::stored(
+            value.into_shared(),
+        ))),
+        value => Ok(ValueRef::Owned(value.into_owned()?)),
+    }
+}
 
 pub fn tuple_cons(
     args: &[SymbolicExpression],

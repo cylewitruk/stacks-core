@@ -1,0 +1,1 @@
+Preserve MARF blob mappings across appends and reopened views, with shared ownership and file-sized reservation headroom on 64-bit Unix.

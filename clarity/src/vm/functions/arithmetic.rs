@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp;
+use std::{cmp, mem};
 
 use integer_sqrt::IntegerSquareRoot;
 use stacks_common::bounded_format;
@@ -26,17 +26,12 @@ use crate::vm::errors::{
     RuntimeCheckErrorKind, RuntimeError, VmExecutionError, VmInternalError, check_argument_count,
 };
 use crate::vm::representations::SymbolicExpression;
-use crate::vm::types::{
-    ASCIIData, BuffData, CharType, SequenceData, TypeSignature, UTF8Data, Value,
-};
+use crate::vm::types::{CharType, SequenceData, SequenceSubtype, TypeSignature, Value};
 use crate::vm::version::ClarityVersion;
-use crate::vm::{LocalContext, eval};
+use crate::vm::{LocalContext, ValueRef, eval};
 
 struct U128Ops();
 struct I128Ops();
-struct ASCIIOps();
-struct UTF8Ops();
-struct BuffOps();
 
 impl U128Ops {
     fn make_value(x: u128) -> Result<Value, VmExecutionError> {
@@ -67,53 +62,116 @@ macro_rules! type_force_binary_arithmetic {
     }};
 }
 
-// The originally supported comparable types in Clarity1 were Int and UInt.
-macro_rules! type_force_binary_comparison_v1 {
-    ($function: ident, $x: expr, $y: expr, $e: expr) => {{
-        match ($x.as_ref(), $y.as_ref()) {
-            (Value::Int(x), Value::Int(y)) => I128Ops::$function(x, y),
-            (Value::UInt(x), Value::UInt(y)) => U128Ops::$function(x, y),
-            (_, _) => Err(RuntimeCheckErrorKind::UnionTypeValueError(
-                vec![TypeSignature::IntType, TypeSignature::UIntType],
-                $x.as_ref().to_error_string(),
-            )
-            .into()),
+/// Compare scalar or byte-sequence values without reconstructing packed payloads.
+fn compare_refs(
+    a: &ValueRef<'_>,
+    b: &ValueRef<'_>,
+    extended: bool,
+) -> Result<cmp::Ordering, VmExecutionError> {
+    if let (Some(a), Some(b)) = (a.as_int()?, b.as_int()?) {
+        return Ok(a.cmp(&b));
+    }
+    if let (Some(a), Some(b)) = (a.as_uint()?, b.as_uint()?) {
+        return Ok(a.cmp(&b));
+    }
+    if extended {
+        if let (Some(a), Some(b)) = (a.as_buffer_bytes()?, b.as_buffer_bytes()?) {
+            return Ok(a.cmp(b));
         }
-    }};
+        // Keep the existing owned UTF-8 comparison allocation-free.
+        if !matches!(a, ValueRef::Packed(_)) && !matches!(b, ValueRef::Packed(_)) {
+            match (a.as_ref(), b.as_ref()) {
+                (
+                    Value::Sequence(SequenceData::String(CharType::UTF8(a))),
+                    Value::Sequence(SequenceData::String(CharType::UTF8(b))),
+                ) => return Ok(a.data.cmp(&b.data)),
+                _ => {}
+            }
+        }
+        let a_type = a.type_signature()?;
+        let b_type = b.type_signature()?;
+        if let (
+            TypeSignature::SequenceType(SequenceSubtype::StringType(a_kind)),
+            TypeSignature::SequenceType(SequenceSubtype::StringType(b_kind)),
+        ) = (&a_type, &b_type)
+        {
+            if mem::discriminant(a_kind) == mem::discriminant(b_kind) {
+                // Valid UTF-8 byte ordering equals the legacy codepoint-vector ordering.
+                let a = a.as_text_bytes()?.expect("string type");
+                let b = b.as_text_bytes()?.expect("string type");
+                return Ok(a.as_ref().cmp(b.as_ref()));
+            }
+        }
+    }
+    let mut types = vec![TypeSignature::IntType, TypeSignature::UIntType];
+    if extended {
+        types.extend([
+            TypeSignature::STRING_ASCII_MAX,
+            TypeSignature::STRING_UTF8_MAX,
+            TypeSignature::BUFFER_MAX,
+        ]);
+    }
+    Err(RuntimeCheckErrorKind::UnionTypeValueError(types, a.as_ref().to_error_string()).into())
 }
 
-// Clarity2 adds supported comparable types ASCII, UTF8 and Buffer. These are only
-// accessed if the ClarityVersion, as read by the SpecialFunction, is >= 2.
+/// Apply a comparison callback to already evaluated arguments with special-form costs.
+pub fn apply_comparison_refs(
+    name: &str,
+    args: &[ValueRef<'_>],
+    exec_state: &mut ExecutionState,
+    invoke_ctx: &InvocationContext,
+) -> Result<Value, VmExecutionError> {
+    check_argument_count(2, args)?;
+    let extended = *invoke_ctx.contract_context.get_clarity_version() >= ClarityVersion::Clarity2;
+    let cost = match name {
+        ">" => ClarityCostFunction::Ge,
+        "<" => ClarityCostFunction::Le,
+        ">=" => ClarityCostFunction::Geq,
+        "<=" => ClarityCostFunction::Leq,
+        _ => return Err(VmInternalError::Expect("unsupported comparison".into()).into()),
+    };
+    let size = if extended {
+        u64::from(cmp::min(args[0].size()?, args[1].size()?))
+    } else {
+        args.len() as u64
+    };
+    runtime_cost(cost, exec_state, size)?;
+    let order = compare_refs(&args[0], &args[1], extended)?;
+    Ok(Value::Bool(match name {
+        ">" => order.is_gt(),
+        "<" => order.is_lt(),
+        ">=" => order.is_ge(),
+        "<=" => order.is_le(),
+        _ => unreachable!(),
+    }))
+}
+
+/// Apply an ordering predicate to a borrowed comparison result.
+macro_rules! compare_ref_values {
+    (greater, $x:expr, $y:expr, $extended:expr) => {
+        compare_refs(&$x, &$y, $extended).map(|v| Value::Bool(v.is_gt()))
+    };
+    (less, $x:expr, $y:expr, $extended:expr) => {
+        compare_refs(&$x, &$y, $extended).map(|v| Value::Bool(v.is_lt()))
+    };
+    (geq, $x:expr, $y:expr, $extended:expr) => {
+        compare_refs(&$x, &$y, $extended).map(|v| Value::Bool(v.is_ge()))
+    };
+    (leq, $x:expr, $y:expr, $extended:expr) => {
+        compare_refs(&$x, &$y, $extended).map(|v| Value::Bool(v.is_le()))
+    };
+}
+
+macro_rules! type_force_binary_comparison_v1 {
+    ($function:ident, $x:expr, $y:expr, $e:expr) => {
+        compare_ref_values!($function, $x, $y, false)
+    };
+}
+
 macro_rules! type_force_binary_comparison_v2 {
-    ($function: ident, $x: expr, $y: expr, $e: expr) => {{
-        match ($x.as_ref(), $y.as_ref()) {
-            (Value::Int(x), Value::Int(y)) => I128Ops::$function(x, y),
-            (Value::UInt(x), Value::UInt(y)) => U128Ops::$function(x, y),
-            (
-                Value::Sequence(SequenceData::String(CharType::ASCII(ASCIIData { data: x }))),
-                Value::Sequence(SequenceData::String(CharType::ASCII(ASCIIData { data: y }))),
-            ) => ASCIIOps::$function(x, y),
-            (
-                Value::Sequence(SequenceData::String(CharType::UTF8(UTF8Data { data: x }))),
-                Value::Sequence(SequenceData::String(CharType::UTF8(UTF8Data { data: y }))),
-            ) => UTF8Ops::$function(x, y),
-            (
-                Value::Sequence(SequenceData::Buffer(BuffData { data: x })),
-                Value::Sequence(SequenceData::Buffer(BuffData { data: y })),
-            ) => BuffOps::$function(x, y),
-            (_, _) => Err(RuntimeCheckErrorKind::UnionTypeValueError(
-                vec![
-                    TypeSignature::IntType,
-                    TypeSignature::UIntType,
-                    TypeSignature::STRING_ASCII_MAX,
-                    TypeSignature::STRING_UTF8_MAX,
-                    TypeSignature::BUFFER_MAX,
-                ],
-                $x.as_ref().to_error_string(),
-            )
-            .into()),
-        }
-    }};
+    ($function:ident, $x:expr, $y:expr, $e:expr) => {
+        compare_ref_values!($function, $x, $y, true)
+    };
 }
 
 macro_rules! type_force_unary_arithmetic {
@@ -177,27 +235,6 @@ macro_rules! type_force_variadic_arithmetic {
             .into()),
         }
     }};
-}
-
-// This macro creates comparison operation functions for the supported types:
-// uint, int, string-ascii, string-utf8 and buff.
-macro_rules! make_comparison_ops {
-    ($struct_name: ident, $type:ty) => {
-        impl $struct_name {
-            fn greater(x: &$type, y: &$type) -> Result<Value, VmExecutionError> {
-                Ok(Value::Bool(x > y))
-            }
-            fn less(x: &$type, y: &$type) -> Result<Value, VmExecutionError> {
-                Ok(Value::Bool(x < y))
-            }
-            fn leq(x: &$type, y: &$type) -> Result<Value, VmExecutionError> {
-                Ok(Value::Bool(x <= y))
-            }
-            fn geq(x: &$type, y: &$type) -> Result<Value, VmExecutionError> {
-                Ok(Value::Bool(x >= y))
-            }
-        }
-    };
 }
 
 // This macro creates all of the operation functions for the two arithmetic types
@@ -328,7 +365,7 @@ macro_rules! make_arithmetic_ops {
                     )
                     .into());
                 }
-                let size = std::mem::size_of::<$type>() as u32;
+                let size = mem::size_of::<$type>() as u32;
                 Self::make_value((size * 8 - 1 - n.leading_zeros()) as $type)
             }
         }
@@ -337,12 +374,6 @@ macro_rules! make_arithmetic_ops {
 
 make_arithmetic_ops!(U128Ops, u128);
 make_arithmetic_ops!(I128Ops, i128);
-
-make_comparison_ops!(U128Ops, u128);
-make_comparison_ops!(I128Ops, i128);
-make_comparison_ops!(ASCIIOps, Vec<u8>);
-make_comparison_ops!(UTF8Ops, Vec<Vec<u8>>);
-make_comparison_ops!(BuffOps, Vec<u8>);
 
 // Used for the `xor` function.
 pub fn native_xor(a: Value, b: Value) -> Result<Value, VmExecutionError> {
@@ -395,7 +426,7 @@ fn special_geq_v2(
     runtime_cost(
         ClarityCostFunction::Geq,
         exec_state,
-        cmp::min(a.as_ref().size()?, b.as_ref().size()?),
+        cmp::min(a.size()?, b.size()?),
     )?;
     type_force_binary_comparison_v2!(geq, a, b, exec_state)
 }
@@ -445,7 +476,7 @@ fn special_leq_v2(
     runtime_cost(
         ClarityCostFunction::Leq,
         exec_state,
-        cmp::min(a.as_ref().size()?, b.as_ref().size()?),
+        cmp::min(a.size()?, b.size()?),
     )?;
     type_force_binary_comparison_v2!(leq, a, b, exec_state)
 }
@@ -494,7 +525,7 @@ fn special_greater_v2(
     runtime_cost(
         ClarityCostFunction::Ge,
         exec_state,
-        cmp::min(a.as_ref().size()?, b.as_ref().size()?),
+        cmp::min(a.size()?, b.size()?),
     )?;
     type_force_binary_comparison_v2!(greater, a, b, exec_state)
 }
@@ -543,7 +574,7 @@ fn special_less_v2(
     runtime_cost(
         ClarityCostFunction::Le,
         exec_state,
-        cmp::min(a.as_ref().size()?, b.as_ref().size()?),
+        cmp::min(a.size()?, b.size()?),
     )?;
     type_force_binary_comparison_v2!(less, a, b, exec_state)
 }
