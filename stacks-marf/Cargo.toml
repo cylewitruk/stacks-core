@@ -10,6 +10,7 @@ name = "stacks_marf"
 path = "src/lib.rs"
 
 [dependencies]
+stacks-profiler = { workspace = true, optional = true }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_derive = { workspace = true }
@@ -35,6 +36,7 @@ tempfile = "3"
 
 [features]
 default = []
+profiler = ["stacks-profiler", "stacks-common/profiler"]
 # Expose the MARF's test-only helpers to other crates' test suites.
 testing = ["stacks-common/testing"]
 # Log the duration of every SQLite statement.

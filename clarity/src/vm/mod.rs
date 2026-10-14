@@ -187,6 +187,7 @@ fn lookup_variable<'a>(
     if let Some(value) = variables::lookup_reserved_variable(name, exec_state, invoke_ctx)? {
         return Ok(ValueRef::Owned(value));
     };
+    let _span = crate::profiler::profile!("lookup_variable", name.to_string());
     runtime_cost(
         ClarityCostFunction::LookupVariableDepth,
         exec_state,
@@ -237,6 +238,8 @@ pub fn lookup_function<'a>(
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext<'a>,
 ) -> Result<CallableType<'a>, VmExecutionError> {
+    let _span = crate::profiler::profile!("lookup_function", name.to_string());
+
     runtime_cost(ClarityCostFunction::LookupFunction, exec_state, 0)?;
 
     if let Some(result) = functions::lookup_reserved_functions(
@@ -303,32 +306,41 @@ fn dispatch_args(
         match function {
             // Built-ins (Native)
             CallableType::Builtin {
-                kind: BuiltinKind::Native(_, function, cost_function),
-                ..
+                clarity_name,
+                kind: BuiltinKind::Native(rust_name, function, cost_function),
             } => {
-                runtime_cost(cost_function.clone(), exec_state, args.len())
+                let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
+                runtime_cost(*cost_function, exec_state, args.len())
                     .map_err(VmExecutionError::from)?;
                 function.apply(args, exec_state, invoke_ctx)
             }
 
             // Built-ins (Native 2.05+)
             CallableType::Builtin {
-                kind: BuiltinKind::Native205(_, function, cost_function, cost_input_handle),
-                ..
+                clarity_name,
+                kind: BuiltinKind::Native205(rust_name, function, cost_function, cost_input_handle),
             } => {
+                let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
                 let cost_input = if exec_state.epoch() >= &StacksEpochId::Epoch2_05 {
                     cost_input_handle(args.as_slice())?
                 } else {
                     args.len() as u64
                 };
 
-                runtime_cost(cost_function.clone(), exec_state, cost_input)
+                runtime_cost(*cost_function, exec_state, cost_input)
                     .map_err(VmExecutionError::from)?;
                 function.apply(args, exec_state, invoke_ctx)
             }
 
             // User-defined functions (Clarity)
-            CallableType::UserFunction(function) => function.apply(&args, exec_state, invoke_ctx),
+            CallableType::UserFunction(function) => {
+                let _span = crate::profiler::begin_user_fn_span(
+                    function.name(),
+                    &function.define_type,
+                    function.get_identifier().to_string(),
+                );
+                function.apply(&args, exec_state, invoke_ctx)
+            }
 
             // Special functions evaluate their own arguments and are dispatched directly in
             // `apply`/`apply_evaluated`, so they never reach `dispatch_args`.
@@ -369,11 +381,12 @@ pub fn apply(
     });
 
     if let CallableType::Builtin {
-        kind: BuiltinKind::Special(_, function),
-        ..
+        clarity_name,
+        kind: BuiltinKind::Special(rust_name, function),
     } = function
     {
         exec_state.call_stack.insert(&identifier, track_recursion);
+        let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
         call_hook.begin(exec_state, invoke_ctx, CallArguments::Expressions(args));
         let mut resp = function(args, exec_state, invoke_ctx, context);
         call_hook.finish(exec_state, invoke_ctx, &resp);
@@ -480,10 +493,11 @@ pub fn apply_evaluated(
     // This path is hit when built-in operators like >=, <=, <, >, and, or are used as
     // step functions in fold/map/filter. Note: In this case it works like `apply`.
     if let CallableType::Builtin {
-        kind: BuiltinKind::Special(_, function),
-        ..
+        clarity_name,
+        kind: BuiltinKind::Special(rust_name, function),
     } = function
     {
+        let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
         call_hook.begin(exec_state, invoke_ctx, CallArguments::Values(&args));
         call_hook.did_evaluate_arguments(exec_state, invoke_ctx, &args);
         let sym_args: Vec<SymbolicExpression> = args

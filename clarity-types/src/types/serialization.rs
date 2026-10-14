@@ -559,6 +559,7 @@ impl Value {
     ///
     /// Strict typed-tuple enforcement is reachable only via the epoch-aware
     /// `*_at_epoch` deserialization entry points, never here.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn deserialize_read_count<R: Read>(
         r: &mut R,
         expected_type: Option<&TypeSignature>,
@@ -1118,6 +1119,7 @@ impl Value {
         ))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn serialize_write<W: Write>(&self, w: &mut W) -> Result<(), SerializationError> {
         use super::CharType::*;
         use super::PrincipalData::*;

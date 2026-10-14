@@ -392,6 +392,7 @@ impl DefinedFunction {
     /// Fails with `TraitReferenceUnknown` or `TraitMethodUnknown` when `contract_defining_trait`
     /// lacks the trait or the method, and with `BadTraitImplementation` when the arguments do
     /// not comply.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn check_trait_expectations<'t>(
         &self,
         epoch: &StacksEpochId,
@@ -461,6 +462,7 @@ impl DefinedFunction {
         &self.arg_types
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn canonicalize_types(&mut self, epoch: &StacksEpochId) {
         for i in 0..self.arguments.len() {
             self.arg_types[i] = self.arg_types[i].canonicalize(epoch);

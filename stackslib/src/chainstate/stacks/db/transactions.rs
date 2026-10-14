@@ -490,6 +490,8 @@ pub mod test {
     use stacks_common::util::hash::*;
 
     use super::*;
+    use crate::chainstate::nakamoto::miner::NakamotoBlockBuilder;
+    use crate::chainstate::nakamoto::NakamotoBlockHeader;
     use crate::chainstate::stacks::db::testing::*;
     use crate::chainstate::stacks::{Error, *};
 
@@ -1446,6 +1448,135 @@ pub mod test {
         assert_eq!(receipt.execution_cost, ExecutionCost::ZERO);
         assert!(receipt.events.is_empty());
         assert!(!receipt.post_condition_aborted);
+
+        conn.commit_block();
+    }
+
+    #[test]
+    fn try_mine_skipped_tx_with_len_updates_builder_accounting() {
+        let mut chainstate = TestChainstateBuilder::new_testnet(function_name!()).build();
+
+        let privk = StacksPrivateKey::from_hex(
+            "6d430bb91222408e7706c9001cfaeb91b08c2be6d5ac95779ab52c6b431950e001",
+        )
+        .unwrap();
+        let auth = TransactionAuth::from_p2pkh(&privk).unwrap();
+        let addr = auth.origin().address_testnet();
+        let recv_addr = StacksAddress::new(1, Hash160([0xff; 20])).unwrap();
+
+        let mut tx_stx_transfer = StacksTransaction::new(
+            TransactionVersion::Testnet,
+            auth,
+            TransactionPayload::TokenTransfer(
+                recv_addr.clone().into(),
+                123,
+                TokenTransferMemo([0u8; 34]),
+            ),
+        );
+        tx_stx_transfer.chain_id = 0x80000000;
+        tx_stx_transfer.post_condition_mode = TransactionPostConditionMode::Allow;
+        tx_stx_transfer.set_tx_fee(100);
+
+        let mut signer = StacksTransactionSigner::new(&tx_stx_transfer);
+        signer.sign_origin(&privk).unwrap();
+        let signed_tx = signer.get_tx().unwrap();
+
+        let mut conn = chainstate.block_begin(
+            &TestBurnStateDB_40,
+            &FIRST_BURNCHAIN_CONSENSUS_HASH,
+            &FIRST_STACKS_BLOCK_HASH,
+            &ConsensusHash([1u8; 20]),
+            &BlockHeaderHash([1u8; 32]),
+        );
+        conn.connection().as_transaction(|tx| {
+            StacksChainState::account_credit(tx, &addr.to_account_principal(), 223)
+        });
+
+        let tenure_consensus_hash = ConsensusHash([2u8; 20]);
+        let mut parent_nakamoto_header = NakamotoBlockHeader::genesis();
+        parent_nakamoto_header.consensus_hash = tenure_consensus_hash.clone();
+        let parent_header = StacksHeaderInfo {
+            anchored_header: StacksBlockHeaderTypes::Nakamoto(parent_nakamoto_header),
+            consensus_hash: tenure_consensus_hash.clone(),
+            total_tenure_size: 11,
+            ..StacksHeaderInfo::regtest_genesis()
+        };
+
+        let category = 7u8;
+        let tx_len = signed_tx.tx_len();
+        let tenure_size_with_tx = parent_header.total_tenure_size + tx_len;
+        let mut total_receipts_size = 0;
+        let mut too_big_builder = NakamotoBlockBuilder::new(
+            &parent_header,
+            &tenure_consensus_hash,
+            0,
+            None,
+            None,
+            1,
+            None,
+            None,
+            None,
+            tenure_size_with_tx,
+        )
+        .unwrap();
+        let result = too_big_builder.try_mine_skipped_tx_with_len(
+            &mut conn,
+            &signed_tx,
+            tx_len,
+            category,
+            &mut total_receipts_size,
+        );
+        let TransactionResult::Skipped(skipped) = result else {
+            panic!("expected transaction to exceed the tenure limit: {result:?}");
+        };
+        std::assert_matches!(skipped.error, Error::TenureTooBigError);
+        assert_eq!(too_big_builder.bytes_so_far, 0);
+        assert!(too_big_builder.header.problematic_txs.is_empty());
+        assert_eq!(total_receipts_size, 0);
+
+        let mut builder = NakamotoBlockBuilder::new(
+            &parent_header,
+            &tenure_consensus_hash,
+            0,
+            None,
+            None,
+            1,
+            None,
+            None,
+            None,
+            tenure_size_with_tx + 1,
+        )
+        .unwrap();
+        let result = builder.try_mine_skipped_tx_with_len(
+            &mut conn,
+            &signed_tx,
+            tx_len,
+            category,
+            &mut total_receipts_size,
+        );
+        let TransactionResult::Success(success) = result else {
+            panic!("expected skipped replay transaction to succeed: {result:?}");
+        };
+        let receipt = success.receipt;
+
+        assert_eq!(builder.bytes_so_far, tx_len);
+        assert_eq!(total_receipts_size, receipt.size().unwrap());
+        assert_eq!(
+            builder.header.problematic_txs,
+            vec![crate::chainstate::nakamoto::ProblematicTxMarker {
+                tx_index: 0,
+                category,
+            }]
+        );
+
+        let account_after = StacksChainState::get_account(&mut conn, &addr.to_account_principal());
+        assert_eq!(account_after.nonce, 1);
+        assert_eq!(account_after.stx_balance.amount_unlocked(), 123);
+        let recv_account_after =
+            StacksChainState::get_account(&mut conn, &recv_addr.to_account_principal());
+        assert_eq!(recv_account_after.stx_balance.amount_unlocked(), 0);
+        assert_eq!(success.fee, 100);
+        assert_eq!(receipt.problematic_skipped, Some(category));
 
         conn.commit_block();
     }
