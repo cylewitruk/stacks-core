@@ -20,7 +20,7 @@ use clarity::vm::contexts::OwnedEnvironment;
 use clarity::vm::database::*;
 use clarity::vm::errors::{RuntimeCheckErrorKind, StaticCheckErrorKind, VmExecutionError};
 use clarity::vm::resource_limiter::ResourceBudget;
-use clarity::vm::test_util::{execute, symbols_from_values, TEST_BURN_STATE_DB, TEST_HEADER_DB};
+use clarity::vm::test_util::{execute, TEST_BURN_STATE_DB, TEST_HEADER_DB};
 use clarity::vm::types::{
     PrincipalData, QualifiedContractIdentifier, StandardPrincipalData, TupleData, Value,
 };
@@ -682,12 +682,12 @@ fn pox_2_contract_caller_units() {
                 None,
                 cc.clone(),
                 "cc-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -702,10 +702,10 @@ fn pox_2_contract_caller_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "allow-contract-caller",
-                &symbols_from_values(vec![
+                vec![
                     cc.clone().into(),
                     Value::none(),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -720,12 +720,12 @@ fn pox_2_contract_caller_units() {
                 None,
                 cc.clone(),
                 "cc-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[0].clone(),
                     burn_height.clone(),
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -744,9 +744,9 @@ fn pox_2_contract_caller_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "disallow-contract-caller",
-                &symbols_from_values(vec![
+                vec![
                     cc.clone().into(),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -761,12 +761,12 @@ fn pox_2_contract_caller_units() {
                 None,
                 cc.clone(),
                 "cc-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -781,12 +781,12 @@ fn pox_2_contract_caller_units() {
                 None,
                 cc.clone(),
                 "cc-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[2].clone(),
                     burn_height.clone(),
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -803,10 +803,10 @@ fn pox_2_contract_caller_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "allow-contract-caller",
-                &symbols_from_values(vec![
+                vec![
                     cc.clone().into(),
                     Value::some(until_height).unwrap(),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -821,12 +821,12 @@ fn pox_2_contract_caller_units() {
                 None,
                 cc.clone(),
                 "cc-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[0].clone(),
                     burn_height,
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -851,12 +851,12 @@ fn pox_2_contract_caller_units() {
                 None,
                 cc.clone(),
                 "cc-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[2].clone(),
                     burn_height,
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -898,13 +898,13 @@ fn pox_2_lock_extend_units() {
                     invoke_ctx,
                     POX_2_CONTRACT_TESTNET.deref(),
                     "set-burnchain-parameters",
-                    &symbols_from_values(vec![
+                    vec![
                         Value::UInt(0),
                         Value::UInt(1),
                         Value::UInt(reward_cycle_len),
                         Value::UInt(25),
                         Value::UInt(0),
-                    ]),
+                    ],
                     false,
                 )
             },
@@ -919,10 +919,10 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(3),
                     POX_ADDRS[0].clone(),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -937,12 +937,12 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(2 * USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -957,13 +957,13 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -982,10 +982,10 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(3),
                     POX_ADDRS[0].clone(),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -1000,12 +1000,12 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[1].clone(),
                     burn_height,
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1024,10 +1024,10 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(10),
                     POX_ADDRS[2].clone(),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -1042,10 +1042,10 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(9),
                     POX_ADDRS[2].clone(),
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1114,7 +1114,7 @@ fn pox_2_lock_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-extend",
-                &symbols_from_values(vec![Value::UInt(3), POX_ADDRS[0].clone(),])
+                vec![Value::UInt(3), POX_ADDRS[0].clone(),]
             )
             .unwrap()
             .0
@@ -1174,12 +1174,12 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(2 * USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1193,12 +1193,12 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(2 * USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1212,11 +1212,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[1]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(10)
-                ])
+                ]
             )
             .unwrap()
             .0.to_string(),
@@ -1231,13 +1231,13 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1256,13 +1256,13 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[1]).into(),
                     Value::UInt(1),
                     POX_ADDRS[1].clone(),
                     burn_height,
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1281,7 +1281,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(1)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(1)]
             )
             .unwrap()
             .0
@@ -1296,7 +1296,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(2)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(2)]
             )
             .unwrap()
             .0
@@ -1311,7 +1311,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(3)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(3)]
             )
             .unwrap()
             .0
@@ -1326,11 +1326,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[1]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(11)
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -1345,11 +1345,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[1]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(10)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1368,7 +1368,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(3)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(3)]
             )
             .unwrap()
             .0
@@ -1384,7 +1384,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "revoke-delegate-stx",
-                &[]
+                vec![]
             )
             .unwrap()
             .0,
@@ -1398,11 +1398,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(10)
-                ])
+                ]
             )
             .unwrap()
             .0.to_string(),
@@ -1416,12 +1416,12 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(1),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1435,11 +1435,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(10)
-                ])
+                ]
             )
             .unwrap()
             .0.to_string(),
@@ -1453,7 +1453,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "revoke-delegate-stx",
-                &[]
+                vec![]
             )
             .unwrap()
             .0,
@@ -1467,12 +1467,12 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(10_000_000),
                     (&delegator).into(),
                     Value::none(),
                     Value::some(POX_ADDRS[2].clone()).unwrap(),
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1486,11 +1486,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(10)
-                ])
+                ]
             )
             .unwrap()
             .0.to_string(), "(err 23)".to_string(),
@@ -1503,7 +1503,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "revoke-delegate-stx",
-                &[]
+                vec![]
             )
             .unwrap()
             .0,
@@ -1517,12 +1517,12 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(10_000_000),
                     (&delegator).into(),
                     Value::some(Value::UInt(450 + 10 * 150 - 1)).unwrap(),
                     Value::some(POX_ADDRS[1].clone()).unwrap(),
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1536,11 +1536,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(10)
-                ])
+                ]
             )
             .unwrap()
             .0.to_string(), "(err 21)".to_string(),
@@ -1553,11 +1553,11 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "delegate-stack-extend",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     POX_ADDRS[1].clone(),
                     Value::UInt(9)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1577,7 +1577,7 @@ fn pox_2_delegate_extend_units() {
                     None,
                     POX_2_CONTRACT_TESTNET.clone(),
                     "stack-aggregation-commit",
-                    &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(cycle)])
+                    vec![POX_ADDRS[1].clone(), Value::UInt(cycle)]
                 )
                     .unwrap()
                     .0
@@ -1593,7 +1593,7 @@ fn pox_2_delegate_extend_units() {
                     None,
                     POX_2_CONTRACT_TESTNET.clone(),
                     "stack-aggregation-commit",
-                    &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(cycle)])
+                    vec![POX_ADDRS[1].clone(), Value::UInt(cycle)]
                 )
                     .unwrap()
                     .0
@@ -1610,7 +1610,7 @@ fn pox_2_delegate_extend_units() {
                 None,
                 POX_2_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(12)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(12)]
             )
                 .unwrap()
                 .0
@@ -1833,12 +1833,12 @@ fn recency_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[0].clone(),
                     Value::UInt(3000),
                     Value::UInt(3),
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -1853,12 +1853,12 @@ fn recency_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(2 * USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1871,13 +1871,13 @@ fn recency_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     Value::UInt(USTX_PER_HOLDER),
                     POX_ADDRS[1].clone(),
                     Value::UInt(3000),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -1909,12 +1909,12 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(2 * USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1928,12 +1928,12 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1946,12 +1946,12 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::some(POX_ADDRS[0].clone()).unwrap()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1963,12 +1963,12 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::some(Value::UInt(REWARD_CYCLE_LENGTH * 2)).unwrap(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1981,12 +1981,12 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -1999,12 +1999,12 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stx",
-                &symbols_from_values(vec![
+                vec![
                     Value::UInt(USTX_PER_HOLDER),
                     (&delegator).into(),
                     Value::none(),
                     Value::none()
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -2021,13 +2021,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     Value::UInt(3 * USTX_PER_HOLDER),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -2042,13 +2042,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     Value::UInt(2 * USTX_PER_HOLDER),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -2063,13 +2063,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -2098,7 +2098,7 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(1)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(1)]
             )
             .unwrap()
             .0
@@ -2113,13 +2113,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[1]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -2134,13 +2134,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[0]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -2155,13 +2155,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[2]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0
@@ -2176,13 +2176,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[2]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(1)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -2231,7 +2231,7 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(1)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(1)]
             )
             .unwrap()
             .0
@@ -2264,7 +2264,7 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(1)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(1)]
             )
             .unwrap()
             .0
@@ -2283,13 +2283,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[3]).into(),
                     Value::UInt(*MIN_THRESHOLD),
                     POX_ADDRS[1].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -2318,7 +2318,7 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(2)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(2)]
             )
             .unwrap()
             .0
@@ -2333,7 +2333,7 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "stack-aggregation-commit",
-                &symbols_from_values(vec![POX_ADDRS[1].clone(), Value::UInt(1)])
+                vec![POX_ADDRS[1].clone(), Value::UInt(1)]
             )
             .unwrap()
             .0
@@ -2397,13 +2397,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[1]).into(),
                     Value::UInt(*MIN_THRESHOLD),
                     POX_ADDRS[0].clone(),
                     burn_height.clone(),
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0,
@@ -2422,7 +2422,7 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "revoke-delegate-stx",
-                &[]
+                vec![]
             )
             .unwrap()
             .0,
@@ -2436,7 +2436,7 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "revoke-delegate-stx",
-                &[]
+                vec![]
             )
             .unwrap()
             .0
@@ -2450,13 +2450,13 @@ fn delegation_tests() {
                 None,
                 POX_CONTRACT_TESTNET.clone(),
                 "delegate-stack-stx",
-                &symbols_from_values(vec![
+                vec![
                     (&USER_KEYS[4]).into(),
                     Value::UInt(*MIN_THRESHOLD - 1),
                     POX_ADDRS[0].clone(),
                     burn_height,
                     Value::UInt(2)
-                ])
+                ]
             )
             .unwrap()
             .0
