@@ -403,7 +403,75 @@ What this establishes:
 
 ## 7. What the experiments establish
 
-CAUSES
+Measured facts, the inferences they support, and what stays open.
+
+**Measured.**
+
+1. The three implementations perform the same walks (identical node-visit
+   and back-pointer counts per key set, section 4) over the same bytes
+   (identical roots everywhere, sections 5 and 6).
+2. With no patched node on the path and no cache involved, one lookup
+   costs about 2 µs in the rewrite, 8 µs in the reference, 21 µs upstream
+   (compressed), and 3.5-3.9 / 8 / 23-26 µs on plain records.
+3. With patch caches at equal capacity and equal (100%) hit rates, the
+   reference costs 8-12 µs per lookup, the rewrite 1.3-2.3 µs.
+4. The reference gets slower when its patch cache is enlarged to the
+   rewrite's capacity; the rewrite gets 2.5-4x faster on wide working sets
+   when its cache is enlarged from the reference's 64 to its 4,096.
+5. During block construction the reference's result cache answers 98.7%
+   of hot open-block reads without a walk and brings those reads to parity
+   with the rewrite; the rewrite is 3-4x faster on every read the cache
+   cannot serve and 2.5-4x faster on writes; the whole block is 1.6x
+   faster in the rewrite.
+6. In Clarity execution the rewrite is 2-3x faster than upstream and
+   5-25% faster than the optimized MARF under the same consumer code, with
+   pass-to-pass noise of the same order on the read-heavy workload.
+7. Memory (section 4 of `STATUS.md`, same harness): the rewrite's
+   per-lookup allocations are zero after warm-up against the reference's
+   4-7 and upstream's 40-56; its peak live heap during inserts and commits
+   is at or below the oracles'; its patch cache holds up to 4,096 decoded
+   branches (a `Node256` branch is a 256-entry pointer vector, about 6 KB,
+   so the cache can reach about 25 MB on a mainnet-shaped trie against the
+   reference's 64 entries); its temporary file during pruning is the size
+   of the output blob.
+
+**Inferred.**
+
+* The speedup on committed reads is per-visit cost in the read path, not
+  cache behaviour: (2) and (3) hold the cache constant and the gap stays;
+  the plain-encoding control removes patches entirely and the gap is
+  still 2x against the reference. What differs per visit: the rewrite
+  parses a borrowed record and selects a child in one skip-scan with no
+  allocation and no synchronization; the reference's node read goes
+  through its cursor, its `SharedLru` behind a mutex with an `Arc` clone
+  per hit, and owned node values on resolution.
+* The patch cache's role is to keep patched paths at the patch-free cost.
+  It is necessary (disabled: 10-40 µs) and its 4,096 capacity is the
+  right size for this implementation (its clear-all map costs nothing per
+  hit beyond a hash lookup, so a large capacity is free), whereas the
+  reference's structure makes 64 its practical ceiling.
+* The advantage shrinks where the rewrite's walk is not on the critical
+  path: hot reads of the open block (the reference's result cache answers
+  them in the same 0.6 µs the rewrite's arena walk costs), seal (hashing
+  bound, equal), the abort workload (equal), and whole Clarity blocks
+  (interpreter bound: 5-25%).
+
+**Open.**
+
+* Mainnet-shaped tries: every workload here fits in the page cache and the
+  patch-cache working sets are at most 6,200 nodes; first-touch costs and
+  the cache's memory at scale are measured only on 1M keys.
+* The reference's whole optimized stack (its `stackslib` value stores) was
+  not run; the optmarf variant isolates the MARF crate only.
+* How much of a Clarity map read above the MARF is the `MarfedKV` layer,
+  and whether the reference's result cache or the rewrite's absence of one
+  matters for node workloads with more repeated reads per block than
+  these.
+* Replacement policy: an LRU in the rewrite's patch cache would raise hit
+  rates on working sets just above capacity (79% to 100% on the 4,096-node
+  set); the gain is bounded by the measured 4.4 vs 2.6 µs.
+* The double record parse on patch-free walks (section 4) is an
+  identified, unmeasured inefficiency of the rewrite.
 
 ## 8. Final tested commit and validation
 

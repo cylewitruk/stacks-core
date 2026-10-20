@@ -261,12 +261,12 @@ fn bounded_set(
     }
     let ks: Vec<String> = chosen.iter().map(|&i| keys[i].clone()).collect();
     let ps: Vec<&stacks_marf_next::WalkProfile> = chosen.iter().map(|&i| &profs[i]).collect();
-    Some(make_set(
-        format!("{name}(nodes<={limit})"),
-        tip,
-        ks,
-        &ps,
-    ))
+    let label = if limit == usize::MAX {
+        name.to_string()
+    } else {
+        format!("{name}(nodes<={limit})")
+    };
+    Some(make_set(label, tip, ks, &ps))
 }
 
 /// Choose the key sets for one built database.
