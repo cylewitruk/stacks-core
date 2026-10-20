@@ -1,0 +1,20 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, plain): built in 0.5s, 40000 keys
+impl next: rewrite stacks-marf-next: external=true compress=false mmap=always patch_cache=4096 result_cache=none
+mode isolated: fresh handle per capacity x set x repetition, cold pass then warm passes within the cell; cold = fresh handle, OS page cache as left by building the database (process-cold)
+key sets (walk shape from the rewrite's profiler; identical trie for every implementation):
+  patchfree@tip1               n=2000   distinct patched nodes=0      avg hops=0.00 avg patched/walk=0.00 avg depth=0.00
+  bulk tip (random keys)       n=5000   distinct patched nodes=0      avg hops=1.00 avg patched/walk=0.00 avg depth=0.00
+  tip hops=2 depth=none        n=5000   distinct patched nodes=0      avg hops=2.00 avg patched/walk=0.00 avg depth=0.00
+  tip hops=1 depth=none        n=5000   distinct patched nodes=0      avg hops=1.00 avg patched/walk=0.00 avg depth=0.00
+  tip hops=3+ depth=none       n=2423   distinct patched nodes=0      avg hops=3.00 avg patched/walk=0.00 avg depth=0.00
+capacities: ["prod"] -> e.g. rewrite stacks-marf-next: external=true compress=false mmap=always patch_cache=4096 result_cache=none
+
+set                               n capacity |   cold us/op   warm us/op        warm min-max  occupancy
+patchfree@tip1                 2000     prod |         1.96         1.72           1.68-1.76        n/a
+bulk tip (random keys)         5000     prod |         3.73         3.61           3.60-3.63        n/a
+tip hops=2 depth=none          5000     prod |         3.73         3.66           3.62-3.78        n/a
+tip hops=1 depth=none          5000     prod |         3.72         3.51           3.45-3.58        n/a
+tip hops=3+ depth=none         2423     prod |         4.13         3.77           3.76-3.83        n/a
+(no read counters in this build; use --features counters for the counter run)
+[json] wrote contrib/marf-differential/results/r5/ablate-rewrite-plain-rep2.json
