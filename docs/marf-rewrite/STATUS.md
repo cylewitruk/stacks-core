@@ -360,6 +360,22 @@ Reading the numbers:
   (17 KiB) are created per seal; proofs allocate in all implementations
   (owned proof nodes are the wire format).
 
+## Performance evidence (fourth review)
+
+`PERF.md` holds the fourth-review experiments: reproducible targets
+(upstream, the optimized reference through a checked-in overlay, the
+rewrite), the patch-cache ablation with counters, reads during block
+construction with the reference's result cache on and off, and real Clarity
+execution over `MarfedKV` with the MARF provider switched. Summary: the
+committed-read speedup against the reference is per-visit cost in the read
+path (4x with no patches and no cache involved; 5-7x with caches at equal
+capacity and 100% hits); during block construction the reference's result
+cache brings hot open-block reads to parity and the whole block is 1.6x
+faster in the rewrite; in Clarity execution the rewrite is 2-3x faster than
+upstream and 5-25% faster than the optimized MARF under the same consumer
+code, the interpreter dominating. Raw logs are committed under
+`contrib/marf-differential/results/r4/` and `contrib/clarity-bench/results/r4/`.
+
 ## Consumer integration
 
 The five consumer crates (`stackslib`, `stacks-node`, `contrib/clarity-cli`,
