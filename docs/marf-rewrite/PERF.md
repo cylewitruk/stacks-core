@@ -85,7 +85,35 @@ complete log exists under the path given in each section.
 | construction counters | rewrite; reference with result cache 2,048 and 0 | done |
 | Clarity execution | rewrite; upstream; optimized MARF under upstream's consumer code; two passes in alternating order | done (6 logs; equivalence lines identical) |
 | Clarity, whole optimized stack (optional) | worktree of 29ef093d as committed | not built in this round (the variant builder has the switch; its stackslib API differs and it is reported separately when it is) |
-| validation | crate + differential tests; all 132 hand-off boundaries both ways; consumer prune tests; counters build | VALIDATION_STATUS |
+| validation | crate + differential tests; all 132 hand-off boundaries both ways; consumer prune tests; counters build | Final code commit: `3a2facb4a27e594b18e6d6dc096f4a02f263da03` (branch
+`claude/awesome-brown-xj309n`); commits after it change only documentation.
+Measurement binaries were built by the checked-in scripts at `42c2750206`
+(`results/r4/ENV.txt`); the only source change between that revision and
+the final commit is the label of the unbounded ablation set (printed as
+`patched all(nodes<=18446744073709551615)` in the logs, now `patched all`)
+and the pruning harness fixes already measured.
+
+Validation (all `cargo nextest`, commands as in `STATUS.md`), run on the
+idle machine after the measurements:
+
+| suite | command | result |
+|---|---|---|
+| crate + differential (incl. the new `prune_stats_report_the_blob_length` and the sidecar rollback test) | `cargo nextest run -p stacks-marf-next -p marf-differential --no-fail-fast` | 18 passed, 0 failed, 0 skipped (re-run at `3a2facb4a2`: 18 passed) |
+| every hand-off boundary, both directions | `MARF_DIFF_ALL_HANDOFFS=1 cargo nextest run -p marf-differential -E 'test(/handoff/)'` | 2 passed (132 boundaries each way, no divergences), 447 s |
+| pruning and snapshot consumers | `cargo nextest run -p stackslib -p marf-squash -p clarity-cli --no-fail-fast -E 'test(/snapshot::tests::clarity/) \| test(/snapshot::tests::index/) \| package(marf-squash) \| package(clarity-cli)'` | 68 passed, 0 failed (2,203 of the stackslib binary's tests not selected) |
+| counters build | `cargo nextest run -p stacks-marf-next --features counters` | 12 passed |
+| benchmark correctness gates | every `ablate`, `construct` and `clarity-bench` run asserts exact values (or absence) for every read against its model and panics otherwise; all 46 runs completed (exit 0); roots and cost totals agree across implementations (sections 5, 6) | passed |
+
+Not run this round and still outstanding as integration checks: the full
+`stackslib` and `stacks-node` suites, a follower sync, the whole optimized
+stack Clarity variant. No test was skipped or disabled; nextest reported
+no leaks; the only warnings in the builds are the pre-existing ones of the
+workspace (none in the crates touched here).
+
+Follow-ups identified by the measurements, not done: the double record
+parse on patch-free walks (section 4); an LRU replacement for the rewrite's
+patch cache (bounded gain, section 7); `MarfedKV`-level attribution of the
+Clarity per-read cost (section 6)._STATUS |
 
 Raw logs: `contrib/marf-differential/results/r4/` (one file per run; `ENV.txt`
 has the revision, toolchain, machine and load before and after) and
@@ -475,4 +503,32 @@ Measured facts, the inferences they support, and what stays open.
 
 ## 8. Final tested commit and validation
 
-VALIDATION
+Final code commit: `3a2facb4a27e594b18e6d6dc096f4a02f263da03` (branch
+`claude/awesome-brown-xj309n`); commits after it change only documentation.
+Measurement binaries were built by the checked-in scripts at `42c2750206`
+(`results/r4/ENV.txt`); the only source change between that revision and
+the final commit is the label of the unbounded ablation set (printed as
+`patched all(nodes<=18446744073709551615)` in the logs, now `patched all`)
+and the pruning harness fixes already measured.
+
+Validation (all `cargo nextest`, commands as in `STATUS.md`), run on the
+idle machine after the measurements:
+
+| suite | command | result |
+|---|---|---|
+| crate + differential (incl. the new `prune_stats_report_the_blob_length` and the sidecar rollback test) | `cargo nextest run -p stacks-marf-next -p marf-differential --no-fail-fast` | 18 passed, 0 failed, 0 skipped (re-run at `3a2facb4a2`: 18 passed) |
+| every hand-off boundary, both directions | `MARF_DIFF_ALL_HANDOFFS=1 cargo nextest run -p marf-differential -E 'test(/handoff/)'` | 2 passed (132 boundaries each way, no divergences), 447 s |
+| pruning and snapshot consumers | `cargo nextest run -p stackslib -p marf-squash -p clarity-cli --no-fail-fast -E 'test(/snapshot::tests::clarity/) \| test(/snapshot::tests::index/) \| package(marf-squash) \| package(clarity-cli)'` | 68 passed, 0 failed (2,203 of the stackslib binary's tests not selected) |
+| counters build | `cargo nextest run -p stacks-marf-next --features counters` | 12 passed |
+| benchmark correctness gates | every `ablate`, `construct` and `clarity-bench` run asserts exact values (or absence) for every read against its model and panics otherwise; all 46 runs completed (exit 0); roots and cost totals agree across implementations (sections 5, 6) | passed |
+
+Not run this round and still outstanding as integration checks: the full
+`stackslib` and `stacks-node` suites, a follower sync, the whole optimized
+stack Clarity variant. No test was skipped or disabled; nextest reported
+no leaks; the only warnings in the builds are the pre-existing ones of the
+workspace (none in the crates touched here).
+
+Follow-ups identified by the measurements, not done: the double record
+parse on patch-free walks (section 4); an LRU replacement for the rewrite's
+patch cache (bounded gain, section 7); `MarfedKV`-level attribution of the
+Clarity per-read cost (section 6).
