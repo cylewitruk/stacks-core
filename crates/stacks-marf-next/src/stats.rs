@@ -1,3 +1,18 @@
+// Copyright (C) 2026 Stacks Open Internet Foundation
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 //! Opt-in per-thread operation counters for benchmark experiments
 //! (`counters` feature). The hooks (`count!`) compile to nothing without the
 //! feature, so release timing runs carry no instrumentation; counter runs
@@ -18,9 +33,13 @@ pub struct Counters {
     pub record_reads: u64,
     /// Records read from SQLite-stored tries (`blob_open` reads).
     pub sqlite_record_reads: u64,
-    /// Patch-cache lookups (only when the cache is enabled).
+    /// Patch-cache probes (one per node read when the cache is enabled;
+    /// every probe is for a `(block, offset)` key, before the record is read).
     pub patch_cache_lookups: u64,
     pub patch_cache_hits: u64,
+    /// Probes that missed and whose record turned out to be a plain node
+    /// (nothing to cache; the probe was pure overhead).
+    pub patch_cache_probe_miss_plain: u64,
     /// Resolved chains admitted into the cache after a miss.
     pub patch_cache_misses: u64,
     /// Times the cache was emptied for reaching its capacity.

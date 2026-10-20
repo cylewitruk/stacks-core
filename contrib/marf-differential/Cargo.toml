@@ -25,6 +25,11 @@ alloc-count = []
 # Read-path operation counters in the implementations (separate build from
 # timing runs).
 counters = ["stacks-marf-next/counters"]
+# Diagnostic control for the reference overlay (reference/README.md): the
+# reference probes its patch cache only after a borrowed read says the record
+# is a patch. A no-op against upstream; the overlay patch wires it to the
+# reference's feature.
+reference-lateprobe = []
 
 [[bin]]
 name = "marf-differential"
