@@ -862,6 +862,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "clarity-bench"
+version = "0.1.0"
+dependencies = [
+ "clarity 0.0.1",
+ "stacks-common 4.0.5",
+ "stacks-marf-next",
+ "stackslib 0.0.1",
+ "tempfile",
+]
+
+[[package]]
 name = "clarity-cli"
 version = "0.1.0"
 dependencies = [
