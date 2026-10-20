@@ -38,7 +38,9 @@ export MARF_BENCH_PROVIDER="reference stacks-marf $REF_REV"
 export MARF_BENCH_TREE_REV="$(git rev-parse HEAD)$(git diff --quiet HEAD -- crates contrib || echo -dirty)"
 echo "tree rev $(git rev-parse HEAD) ($(git describe --always --dirty)); reference $REF_REV; $MARF_BENCH_RUSTC"
 
-# 1. worktree at the reference revision
+# 1. worktree at the reference revision (fetched by hash when the clone
+#    does not have it, e.g. a single-branch clone)
+git cat-file -e "$REF_REV^{commit}" 2>/dev/null || git fetch origin "$REF_REV"
 if [ ! -d "$WORKTREE/.git" ] && [ ! -f "$WORKTREE/.git" ]; then
   mkdir -p "$(dirname "$WORKTREE")"
   git worktree add --detach "$WORKTREE" "$REF_REV"

@@ -34,6 +34,10 @@ REF_REV=29ef093da5dd58c1fa484624d94a9d972356c629
 WORK=${WORK:-$PWD/target/clarity-variants}
 OUT=$PWD/target/bench-bin
 mkdir -p "$OUT" "$WORK"
+# the pinned revisions are fetched by hash when the clone lacks them
+for rev in "$UP_REV" "$REF_REV"; do
+  git cat-file -e "$rev^{commit}" 2>/dev/null || git fetch origin "$rev"
+done
 export MARF_BENCH_RUSTC="$(rustc -V)"
 export MARF_BENCH_TREE_REV="$(git rev-parse HEAD)$(git diff --quiet HEAD -- crates contrib stackslib || echo -dirty)"
 echo "tree $MARF_BENCH_TREE_REV ($(git describe --always --dirty)); $MARF_BENCH_RUSTC"
