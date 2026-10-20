@@ -31,7 +31,10 @@ Subdirectories:
   from a fresh worktree at `e96c041a` (the review's finding: the copy
   targeted a directory the reference revision does not have), the fresh
   script-owned worktree build at `5420f1c1`, the repeat invocation and the
-  rewrite build at `d6fd444c`.
+  rewrite build at `d6fd444c`, and `fresh-clone-check.log`: a single-branch
+  clone of the pushed branch at `506e82d9` listing the artifacts, building
+  the rewrite and reference binaries from scratch and re-running the
+  correctness check over these samples.
 * `profile/`: bounded callgrind profiles of the isolated ablation cells
   (its README has the method and the extracted instruction counts).
 * `validation/`: nextest logs at `b553f53d` (`REV.txt` has the exit codes).

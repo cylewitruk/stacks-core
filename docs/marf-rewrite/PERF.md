@@ -753,6 +753,14 @@ Reproduction from a fresh clone of the branch: `contrib/marf-differential/script
 `contrib/clarity-bench/scripts/build-variants.sh` (root for the page-cold
 cells), then `BIG=1 contrib/marf-differential/scripts/run-r5.sh <dir>` and
 `python3 contrib/marf-differential/scripts/tables.py ablate|construct|clarity|check <dir>`.
-The fresh-clone check of the pushed tip (every file of `results/r3`, `r4`,
-`r5`, `contrib/clarity-bench/results`, the scripts and the overlay patches
-present; the three build scripts run) is recorded in `results/r5/evidence/fresh-clone-check.log`.
+The fresh-clone check of the pushed tip `506e82d932` (a single-branch
+clone: every file of `results/r3`, `r4`, `r5`, `contrib/clarity-bench/results`,
+the scripts and the overlay patches present and none ignored;
+`build-rewrite.sh` and `build-reference.sh` run to completion, the latter
+fetching the reference commit by hash because a single-branch clone does not
+carry it, counter tests passing, manifests written; `tables.py check` over
+the published samples; a smoke run of both fresh binaries) is recorded in
+`results/r5/evidence/fresh-clone-check.log`. `build-variants.sh` was not
+rerun in the fresh clone (a from-scratch build of three `stackslib` variants
+is about an hour); its from-scratch path is the `CLEAN=1` run recorded in
+`contrib/clarity-bench/results/r5/evidence/`.

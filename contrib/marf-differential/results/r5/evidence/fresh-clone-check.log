@@ -1,0 +1,71 @@
+fresh single-branch clone of cylewitruk/stacks-core claude/awesome-brown-xj309n at 2026-10-20T20:26:59Z
+tip 506e82d932d53e5afa57425b535819993513ea36
+artifacts in the tree:
+  contrib/marf-differential/results/r3                           12 files (11 .log, 0 .json)
+  contrib/marf-differential/results/r4                           36 files (33 .log, 0 .json)
+  contrib/marf-differential/results/r4/validation                 6 files (5 .log, 0 .json)
+  contrib/marf-differential/results/r5                          219 files (107 .log, 92 .json)
+  contrib/marf-differential/results/r5/evidence                   4 files (4 .log, 0 .json)
+  contrib/marf-differential/results/r5/profile                   19 files (6 .log, 0 .json)
+  contrib/marf-differential/results/r5/validation                 6 files (5 .log, 0 .json)
+  contrib/clarity-bench/results/r4                                7 files (6 .log, 0 .json)
+  contrib/clarity-bench/results/r5/evidence                       1 files (1 .log, 0 .json)
+  contrib/marf-differential/reference                             3 files (0 .log, 0 .json)
+  contrib/marf-differential/scripts                               5 files (0 .log, 0 .json)
+  contrib/clarity-bench/scripts                                   2 files (0 .log, 0 .json)
+ignored-but-tracked check (git check-ignore on tracked logs should list none):
+  (end of list)
+reference commit present before build? no
+== build-rewrite.sh 20:27:21
+rev 506e82d932d53e5afa57425b535819993513ea36 (2.05.0.2.2-17039-g506e82d932), rustc 1.98.0 (88d9e12ae 2026-08-18)
+    Finished `release` profile [optimized + debuginfo] target(s) in 3m 26s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 29s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 29s
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.26s
+built 2026-10-20T20:33:48Z
+tree_rev 506e82d932d53e5afa57425b535819993513ea36 2.05.0.2.2-17039-g506e82d932
+oracle upstream stacks-marf ad5c57786bb51b58d4bdb4992ad534f762d8cf03 (in tree)
+toolchain rustc 1.98.0 (88d9e12ae 2026-08-18)
+binary marf-differential-upstream sha256 1ade5c08d791e9ca4fdc20d435713243c852a6a3cf655366b9629d296d09f1d1
+binary marf-differential-upstream-counters sha256 4f70f3e76fe0accb40f4cb52862717c316b75b337cec612f2fbca02ebe7f7d29
+binary marf-differential-upstream-alloc sha256 4b87b7c6c2d1c706cfd6288ad3feefd9e3a6a32d4f0185d28d84070c571c7b8f
+exit=0
+== build-reference.sh 20:33:49
+tree rev 506e82d932d53e5afa57425b535819993513ea36 (2.05.0.2.2-17039-g506e82d932); reference 29ef093da5dd58c1fa484624d94a9d972356c629; rustc 1.98.0 (88d9e12ae 2026-08-18)
+From https://github.com/cylewitruk/stacks-core
+ * branch                  29ef093da5dd58c1fa484624d94a9d972356c629 -> FETCH_HEAD
+Preparing worktree (detached HEAD 29ef093da5)
+HEAD is now at 29ef093da5 Merge upstream/main into perf/optimized-stacks-bench-integration
+patching file contrib/marf-differential/Cargo.toml
+patching file contrib/marf-differential/src/alloc.rs
+patching file contrib/marf-differential/src/baseline.rs
+    Finished `release` profile [optimized + debuginfo] target(s) in 3m 37s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 50s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 46s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 51s
+built 2026-10-20T20:43:42Z
+tree_rev 506e82d932d53e5afa57425b535819993513ea36 2.05.0.2.2-17039-g506e82d932
+reference_rev 29ef093da5dd58c1fa484624d94a9d972356c629
+toolchain rustc 1.98.0 (88d9e12ae 2026-08-18)
+overlay harness.patch sha256 c888fe9bfa2e36b5ccb378d7c5dcdacb79354b16c22e9044781446918d90ea03
+overlay reference.patch sha256 c76fdf3523c78adaed5c50dc2933393a89e6ca2f3a728529e7ee54ac1090b0ec
+binary marf-differential-reference sha256 0cd9213a2385cc052d96102f4a8d00553a09ca6e7aee8564892d3f54cb0a115e
+binary marf-differential-reference-counters sha256 da114e650efe34ad6c24d482a8d8b9562516ac5911d8ec4b1770303fda486874
+binary marf-differential-reference-lateprobe sha256 8e813330943f013db1dbd2b475448dba870b9d493d6b3a5c4f0859fcb41d646e
+binary marf-differential-reference-lateprobe-counters sha256 da020f2300358e4c1a1ae96c290c5050a521cfcb26c225bc7211599cf3e00be1
+exit=0
+== tables.py check over the published samples 20:43:43
+construct correctness records: 15 keys, all agree across 23 runs
+clarity equivalence records: 15 keys, all agree across 15 runs
+exit=0
+== smoke: one isolated cell set with the fresh binaries (REPEAT=1 PASSES=1, small reads) 20:43:43
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, compressed): built in 0.7s, 40000 keys
+impl base: reference stacks-marf (29ef093d): external=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=2048
+mode isolated: fresh handle per capacity x set x repetition, cold pass then warm passes within the cell; cold = fresh handle, OS page cache as left by building the database (process-cold)
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, compressed): built in 0.6s, 40000 keys
+impl next: rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+mode isolated: fresh handle per capacity x set x repetition, cold pass then warm passes within the cell; cold = fresh handle, OS page cache as left by building the database (process-cold)
+FRESH-CLONE-CHECK-DONE 20:43:46
