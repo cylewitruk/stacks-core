@@ -304,7 +304,13 @@ sortition db, `util_lib::db`, every test mentioning `marf`, `squash` or
 `unconfirmed`, Nakamoto node tests, plus the `marf-squash` and
 `clarity-cli` crates):
 
-CONSUMER_RESULTS
+Result of the parallel run: **921 tests selected, 918 passed, 0 failed**, 3
+stalled (see below). Command:
+
+```
+cargo nextest run -p stackslib -p stacks-node -p marf-squash -p clarity-cli --no-fail-fast \
+  -E 'test(/clarity_vm::tests/) | test(/clarity_vm::database/) | test(/snapshot/) | test(/util_lib::db/) | test(/burn::db::sortdb::tests/) | test(/chainstate::stacks::db::/) | test(/chainstate::stacks::tests/) | test(/marf/) | test(/squash/) | test(/unconfirmed/) | test(/nakamoto::tests::node/)'
+```
 
 Three tests of that filter stalled in the parallel run and were re-run
 serially: `accounting::test_coinbase_pay_to_alt_principal_v210`,
@@ -315,8 +321,13 @@ trace of the stalled processes (zero CPU for over an hour) showed them in
 doubling backoff for as long as the address is in use; these tests use
 hard-coded ports (two block-construction tests share 2032/2033, and the two
 coinbase tests call the same helper with one port pair), so running them in
-parallel can leave them sleeping indefinitely. This is test-harness
-behaviour independent of the MARF. SERIAL_RESULTS
+parallel can leave them sleeping indefinitely. Re-run alone with `-j 1`
+they still stalled: the address was `0.0.0.0:2024`, which in this container
+is held by the sandbox's own service. With the three fixtures moved to
+12024/12025 (a separate, clearly labelled commit that can be dropped
+elsewhere) all three pass in about one second each: **3 passed, 0 failed**,
+bringing the consumer run to **921 of 921**. The stall was environmental,
+not a MARF behaviour.
 
 ## Known differences and limitations
 
