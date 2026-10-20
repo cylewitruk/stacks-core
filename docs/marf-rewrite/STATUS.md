@@ -55,9 +55,13 @@ Latest result: 16 tests, 16 passed (10 unit tests in `stacks-marf-next`;
 `rewrite_reproduces_fixtures`, `rewrite_reproduces_supported_fixture_ops`,
 `storage_variants_agree_on_consensus_observations`,
 `baseline_then_rewrite_handoff`, `rewrite_then_baseline_handoff`). The
-hand-off tests split every fixture after each `Close` and `Prune`, run the
-prefix on one implementation and the suffix on the other over the same
-directory, and assert every fixture contributes at least one split.
+hand-off tests split fixtures after a `Close` or a `Prune`, run the prefix
+on one implementation and the suffix on the other over the same directory,
+and assert every fixture contributes at least one split. Coverage per
+direction: every `Prune` boundary plus a quarter of the `Close` boundaries
+of each fixture, evenly spaced: 48 of the 132 eligible boundaries.
+`MARF_DIFF_ALL_HANDOFFS=1` splits at all 132 (about four times the
+runtime).
 
 Fixtures (`contrib/marf-differential/fixtures/*.json`, recorded from
 upstream's `stacks-marf` at `ad5c5778` with `marf-differential record-all`;
@@ -95,20 +99,29 @@ the original's `node_patch`/`marf_regression` tests: 1x256, 128x128, 2048x1,
 
 ## Borrowed traversal (acceptance criterion from the second review)
 
-Reads never materialize nodes:
+Reads borrow records; the one owned node on the read path is a resolved
+patch chain, produced on a cache miss and then cached:
 
 * `codec::Record` borrows `hash || body` from storage; `Record::descend`
-  compares the path and selects the child for the next key byte in one pass
-  over the slot list (a skip-scan reading two bytes per slot). Plain-encoded
-  `Node256`/`Node48` are indexed directly; compressed encodings are scanned.
-  No `Cow`; owned `Branch`/`Leaf` are produced only by `to_node`/`to_branch`
-  for copy-on-write, proofs and pruning.
+  compares the path and selects the child for the next key byte in one
+  skip-scan over the slot list, reading two bytes per slot (type flags and
+  character) to find where each occupied slot's pointer starts. This applies
+  to every encoding, plain `Node256`/`Node48` included: pointer widths vary
+  per slot, so a slot's position cannot be computed without the scan, and
+  the `Node48` index array is not consulted on lookup. Nothing is allocated
+  by the scan. No `Cow`; owned `Branch`/`Leaf` are produced only by
+  `to_node`/`to_branch` for copy-on-write, proofs and pruning, and by patch
+  resolution (next point).
 * `storage::Blobs` memory-maps the blobs file lazily and re-maps only when a
   read reaches past the mapped length. SQLite-stored tries use one reusable
   buffer per store.
-* Patch chains resolve into a bounded per-store cache (`(block_id, offset)`
-  -> `Branch`, 4,096 entries), so a hot node that is patched in block after
-  block is decoded once. Unconfirmed tries bypass the cache.
+* A patch chain met cold is resolved by decoding its base record into an
+  owned `Branch` (one allocation of the slot vector) and applying the
+  patches; the result goes into a bounded per-store cache (`(block_id,
+  offset)` -> `Branch`, 4,096 entries) and later reads borrow it, so a hot
+  node that is patched in block after block is decoded once per cache
+  lifetime. This is the allocation the zero-allocation lookup figures below
+  do not show: they measure warm caches. Unconfirmed tries bypass the cache.
 * Hashing collects each branch preimage into two reusable buffers and asks
   for every child's contribution once.
 * `MarfTransaction` holds `Option<Transaction>`; rollback or an uncommitted
@@ -282,8 +295,10 @@ Reading the numbers:
   with zero allocations; on the plain encoding the two are within noise of
   each other (the reference's result cache serves repeated keys; the
   rewrite walks the trie each time). Commit is faster in all three
-  configurations; seal is SHA-512/256 bound in all three (70% of the
-  rewrite's seal in callgrind).
+  configurations. Seal is on par, not faster: SHA-512/256 bound in all
+  three (70% of the rewrite's seal in callgrind), it came out 3% faster
+  than upstream here and 12% slower in an independent run on another
+  machine; treat it as equal within machine variance.
 * SQLite-internal storage: all three pay one `blob_open` per node; after the
   read-size fix the rewrite is within a few percent of upstream and faster on
   patched lookups. Proofs are slower on this configuration (more node
@@ -342,7 +357,6 @@ not a MARF behaviour.
   trie). Consumers `open_block` a tip first; fixtures mirror that.
 * No lookup-result cache (ADR-17); no root-node cache (`OPTIMIZATIONS.md`
   A7/A8 for the format-neutral options).
-* `prune_to_path` keeps collected nodes in memory (ADR-10).
 * The blobs map assumes the file is only appended to while open; truncating
   it from outside the process would fault the mapping (the reference's mmap
   path has the same assumption; upstream reads with `pread`).
@@ -360,5 +374,6 @@ not a MARF behaviour.
 3. Format-neutral items from `OPTIMIZATIONS.md` worth measuring first:
    per-building-trie lookup-result cache (A8), covering block-hash index
    (A11), profiler spans (E3).
-4. Harden pruning for very large tries (disk-backed node list).
+4. Qualify pruning on a mainnet-sized database (the stage keeps 48 bytes a
+   node in memory; the temp file is about the size of the output blob).
 5. Format-changing items stay deferred (`FUTURE.md`).

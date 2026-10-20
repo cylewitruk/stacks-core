@@ -3,12 +3,16 @@
 //! so that what is counted is the MARF's own behaviour.
 //!
 //! The binary installs [`Counting`] as the global allocator; `measure`
-//! brackets a closure and reports allocations, allocated bytes and time.
+//! brackets a closure and reports allocations, allocated bytes, the peak of
+//! live heap above where it started, and time.
 //! Phases: `insert` (batch inserts into the trie being built), `seal`
 //! (hashing), `commit` (serialization + storage write), `warm_get`
 //! (repeated lookups of present keys at a committed tip), `patched_get`
 //! (lookups through nodes stored as patch chains), `miss_get` (absent
-//! keys) and `proof` (lookup with Merkle proof).
+//! keys), the lookups bucketed by walk shape (see below), `proof` (lookup
+//! with Merkle proof) and `prune` (squash the whole chain into a new
+//! database; ops = nodes collected, so the peak column is the squash's
+//! high-water mark of live heap).
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::path::Path;
@@ -27,24 +31,35 @@ pub struct Counting;
 
 static ALLOCS: AtomicU64 = AtomicU64::new(0);
 static BYTES: AtomicU64 = AtomicU64::new(0);
+/// Bytes currently allocated, and the highest that has been since `measure`
+/// last reset it.
+static LIVE: AtomicU64 = AtomicU64::new(0);
+static PEAK: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+fn note(size: usize) {
+    ALLOCS.fetch_add(1, Ordering::Relaxed);
+    BYTES.fetch_add(size as u64, Ordering::Relaxed);
+    let live = LIVE.fetch_add(size as u64, Ordering::Relaxed) + size as u64;
+    PEAK.fetch_max(live, Ordering::Relaxed);
+}
 
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOCS.fetch_add(1, Ordering::Relaxed);
-        BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        note(layout.size());
         System.alloc(layout)
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        LIVE.fetch_sub(layout.size() as u64, Ordering::Relaxed);
         System.dealloc(ptr, layout)
     }
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        ALLOCS.fetch_add(1, Ordering::Relaxed);
-        BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        note(layout.size());
         System.alloc_zeroed(layout)
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        ALLOCS.fetch_add(1, Ordering::Relaxed);
-        BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
+        LIVE.fetch_sub(layout.size() as u64, Ordering::Relaxed);
+        note(new_size);
         System.realloc(ptr, layout, new_size)
     }
 }
@@ -53,6 +68,9 @@ unsafe impl GlobalAlloc for Counting {
 pub struct Measure {
     pub allocs: u64,
     pub bytes: u64,
+    /// High-water mark of live heap during the measurement, above the live
+    /// heap when it started.
+    pub peak: u64,
     pub elapsed: Duration,
 }
 
@@ -61,12 +79,15 @@ pub struct Measure {
 pub fn measure<R>(f: impl FnOnce() -> R) -> (R, Measure) {
     let a0 = ALLOCS.load(Ordering::SeqCst);
     let b0 = BYTES.load(Ordering::SeqCst);
+    let live0 = LIVE.load(Ordering::SeqCst);
+    PEAK.store(live0, Ordering::SeqCst);
     let t = Instant::now();
     let r = f();
     let elapsed = t.elapsed();
     let m = Measure {
         allocs: ALLOCS.load(Ordering::SeqCst) - a0,
         bytes: BYTES.load(Ordering::SeqCst) - b0,
+        peak: PEAK.load(Ordering::SeqCst).saturating_sub(live0),
         elapsed,
     };
     (r, m)
@@ -82,6 +103,9 @@ pub trait Direct {
     /// Returns whether the key was present.
     fn get(&mut self, tip: &StacksBlockId, key: &str) -> bool;
     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool;
+    /// Squash `src` at `height` on `tip`'s fork into `dst`; returns the number
+    /// of nodes collected.
+    fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64;
 }
 
 pub struct Baseline(stacks_marf::MARF<StacksBlockId>);
@@ -117,6 +141,20 @@ impl Direct for Baseline {
     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         self.0.get_with_proof(tip, key).unwrap().is_some()
     }
+    fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64 {
+        use stacks_marf::storage::TrieHashCalculationMode;
+        let opts = stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, external);
+        stacks_marf::MARF::<StacksBlockId>::squash_to_path(
+            src.to_str().unwrap(),
+            dst.to_str().unwrap(),
+            opts,
+            tip,
+            height,
+            "alloc",
+        )
+        .unwrap()
+        .node_count
+    }
 }
 
 pub struct Rewrite(stacks_marf_next::MARF<StacksBlockId>);
@@ -149,6 +187,16 @@ impl Direct for Rewrite {
     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         use stacks_marf_next::MarfConnection;
         self.0.get_with_proof(tip, key).unwrap().is_some()
+    }
+    fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64 {
+        use stacks_marf_next::marf::TrieHashCalculationMode;
+        use stacks_marf_next::pruning::Prune;
+        let opts = stacks_marf_next::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, external);
+        <stacks_marf_next::MARF<StacksBlockId> as Prune<StacksBlockId>>::prune_to_path(
+            src, dst, opts, tip, height, "alloc",
+        )
+        .unwrap()
+        .node_count
     }
 }
 
@@ -333,12 +381,21 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         m,
     });
 
-    // qualified lookups: bucket keys by the shape of their walk (back-pointer
-    // hops, patch chains), measured with the rewrite's profiler on the same
-    // files (the stored trie is identical for every implementation), then
-    // time each bucket with two access patterns. Two tips: the bulk tip
-    // (large blocks, so its root is a full node) and the final tip (small
-    // blocks on top, so the root and its hot children are patch chains).
+    // qualified lookups: bucket every key by the shape of its walk
+    // (back-pointer hops, patch chains), measured with the rewrite's profiler
+    // on the same files (the stored trie is identical for every
+    // implementation), then time each bucket with three access patterns:
+    //   hot64     64 distinct keys cycled (everything hits a result cache)
+    //   fit       up to 1,024 distinct keys cycled: fits any result cache of
+    //             2,048 entries or more (the reference's), so it also
+    //             measures hits, with less locality than hot64
+    //   overflow  every distinct key of the bucket cycled, only for buckets
+    //             of at least 4,096 keys (twice the reference's result
+    //             cache): an LRU result cache misses on every access
+    // Each bucket holds distinct keys and the label gives the number timed.
+    // Two tips: the bulk tip (large blocks, so its root is a full node) and
+    // the final tip (small blocks on top, so the root and its hot children
+    // are patch chains).
     {
         use stacks_marf_next::marf::TrieHashCalculationMode as Mode;
         let opts = stacks_marf_next::MARFOpenOpts::new(Mode::Deferred, cfg.external)
@@ -349,24 +406,11 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         )
         .expect("open profiler");
         let mut profiler = stacks_marf_next::MARF::from_storage(storage);
-        let sample = (cfg.reads * 3).min(all_keys.len());
+        // every key once (keys are distinct by construction)
+        let _ = &last_patch_keys;
         let tips: [(&str, &StacksBlockId, Vec<&String>); 2] = [
-            (
-                "bulk",
-                &bulk_tip,
-                (0..sample)
-                    .map(|_| &all_keys[rng.gen_range(0..all_keys.len())])
-                    .chain(all_keys[all_keys.len() - cfg.inserts..].iter().take(sample / 4))
-                    .collect(),
-            ),
-            (
-                "patched",
-                &tip,
-                (0..sample)
-                    .map(|_| &all_keys[rng.gen_range(0..all_keys.len())])
-                    .chain(last_patch_keys.iter())
-                    .collect(),
-            ),
+            ("bulk", &bulk_tip, all_keys.iter().collect()),
+            ("patched", &tip, all_keys.iter().collect()),
         ];
         for (tip_label, at, candidates) in &tips {
             let mut buckets: std::collections::BTreeMap<(u32, u32), Vec<&String>> = Default::default();
@@ -383,47 +427,55 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
                 buckets.entry((hops, patch)).or_default().push(k);
                 *nodes_sum.entry((hops, patch)).or_default() += u64::from(p.nodes);
             }
+            const FIT: usize = 1024;
+            const OVERFLOW_MIN: usize = 4096;
             for ((hops, patch), keys) in &buckets {
-                if keys.len() < 40 {
+                if keys.len() < 64 {
                     continue;
                 }
                 let avg_nodes = *nodes_sum.get(&(*hops, *patch)).unwrap() as f64 / keys.len() as f64;
                 let hops_label = if *hops == 3 { "3+".to_string() } else { hops.to_string() };
                 let patch_label = ["none", "1-2", "3-4"][*patch as usize];
-                let label = format!("get@{tip_label} hops={hops_label} patch={patch_label}");
-                // spread: every key of the bucket once per pass, several passes
-                let n = keys.len().min(cfg.reads);
-                let passes = (cfg.reads / n).clamp(2, 50);
-                for k in &keys[..n] {
-                    assert!(marf.get(at, k));
-                }
-                let (_, m) = measure(|| {
-                    for _ in 0..passes {
-                        for k in &keys[..n] {
-                            assert!(marf.get(at, k));
+                let label =
+                    format!("get@{tip_label} hops={hops_label} patch={patch_label} ~{avg_nodes:.1}nodes");
+                // cycle `set` for cfg.reads lookups (warmed once first)
+                let mut cycle = |set: &[&String], name: String| {
+                    for k in set {
+                        assert!(marf.get(at, k));
+                    }
+                    let (_, m) = measure(|| {
+                        for i in 0..cfg.reads {
+                            assert!(marf.get(at, set[i % set.len()]));
                         }
+                    });
+                    phases.push(Phase {
+                        name,
+                        ops: cfg.reads as u64,
+                        m,
+                    });
+                };
+                cycle(&keys[..64], format!("{label} hot64"));
+                let fit = &keys[..FIT.min(keys.len())];
+                cycle(fit, format!("{label} fit(n={})", fit.len()));
+                if keys.len() >= OVERFLOW_MIN {
+                    // whole passes over the bucket so every key is timed
+                    let passes = (cfg.reads * 2 / keys.len()).max(1);
+                    for k in keys {
+                        assert!(marf.get(at, k));
                     }
-                });
-                phases.push(Phase {
-                    name: format!("{label} spread(n={},~{avg_nodes:.1} nodes)", keys.len()),
-                    ops: (passes * n) as u64,
-                    m,
-                });
-                // hot: 64 keys cycled
-                let hot = &keys[..64.min(keys.len())];
-                for k in hot {
-                    assert!(marf.get(at, k));
+                    let (_, m) = measure(|| {
+                        for _ in 0..passes {
+                            for k in keys {
+                                assert!(marf.get(at, k));
+                            }
+                        }
+                    });
+                    phases.push(Phase {
+                        name: format!("{label} overflow(n={})", keys.len()),
+                        ops: (passes * keys.len()) as u64,
+                        m,
+                    });
                 }
-                let (_, m) = measure(|| {
-                    for i in 0..cfg.reads {
-                        assert!(marf.get(at, hot[i % hot.len()]));
-                    }
-                });
-                phases.push(Phase {
-                    name: format!("{label} hot64"),
-                    ops: cfg.reads as u64,
-                    m,
-                });
             }
         }
     }
@@ -446,6 +498,26 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         ops: proofs as u64,
         m,
     });
+
+    // prune: squash the whole chain at the final tip into a new database.
+    // ops = nodes collected, so B/op is bytes allocated per node and the
+    // peak column is the squash's high-water mark of live heap.
+    drop(marf);
+    let height = (cfg.blocks + cfg.patch_blocks - 1) as u32;
+    let (nodes, m) = measure(|| {
+        M::prune(
+            &dir.join("marf.sqlite"),
+            &dir.join("pruned.sqlite"),
+            &tip,
+            height,
+            cfg.external,
+        )
+    });
+    phases.push(Phase {
+        name: "prune".into(),
+        ops: nodes,
+        m,
+    });
     phases
 }
 
@@ -453,6 +525,7 @@ impl std::ops::AddAssign for Measure {
     fn add_assign(&mut self, rhs: Measure) {
         self.allocs += rhs.allocs;
         self.bytes += rhs.bytes;
+        self.peak = self.peak.max(rhs.peak);
         self.elapsed += rhs.elapsed;
     }
 }
@@ -503,13 +576,14 @@ pub fn report(cfg: &Config) {
     );
     let cols = |label: &str| {
         format!(
-            "{:>12} {:>12} {:>10}",
+            "{:>12} {:>12} {:>10} {:>11}",
             format!("{label} alloc/op"),
             format!("{label} B/op"),
-            format!("{label} us/op")
+            format!("{label} us/op"),
+            format!("{label} peakKB")
         )
     };
-    let mut header = format!("{:<52} {:>8}", "phase", "ops");
+    let mut header = format!("{:<60} {:>8}", "phase", "ops");
     if !base.is_empty() {
         header.push_str(&format!(" | {}", cols("base")));
     }
@@ -523,13 +597,14 @@ pub fn report(cfg: &Config) {
         if let (Some(b), Some(n)) = (base.get(i), next.get(i)) {
             assert_eq!(b.name, n.name, "phase order differs between implementations");
         }
-        let mut line = format!("{:<52} {:>8}", p.name, p.ops);
+        let mut line = format!("{:<60} {:>8}", p.name, p.ops);
         for ph in [base.get(i), next.get(i)].into_iter().flatten() {
             line.push_str(&format!(
-                " | {:>12.2} {:>12.0} {:>10.2}",
+                " | {:>12.2} {:>12.0} {:>10.2} {:>11}",
                 ph.allocs_per_op(),
                 ph.bytes_per_op(),
-                ph.micros_per_op()
+                ph.micros_per_op(),
+                ph.m.peak / 1024
             ));
         }
         println!("{line}");

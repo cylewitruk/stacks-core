@@ -85,12 +85,19 @@ fn unsupported(op: &Op) -> bool {
     false
 }
 
-/// Run every fixture split at each hand-off point (after a `Close`, or after
-/// a `Squash`, both of which leave the handle closed): the prefix with `a`,
-/// the suffix with `b`, on the same database directory. Both halves must
-/// produce the baseline's recorded observations, and every fixture must
-/// contribute at least one hand-off.
+/// Run fixtures split at hand-off points (after a `Close`, or after a
+/// `Prune`, both of which leave the handle closed): the prefix with `a`, the
+/// suffix with `b`, on the same database directory. Both halves must produce
+/// the baseline's recorded observations, and every fixture must contribute
+/// at least one hand-off.
+///
+/// Coverage: every `Prune` boundary, plus about a quarter of the `Close`
+/// boundaries of each fixture (evenly spaced), 48 of the 132 eligible
+/// boundaries per direction at the time of writing. Set
+/// `MARF_DIFF_ALL_HANDOFFS=1` to split at every boundary (about four times
+/// the runtime).
 fn handoff_all(a: Impl, b: Impl) {
+    let all = std::env::var_os("MARF_DIFF_ALL_HANDOFFS").is_some_and(|v| v == "1");
     let mut failures = vec![];
     let mut uncovered = vec![];
     for path in fixture_paths() {
@@ -103,8 +110,9 @@ fn handoff_all(a: Impl, b: Impl) {
             .map(|(i, _)| i + 1)
             .filter(|&i| i < fixture.ops.len())
             .collect();
-        // squash boundaries always; otherwise a handful of split points per fixture
-        let step = (points.len() / 4).max(1);
+        // squash boundaries always; otherwise a quarter of the split points
+        // per fixture, unless every boundary was asked for
+        let step = if all { 1 } else { (points.len() / 4).max(1) };
         let mut splits: Vec<usize> = points.iter().copied().step_by(step).collect();
         for (i, op) in fixture.ops.iter().enumerate() {
             if matches!(op, Op::Prune { .. })
