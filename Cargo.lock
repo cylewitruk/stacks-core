@@ -2564,6 +2564,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "marf-differential"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "stacks-common 4.0.5",
+ "stacks-marf",
+ "stacks-marf-next",
+ "tempfile",
+]
+
+[[package]]
 name = "marf-squash"
 version = "0.1.0"
 dependencies = [
@@ -4520,6 +4535,23 @@ name = "stacks-marf"
 version = "4.0.5"
 dependencies = [
  "nix",
+ "rstest",
+ "rstest_reuse",
+ "rusqlite",
+ "serde",
+ "serde_derive",
+ "sha2 0.10.8",
+ "slog",
+ "stacks-common 4.0.5",
+ "stdext",
+ "tempfile",
+]
+
+[[package]]
+name = "stacks-marf-next"
+version = "4.0.5"
+dependencies = [
+ "memmap2",
  "rstest",
  "rstest_reuse",
  "rusqlite",
