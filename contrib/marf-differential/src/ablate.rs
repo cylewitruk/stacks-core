@@ -1,18 +1,51 @@
-//! Committed-read patch-cache ablation (fourth review, part 3).
+// Copyright (C) 2026 Stacks Open Internet Foundation
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+//! Committed-read patch-cache ablation (fourth review, part 3; cells
+//! isolated in the fifth).
 //!
 //! One implementation per process (the run script runs each binary in
 //! turn), one workload, a list of patch-cache capacities. The database is
 //! built once; key sets are chosen by walk shape with the rewrite's
 //! profiler on the shared files (the stored trie is identical for every
 //! implementation), including the identity of the patched records each
-//! walk meets, so a set's number of distinct patched nodes is known. For
-//! every capacity the database is reopened (process caches empty: "cold" =
-//! first pass after a fresh open, with the OS page cache and the blobs
-//! mapping warm from building the database), the set is read once cold,
-//! then `PASSES` more times warm (`DROP_CACHES=1` also drops the OS page
-//! cache before every fresh open, root only, making "cold" process-cold and
-//! page-cold; the blobs mapping is created by the open either way); values
-//! are collected into a preallocated
+//! walk meets, so a set's number of distinct patched nodes is known.
+//!
+//! Measurement cells. In the default `isolated` mode every (capacity, key
+//! set, repetition) is its own cell: a fresh `MARF` handle is opened for
+//! it (every process-local cache empty, a new blobs mapping), its cache
+//! occupancy is recorded, the set is read once (the **cold** or
+//! **first-pass** sample), then `PASSES` more times (the **warm** samples),
+//! occupancy is recorded again and the handle is dropped. Nothing from
+//! another set or capacity is in the caches of a cell. With
+//! `DROP_CACHES=1` the OS page cache is dropped before every cell (root:
+//! writes 3 to `/proc/sys/vm/drop_caches`); the run fails at once if that
+//! write fails, so a **page-cold** cell is never a warm one in disguise.
+//! Definitions: *process-cold* = fresh handle, page cache as left by
+//! building the database (warm); *page-cold* = process-cold plus the drop;
+//! *first pass* = the one read of the set in that state; *warmed* = the
+//! following passes of the same cell.
+//!
+//! `ABLATE_MODE=shared` keeps the round-4 scheme as a separately named
+//! experiment: one handle per capacity, every set read through it in order,
+//! so later sets inherit cache entries and page residency from earlier
+//! ones; the JSON records which sets preceded each cell and the occupancy
+//! at entry. It is for mixed-history behaviour only and must not be read
+//! as isolated cost.
+//!
+//! Values are collected into a preallocated
 //! buffer inside the timed region and verified against the model after it.
 //! With the `counters` feature the implementation's read counters are
 //! reported per set and capacity.
@@ -26,14 +59,54 @@ use rand_chacha::ChaCha20Rng;
 use stacks_common::types::chainstate::StacksBlockId;
 use stacks_marf_next::ClarityMarfTrieId as _;
 
-use crate::alloc::{environment, measure, repeat, Counters, Direct, Opts, Samples};
+use crate::alloc::{environment, measure, repeat, write_json, Counters, Direct, Manifest, Opts, Samples};
 use crate::Impl;
+
+/// One measurement cell of the ablation, as written to `JSON_OUT`.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct CellSample {
+    pub provider: &'static str,
+    pub workload: &'static str,
+    pub plain: bool,
+    pub mode: &'static str,
+    pub page_cold: bool,
+    pub capacity: Option<usize>,
+    pub set: String,
+    pub set_tip: &'static str,
+    pub n_keys: usize,
+    pub distinct_patched_nodes: usize,
+    pub avg_hops: f64,
+    pub avg_patched_per_walk: f64,
+    pub avg_patch_depth: f64,
+    pub repetition: usize,
+    /// Sets read through the same handle before this one (shared mode).
+    pub preceding_sets: Vec<String>,
+    pub occupancy_entry: Option<u64>,
+    pub occupancy_after_cold: Option<u64>,
+    pub occupancy_exit: Option<u64>,
+    pub cold_ns: u128,
+    pub warm_ns: Vec<u128>,
+    pub counters_cold: Counters,
+    pub counters_warm: Counters,
+    pub peak_heap_bytes: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct AblateOutput {
+    pub manifest: Manifest,
+    pub workload: Workload,
+    pub seeds: (u64, u64),
+    pub passes: usize,
+    pub capacities: Vec<Option<usize>>,
+    pub describe: String,
+    pub cells: Vec<CellSample>,
+}
 
 /// Workload shapes. `std` is the `alloc` workload (patched nodes: the root
 /// and second-level nodes, a few hundred distinct); `big` has enough keys
 /// for third-level branch nodes, so its final tip has thousands of distinct
 /// patched nodes.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct Workload {
     pub name: &'static str,
     pub blocks: usize,
@@ -43,6 +116,17 @@ pub struct Workload {
 }
 
 impl Workload {
+    /// A small shape for tests: 6 x 500 keys, then 4 x 50 rewrites.
+    pub fn small() -> Workload {
+        Workload {
+            name: "small",
+            blocks: 6,
+            inserts: 500,
+            patch_blocks: 4,
+            patch_inserts: 50,
+        }
+    }
+
     pub fn parse(s: &str) -> Option<Workload> {
         match s {
             "std" => Some(Workload {
@@ -85,6 +169,32 @@ struct Built {
     /// key -> value at `bulk_tip`
     model_bulk: HashMap<String, [u8; 40]>,
     all_keys: Vec<String>,
+}
+
+/// Walk shape of a key set: distinct patched records met, and the total
+/// number of patched-record visits over one pass (what a fully warm cache
+/// would answer).
+pub fn set_shape(dir: &Path, opts: &Opts, tip: &StacksBlockId, keys: &[String]) -> (usize, u64, u64) {
+    let ps = profiles(dir, opts, tip, keys);
+    let mut sites = HashSet::new();
+    let mut patched_visits = 0u64;
+    let mut visits = 0u64;
+    for p in &ps {
+        for s in &p.patched_sites[..(p.patched_nodes as usize).min(8)] {
+            sites.insert(*s);
+        }
+        patched_visits += u64::from(p.patched_nodes);
+        visits += u64::from(p.nodes);
+    }
+    (sites.len(), patched_visits, visits)
+}
+
+/// Build a small patched database for tests: `blocks` bulk blocks of
+/// `inserts` keys then `patch_blocks` blocks rewriting `patch_inserts` of
+/// them. Returns the final tip and every key.
+pub fn build_small<M: Direct>(dir: &Path, opts: &Opts, w: &Workload) -> (StacksBlockId, Vec<String>) {
+    let b = build::<M>(dir, w, opts);
+    (b.tip, b.all_keys)
 }
 
 fn build<M: Direct>(dir: &Path, w: &Workload, opts: &Opts) -> Built {
@@ -161,12 +271,20 @@ fn build<M: Direct>(dir: &Path, w: &Workload, opts: &Opts) -> Built {
     }
 }
 
-/// Drop the OS page cache if `DROP_CACHES=1` (needs root); says whether it did.
-fn maybe_drop_caches() -> bool {
-    if std::env::var("DROP_CACHES").is_ok_and(|v| v == "1") {
-        std::fs::write("/proc/sys/vm/drop_caches", b"3").is_ok()
-    } else {
-        false
+/// Whether page-cold cells were requested (`DROP_CACHES=1`).
+fn page_cold_requested() -> bool {
+    std::env::var("DROP_CACHES").is_ok_and(|v| v == "1")
+}
+
+/// Drop the OS page cache (root). A failure aborts the run: a page-cold
+/// configuration is never reported from a warm page cache.
+fn drop_caches_or_die() {
+    // sync first so dirty pages can be dropped too
+    let _ = std::process::Command::new("sync").status();
+    if let Err(e) = std::fs::write("/proc/sys/vm/drop_caches", b"3") {
+        eprintln!("DROP_CACHES=1 requested but writing /proc/sys/vm/drop_caches failed: {e}");
+        eprintln!("page-cold measurements are unavailable on this machine; aborting instead of reporting warm figures");
+        std::process::exit(3);
     }
 }
 
@@ -174,6 +292,7 @@ fn maybe_drop_caches() -> bool {
 struct KeySet {
     name: String,
     tip: StacksBlockId,
+    tip_label: &'static str,
     keys: Vec<String>,
     distinct_patched_nodes: usize,
     avg_hops: f64,
@@ -183,7 +302,7 @@ struct KeySet {
 
 /// Profile every key at `tip` with the rewrite's profiler (read-only open
 /// on the shared files).
-fn profiles(
+pub fn profiles(
     dir: &Path,
     opts: &Opts,
     tip: &StacksBlockId,
@@ -210,6 +329,7 @@ fn profiles(
 fn make_set(
     name: String,
     tip: &StacksBlockId,
+    tip_label: &'static str,
     keys: Vec<String>,
     profs: &[&stacks_marf_next::WalkProfile],
 ) -> KeySet {
@@ -223,6 +343,7 @@ fn make_set(
     KeySet {
         name,
         tip: tip.clone(),
+        tip_label,
         distinct_patched_nodes: sites.len(),
         avg_hops: profs.iter().map(|p| p.backptr_hops as f64).sum::<f64>() / n,
         avg_patched: profs.iter().map(|p| p.patched_nodes as f64).sum::<f64>() / n,
@@ -266,7 +387,7 @@ fn bounded_set(
     } else {
         format!("{name}(nodes<={limit})")
     };
-    Some(make_set(label, tip, ks, &ps))
+    Some(make_set(label, tip, "final", ks, &ps))
 }
 
 /// Choose the key sets for one built database.
@@ -281,7 +402,7 @@ fn key_sets(dir: &Path, opts: &Opts, built: &Built, reads: usize) -> Vec<KeySet>
         let ps = profiles(dir, opts, &built.tip1, &keys);
         assert!(ps.iter().all(|p| p.patched_nodes == 0 && p.backptr_hops == 0));
         let refs: Vec<&_> = ps.iter().collect();
-        sets.push(make_set("patchfree@tip1".into(), &built.tip1, keys, &refs));
+        sets.push(make_set("patchfree@tip1".into(), &built.tip1, "tip1", keys, &refs));
     }
     // the bulk tip: a random sample of every key, read at the tip of the
     // bulk blocks (full root, second-level nodes as patch chains)
@@ -291,7 +412,7 @@ fn key_sets(dir: &Path, opts: &Opts, built: &Built, reads: usize) -> Vec<KeySet>
             .collect();
         let ps = profiles(dir, opts, &built.bulk_tip, &keys);
         let refs: Vec<&_> = ps.iter().collect();
-        sets.push(make_set("bulk tip (random keys)".into(), &built.bulk_tip, keys, &refs));
+        sets.push(make_set("bulk tip (random keys)".into(), &built.bulk_tip, "bulk", keys, &refs));
     }
     // the final tip: bucket by (hops, depth) as `alloc` does
     let keys = &built.all_keys;
@@ -328,7 +449,7 @@ fn key_sets(dir: &Path, opts: &Opts, built: &Built, reads: usize) -> Vec<KeySet>
         idx.truncate(reads);
         let ks: Vec<String> = idx.iter().map(|&i| keys[i].clone()).collect();
         let refs: Vec<&_> = idx.iter().map(|&i| &ps[i]).collect();
-        sets.push(make_set(label, &built.tip, ks, &refs));
+        sets.push(make_set(label, &built.tip, "final", ks, &refs));
         taken += 1;
         if taken >= 3 && depth != 0 {
             break;
@@ -386,8 +507,29 @@ pub fn run(which: Impl, w: &Workload, reads: usize, plain: bool) {
     }
 }
 
+/// Read every key of `set` once into `out`, timed; returns the time and the
+/// counters of the pass.
+fn pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, Counters, u64) {
+    let _ = marf.counters();
+    let (_, m) = measure(|| {
+        for (i, k) in set.keys.iter().enumerate() {
+            out[i] = marf.get_value(&set.tip, k);
+        }
+    });
+    (m.elapsed, marf.counters(), m.peak)
+}
+
 fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
+    let manifest = Manifest::new("ablate");
     println!("{}", environment());
+    let mode: &'static str = match std::env::var("ABLATE_MODE").as_deref() {
+        Ok("shared") => "shared",
+        _ => "isolated",
+    };
+    let page_cold = page_cold_requested();
+    if page_cold {
+        drop_caches_or_die(); // fail early if unavailable
+    }
     let dir = tempfile::tempdir().expect("tempdir");
     let opts = Opts {
         external: true,
@@ -409,7 +551,21 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
         built.all_keys.len()
     );
     let sets = key_sets(dir.path(), &opts, &built, reads);
-    println!("impl {}: {}", M::NAME, M::open(&dir.path().join("marf.sqlite"), &opts).describe(&opts));
+    let describe = M::open(&dir.path().join("marf.sqlite"), &opts).describe(&opts);
+    println!("impl {}: {}", M::NAME, describe);
+    println!(
+        "mode {mode}: {}; cold = {}",
+        if mode == "isolated" {
+            "fresh handle per capacity x set x repetition, cold pass then warm passes within the cell"
+        } else {
+            "one handle per capacity, sets read in sequence (mixed history; occupancy and preceding sets recorded)"
+        },
+        if page_cold {
+            "fresh handle + OS page cache dropped before the cell (page-cold)"
+        } else {
+            "fresh handle, OS page cache as left by building the database (process-cold)"
+        }
+    );
     println!("key sets (walk shape from the rewrite's profiler; identical trie for every implementation):");
     for s in &sets {
         println!(
@@ -425,7 +581,17 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
     let caps = capacities();
     let passes: usize = std::env::var("PASSES").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
     let mut cells: BTreeMap<(usize, usize), Cell> = BTreeMap::new();
+    let mut samples: Vec<CellSample> = vec![];
     let mut out: Vec<Option<[u8; 40]>> = vec![None; sets.iter().map(|s| s.keys.len()).max().unwrap_or(0)];
+    let model_for = |set: &KeySet| -> &HashMap<String, [u8; 40]> {
+        if set.tip == built.tip1 {
+            &built.model1
+        } else if set.tip == built.bulk_tip {
+            &built.model_bulk
+        } else {
+            &built.model
+        }
+    };
     for r in 0..repeat() {
         for ci in 0..caps.len() {
             // rotate the capacity order between repetitions
@@ -435,17 +601,48 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
                 patch_cache_capacity: cap,
                 ..opts
             };
-            let dropped = maybe_drop_caches();
-            let mut marf = M::open(&dir.path().join("marf.sqlite"), &o);
-            if r == 0 && ci == 0 {
-                println!(
-                    "capacities: {:?} -> e.g. {}; cold = fresh open (process caches empty){}",
-                    caps.iter().map(|c| cap_label(*c)).collect::<Vec<_>>(),
-                    marf.describe(&o),
-                    if dropped { " + OS page cache dropped" } else { ", OS page cache warm" }
-                );
+            // shared mode: one handle for every set of this capacity
+            let mut shared: Option<M> = None;
+            if mode == "shared" {
+                if page_cold {
+                    drop_caches_or_die();
+                }
+                shared = Some(M::open(&dir.path().join("marf.sqlite"), &o));
             }
+            let mut preceding: Vec<String> = vec![];
             for (si, set) in sets.iter().enumerate() {
+                let mut fresh: Option<M> = None;
+                if mode == "isolated" {
+                    if page_cold {
+                        drop_caches_or_die();
+                    }
+                    fresh = Some(M::open(&dir.path().join("marf.sqlite"), &o));
+                }
+                let marf: &mut M = fresh.as_mut().or(shared.as_mut()).expect("a handle");
+                if r == 0 && ci == 0 && si == 0 {
+                    println!(
+                        "capacities: {:?} -> e.g. {}",
+                        caps.iter().map(|c| cap_label(*c)).collect::<Vec<_>>(),
+                        marf.describe(&o)
+                    );
+                }
+                let model = model_for(set);
+                let occupancy_entry = marf.cache_occupancy();
+                let (cold_t, counters_cold, peak) = pass(marf, set, &mut out);
+                verify(set, &out, model);
+                let occupancy_after_cold = marf.cache_occupancy();
+                let mut warm_ns = vec![];
+                let mut counters_warm = Counters::default();
+                let _ = marf.counters();
+                let mut warm_peak = 0u64;
+                for _ in 0..passes {
+                    let (d, _, p) = pass_no_counters(marf, set, &mut out);
+                    warm_ns.push(d.as_nanos());
+                    warm_peak = warm_peak.max(p);
+                }
+                counters_warm = counters_warm.max_merge(marf.counters());
+                verify(set, &out, model);
+                let occupancy_exit = marf.cache_occupancy();
                 let cell = cells.entry((si, ci)).or_insert_with(|| Cell {
                     cold: Samples::default(),
                     warm: Samples::default(),
@@ -453,88 +650,85 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
                     counters_warm: Counters::default(),
                     peak_kb: 0,
                 });
-                let model = if set.tip == built.tip1 {
-                    &built.model1
-                } else if set.tip == built.bulk_tip {
-                    &built.model_bulk
-                } else {
-                    &built.model
-                };
-                // cold: first pass after the fresh open (this set's nodes may
-                // overlap another set's, so only the first set of a fresh
-                // open is fully cold; the table says which)
-                let _ = marf.counters();
-                let (_, m) = measure(|| {
-                    for (i, k) in set.keys.iter().enumerate() {
-                        out[i] = marf.get_value(&set.tip, k);
-                    }
+                cell.cold.push(cold_t);
+                for ns in &warm_ns {
+                    cell.warm.push(std::time::Duration::from_nanos(*ns as u64));
+                }
+                cell.peak_kb = cell.peak_kb.max(peak.max(warm_peak) / 1024);
+                if r == 0 {
+                    cell.counters_cold = counters_cold;
+                    cell.counters_warm = counters_warm;
+                }
+                samples.push(CellSample {
+                    provider: M::NAME,
+                    workload: w.name,
+                    plain,
+                    mode,
+                    page_cold,
+                    capacity: cap,
+                    set: set.name.clone(),
+                    set_tip: set.tip_label,
+                    n_keys: set.keys.len(),
+                    distinct_patched_nodes: set.distinct_patched_nodes,
+                    avg_hops: set.avg_hops,
+                    avg_patched_per_walk: set.avg_patched,
+                    avg_patch_depth: set.avg_depth,
+                    repetition: r,
+                    preceding_sets: preceding.clone(),
+                    occupancy_entry,
+                    occupancy_after_cold,
+                    occupancy_exit,
+                    cold_ns: cold_t.as_nanos(),
+                    warm_ns,
+                    counters_cold,
+                    counters_warm,
+                    peak_heap_bytes: peak.max(warm_peak),
                 });
-                let c = marf.counters();
-                verify(set, &out, model);
-                cell.cold.push(m.elapsed);
-                cell.peak_kb = cell.peak_kb.max(m.peak / 1024);
-                if r == 0 {
-                    cell.counters_cold = c;
+                if mode == "shared" {
+                    preceding.push(set.name.clone());
                 }
-                // warm passes
-                let _ = marf.counters();
-                for _ in 0..passes {
-                    let t = Instant::now();
-                    for (i, k) in set.keys.iter().enumerate() {
-                        out[i] = marf.get_value(&set.tip, k);
-                    }
-                    cell.warm.push(t.elapsed());
-                }
-                let c = marf.counters();
-                verify(set, &out, model);
-                if r == 0 {
-                    cell.counters_warm = c;
-                }
+                drop(fresh);
             }
-            drop(marf);
+            drop(shared);
         }
     }
     // table
     println!();
     println!(
-        "{:<28} {:>6} {:>8} | {:>12} {:>12} {:>19}",
-        "set", "n", "capacity", "cold us/op", "warm us/op", "warm min-max"
+        "{:<28} {:>6} {:>8} | {:>12} {:>12} {:>19} {:>10}",
+        "set", "n", "capacity", "cold us/op", "warm us/op", "warm min-max", "occupancy"
     );
     for (si, set) in sets.iter().enumerate() {
         for (ci, cap) in caps.iter().enumerate() {
             let cell = &cells[&(si, ci)];
             let per = |d: std::time::Duration| d.as_secs_f64() * 1e6 / set.keys.len() as f64;
+            let occ = samples
+                .iter()
+                .find(|c| c.set == set.name && c.capacity == *cap && c.repetition == 0)
+                .and_then(|c| c.occupancy_exit)
+                .map(|o| o.to_string())
+                .unwrap_or_else(|| "n/a".into());
             println!(
-                "{:<28} {:>6} {:>8} | {:>12.2} {:>12.2} {:>19}",
+                "{:<28} {:>6} {:>8} | {:>12.2} {:>12.2} {:>19} {:>10}",
                 set.name,
                 set.keys.len(),
                 cap_label(*cap),
                 per(cell.cold.median()),
                 per(cell.warm.median()),
-                format!("{:.2}-{:.2}", per(cell.warm.min()), per(cell.warm.max()))
+                format!("{:.2}-{:.2}", per(cell.warm.min()), per(cell.warm.max())),
+                occ
             );
         }
     }
     let any = cells.values().any(|c| c.counters_warm.available);
     if any {
         println!();
-        println!("counters per set and capacity (first repetition; cold = first pass after open, warm = {passes} passes):");
+        println!("counters per set and capacity (first repetition; cold = first pass, warm = {passes} passes):");
         for (si, set) in sets.iter().enumerate() {
             for (ci, cap) in caps.iter().enumerate() {
                 let cell = &cells[&(si, ci)];
                 for (label, c) in [("cold", &cell.counters_cold), ("warm", &cell.counters_warm)] {
-                    let fields: Vec<String> = c
-                        .fields()
-                        .into_iter()
-                        .filter(|(_, v)| *v != 0)
-                        .map(|(k, v)| format!("{k}={v}"))
-                        .collect();
-                    println!(
-                        "  {:<28} cap={:<5} {label}: {}",
-                        set.name,
-                        cap_label(*cap),
-                        fields.join(" ")
-                    );
+                    println!("  {:<28} cap={:<5} {label}: {}", set.name, cap_label(*cap), c.summary());
                 }
             }
         }
@@ -549,6 +743,26 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
             }
         }
     }
+    write_json(&AblateOutput {
+        manifest,
+        workload: *w,
+        seeds: (11, 23),
+        passes,
+        capacities: caps,
+        describe,
+        cells: samples,
+    });
+}
+
+/// A timed pass without touching the counters (they accumulate across the
+/// warm passes and are taken once after them).
+fn pass_no_counters<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, (), u64) {
+    let (_, m) = measure(|| {
+        for (i, k) in set.keys.iter().enumerate() {
+            out[i] = marf.get_value(&set.tip, k);
+        }
+    });
+    (m.elapsed, (), m.peak)
 }
 
 fn verify(set: &KeySet, out: &[Option<[u8; 40]>], model: &HashMap<String, [u8; 40]>) {

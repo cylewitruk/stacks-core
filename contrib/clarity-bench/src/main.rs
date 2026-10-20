@@ -1,3 +1,18 @@
+// Copyright (C) 2026 Stacks Open Internet Foundation
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 //! Clarity execution benchmark (fourth review, part 5).
 //!
 //! Real contracts run through `stackslib`'s `ClarityInstance` over a
@@ -15,9 +30,14 @@
 //! untimed blocks; the first block of each workload is reported separately
 //! from the rest (process-local caches cold for that workload's keys). Each
 //! workload verifies every returned value against an in-process model and
-//! records the block roots and cost totals for cross-implementation
-//! comparison; the whole thing runs `REPEAT` times on fresh databases and
-//! times are medians over repetitions with the min-max spread.
+//! records the block roots, cost totals and a digest of every returned
+//! value for cross-implementation comparison; the whole thing runs `REPEAT`
+//! times on fresh databases and times are medians over repetitions with the
+//! min-max spread. Harness work inside the timed execution (key generation,
+//! argument construction, model updates, assertions) is timed separately
+//! and reported as `harness`, so `exec - harness` is the interpreter plus
+//! the database. Individual samples and the equivalence record go to
+//! `JSON_OUT` when set.
 //!
 //! What survives between transactions and blocks: the MARF handle (so the
 //! rewrite's resolved-patch cache and block-location caches, the optimized
@@ -143,6 +163,24 @@ struct State {
     rng: Rng,
     sender: PrincipalData,
     contract: QualifiedContractIdentifier,
+    /// Time spent in harness work inside timed blocks (key generation,
+    /// argument lists, model updates, assertions).
+    harness: Duration,
+    /// Fold of every value returned by a contract call in the workload.
+    digest: u64,
+}
+
+impl State {
+    /// Run harness work and account its time.
+    fn h<R>(&mut self, f: impl FnOnce(&mut State) -> R) -> R {
+        let t = Instant::now();
+        let r = f(self);
+        self.harness += t.elapsed();
+        r
+    }
+    fn note(&mut self, v: u64) {
+        self.digest = (self.digest ^ v).wrapping_mul(0x100_0000_01b3).rotate_left(7);
+    }
 }
 
 fn ulist(ks: &[u64]) -> Value {
@@ -179,11 +217,13 @@ fn is_err(v: &Value) -> bool {
     matches!(v, Value::Response(r) if !r.committed)
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize)]
 struct Timing {
     exec: Duration,
     seal: Duration,
     commit: Duration,
+    /// Harness work inside `exec`.
+    harness: Duration,
     txs: u64,
     blocks: u64,
 }
@@ -193,6 +233,7 @@ impl Timing {
         self.exec += o.exec;
         self.seal += o.seal;
         self.commit += o.commit;
+        self.harness += o.harness;
         self.txs += o.txs;
         self.blocks += o.blocks;
     }
@@ -208,6 +249,7 @@ struct Record {
     rest: Timing,
     cost: ExecutionCost,
     roots: Vec<String>,
+    values_digest: u64,
 }
 
 impl Default for Record {
@@ -217,6 +259,7 @@ impl Default for Record {
             rest: Timing::default(),
             cost: ExecutionCost::ZERO,
             roots: vec![],
+            values_digest: 0,
         }
     }
 }
@@ -240,6 +283,8 @@ impl Bench {
             rng: Rng(0x9e3779b97f4a7c15),
             sender: issuer.into(),
             contract: QualifiedContractIdentifier::parse("SZ2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKQ9H6DPR.bench").unwrap(),
+            harness: Duration::ZERO,
+            digest: 0,
         };
         // genesis: the default cost contract (epoch 2.0) plus costs-3 for
         // the epoch 2.5 blocks that follow
@@ -285,9 +330,11 @@ impl Bench {
         self.next += 1;
         let tip = self.tip.clone();
         let mut blk = self.clarity.begin_block(&tip, &next, &TEST_HEADER_DB, &self.burn_db);
+        let h0 = self.st.harness;
         let t0 = Instant::now();
         let txs = body(&mut self.st, &mut blk);
         let exec = t0.elapsed();
+        let harness = self.st.harness - h0;
         let t1 = Instant::now();
         let root = blk.seal();
         let seal = t1.elapsed();
@@ -300,6 +347,7 @@ impl Bench {
                 exec,
                 seal,
                 commit,
+                harness,
                 txs,
                 blocks: 1,
             },
@@ -322,6 +370,7 @@ impl Bench {
 
     fn workload<F: FnMut(&mut State, &mut ClarityBlockConnection<'_, '_>, usize) -> u64>(&mut self, blocks: usize, mut body: F) -> Record {
         let mut rec = Record::default();
+        self.st.digest = 0;
         for i in 0..blocks {
             let (t, cost, root) = self.block(|st, blk| body(st, blk, i));
             if i == 0 {
@@ -332,6 +381,7 @@ impl Bench {
             rec.cost.add(&cost).expect("cost overflow");
             rec.roots.push(root);
         }
+        rec.values_digest = self.st.digest;
         rec
     }
 }
@@ -362,13 +412,26 @@ fn read_heavy(b: &mut Bench, blocks: usize) -> Record {
     let hot: Vec<u64> = (0..CHUNK as u64).collect();
     b.workload(blocks, |st, blk, _| {
         for _ in 0..20 {
-            let ks = st.rng.keys(CHUNK);
-            let v = call(st, blk, "read-many", &[ulist(&ks)]);
-            assert_eq!(ok_uint(&v), st.model.sum(&ks));
+            let (ks, args) = st.h(|st| {
+                let ks = st.rng.keys(CHUNK);
+                let args = [ulist(&ks)];
+                (ks, args)
+            });
+            let v = call(st, blk, "read-many", &args);
+            st.h(|st| {
+                let got = ok_uint(&v);
+                assert_eq!(got, st.model.sum(&ks));
+                st.note(got);
+            });
         }
+        let args = st.h(|_| [ulist(&hot)]);
         for _ in 0..10 {
-            let v = call(st, blk, "read-many", &[ulist(&hot)]);
-            assert_eq!(ok_uint(&v), st.model.sum(&hot));
+            let v = call(st, blk, "read-many", &args);
+            st.h(|st| {
+                let got = ok_uint(&v);
+                assert_eq!(got, st.model.sum(&hot));
+                st.note(got);
+            });
         }
         30
     })
@@ -378,13 +441,23 @@ fn write_heavy(b: &mut Bench, blocks: usize) -> Record {
     b.workload(blocks, |st, blk, i| {
         let round = 1000 + i as u64;
         let v = call(st, blk, "set-round", &[Value::UInt(round as u128)]);
-        assert!(matches!(v, Value::Response(ref r) if r.committed));
-        st.model.round = round;
+        st.h(|st| {
+            assert!(matches!(v, Value::Response(ref r) if r.committed));
+            st.model.round = round;
+        });
         for _ in 0..20 {
-            let ks = st.rng.keys(CHUNK);
-            let v = call(st, blk, "update-then-read", &[ulist(&ks)]);
-            st.model.set_many(&ks);
-            assert_eq!(ok_uint(&v), st.model.sum(&ks));
+            let (ks, args) = st.h(|st| {
+                let ks = st.rng.keys(CHUNK);
+                let args = [ulist(&ks)];
+                (ks, args)
+            });
+            let v = call(st, blk, "update-then-read", &args);
+            st.h(|st| {
+                st.model.set_many(&ks);
+                let got = ok_uint(&v);
+                assert_eq!(got, st.model.sum(&ks));
+                st.note(got);
+            });
         }
         21
     })
@@ -393,22 +466,39 @@ fn write_heavy(b: &mut Bench, blocks: usize) -> Record {
 fn mixed(b: &mut Bench, blocks: usize) -> Record {
     let hot: Vec<u64> = (100..100 + CHUNK as u64).collect();
     b.workload(blocks, |st, blk, _| {
+        let hot_args = st.h(|_| [ulist(&hot)]);
         for j in 0..30 {
             match j % 3 {
                 0 => {
                     let v = call(st, blk, "incr", &[]);
-                    st.model.counter += 1;
-                    assert_eq!(ok_uint(&v), st.model.counter);
+                    st.h(|st| {
+                        st.model.counter += 1;
+                        let got = ok_uint(&v);
+                        assert_eq!(got, st.model.counter);
+                        st.note(got);
+                    });
                 }
                 1 => {
-                    let v = call(st, blk, "set-many", &[ulist(&hot)]);
-                    assert_eq!(ok_uint(&v), hot.len() as u64);
-                    st.model.set_many(&hot);
+                    let v = call(st, blk, "set-many", &hot_args);
+                    st.h(|st| {
+                        let got = ok_uint(&v);
+                        assert_eq!(got, hot.len() as u64);
+                        st.model.set_many(&hot);
+                        st.note(got);
+                    });
                 }
                 _ => {
-                    let ks = st.rng.keys(CHUNK);
-                    let v = call(st, blk, "read-many", &[ulist(&ks)]);
-                    assert_eq!(ok_uint(&v), st.model.sum(&ks));
+                    let (ks, args) = st.h(|st| {
+                        let ks = st.rng.keys(CHUNK);
+                        let args = [ulist(&ks)];
+                        (ks, args)
+                    });
+                    let v = call(st, blk, "read-many", &args);
+                    st.h(|st| {
+                        let got = ok_uint(&v);
+                        assert_eq!(got, st.model.sum(&ks));
+                        st.note(got);
+                    });
                 }
             }
         }
@@ -419,12 +509,19 @@ fn mixed(b: &mut Bench, blocks: usize) -> Record {
 fn abort(b: &mut Bench, blocks: usize) -> Record {
     let rec = b.workload(blocks, |st, blk, _| {
         for _ in 0..20 {
-            let k = st.rng.next() % KEYS;
-            let v = call(st, blk, "fail-after-write", &[Value::UInt(k as u128)]);
-            assert!(is_err(&v), "expected (err u1)");
+            let (k, args, rargs) = st.h(|st| {
+                let k = st.rng.next() % KEYS;
+                (k, [Value::UInt(k as u128)], [ulist(&[k])])
+            });
+            let v = call(st, blk, "fail-after-write", &args);
+            st.h(|_| assert!(is_err(&v), "expected (err u1)"));
             // the aborted call's write must not be visible
-            let r = call(st, blk, "read-many", &[ulist(&[k])]);
-            assert_eq!(ok_uint(&r), st.model.get(k), "aborted write leaked for key {k}");
+            let r = call(st, blk, "read-many", &rargs);
+            st.h(|st| {
+                let got = ok_uint(&r);
+                assert_eq!(got, st.model.get(k), "aborted write leaked for key {k}");
+                st.note(got);
+            });
         }
         40
     });
@@ -452,17 +549,36 @@ fn abort(b: &mut Bench, blocks: usize) -> Record {
     rec
 }
 
-#[derive(Default)]
+#[derive(Default, serde::Serialize)]
 struct Agg {
     first_exec: Vec<Duration>,
     rest_exec: Vec<Duration>,
     rest_seal: Vec<Duration>,
     rest_commit: Vec<Duration>,
     rest_total: Vec<Duration>,
+    rest_harness: Vec<Duration>,
     txs: u64,
     blocks: u64,
     cost: Option<ExecutionCost>,
     roots: Option<Vec<String>>,
+    values_digest: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct Output<'a> {
+    harness: &'static str,
+    experiment: &'static str,
+    variant: String,
+    tree_rev: String,
+    binary_sha256: String,
+    rustc: String,
+    profile: &'static str,
+    repeat: usize,
+    blocks: usize,
+    keys: u64,
+    started: String,
+    populate_ns: Vec<u128>,
+    workloads: &'a BTreeMap<&'static str, Agg>,
 }
 
 fn median(v: &[Duration]) -> Duration {
@@ -522,8 +638,14 @@ fn main() {
             a.rest_seal.push(r.rest.seal);
             a.rest_commit.push(r.rest.commit);
             a.rest_total.push(r.rest.total());
+            a.rest_harness.push(r.rest.harness);
             a.txs = r.rest.txs;
             a.blocks = r.rest.blocks;
+            let dg = format!("{:016x}", r.values_digest);
+            if let Some(prev) = &a.values_digest {
+                assert_eq!(*prev, dg, "{name}: returned values differ between repetitions");
+            }
+            a.values_digest = Some(dg);
             if let Some(c) = &a.cost {
                 assert_eq!(*c, r.cost, "{name}: costs differ between repetitions");
             }
@@ -537,8 +659,8 @@ fn main() {
     println!("populate (40 blocks, {KEYS} keys, untimed setup): median {:.1} ms", ms(median(&populate_time)));
     println!();
     println!(
-        "{:<26} {:>6} {:>7} | {:>14} {:>14} {:>14} {:>14} | {:>20}",
-        "workload", "blocks", "txs", "exec ms", "seal ms", "commit ms", "total ms", "first block exec ms"
+        "{:<26} {:>6} {:>7} | {:>14} {:>10} {:>14} {:>14} {:>14} | {:>20}",
+        "workload", "blocks", "txs", "exec ms", "harness ms", "seal ms", "commit ms", "total ms", "first block exec ms"
     );
     for name in names {
         let a = &aggs[name];
@@ -548,11 +670,12 @@ fn main() {
             format!("{:.1}-{:.1}", ms(s[0]), ms(*s.last().unwrap()))
         };
         println!(
-            "{:<26} {:>6} {:>7} | {:>14} {:>14} {:>14} {:>14} | {:>20}",
+            "{:<26} {:>6} {:>7} | {:>14} {:>10} {:>14} {:>14} {:>14} | {:>20}",
             name,
             a.blocks,
             a.txs,
             format!("{:.1} ({})", ms(median(&a.rest_exec)), spread(&a.rest_exec)),
+            format!("{:.1}", ms(median(&a.rest_harness))),
             format!("{:.1}", ms(median(&a.rest_seal))),
             format!("{:.1}", ms(median(&a.rest_commit))),
             format!("{:.1}", ms(median(&a.rest_total))),
@@ -566,8 +689,32 @@ fn main() {
         let c = a.cost.as_ref().unwrap();
         let roots = a.roots.as_ref().unwrap();
         println!(
-            "  {:<26} cost runtime={} read_count={} read_length={} write_count={} write_length={} blocks={} last_root={}",
-            name, c.runtime, c.read_count, c.read_length, c.write_count, c.write_length, roots.len(), roots.last().unwrap()
+            "  {:<26} cost runtime={} read_count={} read_length={} write_count={} write_length={} blocks={} values_digest={} last_root={}",
+            name, c.runtime, c.read_count, c.read_length, c.write_count, c.write_length, roots.len(), a.values_digest.as_deref().unwrap_or(""), roots.last().unwrap()
         );
+    }
+    if let Ok(path) = std::env::var("JSON_OUT") {
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|b| stacks_common::util::hash::Sha256Sum::from_data(&b).to_hex())
+            .unwrap_or_else(|| "unknown".into());
+        let out = Output {
+            harness: "clarity-bench",
+            experiment: "clarity",
+            variant: describe_marf(),
+            tree_rev: option_env!("MARF_BENCH_TREE_REV").unwrap_or("unknown").to_string(),
+            binary_sha256: exe,
+            rustc: option_env!("MARF_BENCH_RUSTC").unwrap_or("unknown").to_string(),
+            profile: if cfg!(debug_assertions) { "debug" } else { "release" },
+            repeat,
+            blocks,
+            keys: KEYS,
+            started: String::new(),
+            populate_ns: populate_time.iter().map(|d| d.as_nanos()).collect(),
+            workloads: &aggs,
+        };
+        std::fs::write(&path, serde_json::to_string_pretty(&out).unwrap()).unwrap_or_else(|e| panic!("write {path}: {e}"));
+        eprintln!("[json] wrote {path}");
     }
 }

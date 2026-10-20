@@ -108,38 +108,69 @@ pub struct Opts {
     pub result_cache_capacity: Option<usize>,
 }
 
-/// Read-path counters normalized across implementations (zero where an
-/// implementation has no such thing; `available` is false when the build
-/// has no counters at all).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Read-path counters normalized across implementations. `available` is
+/// false when the build or the implementation has no counters at all (every
+/// field is then `None`); a `None` field in an available set means that
+/// implementation does not measure that quantity. Meanings:
+///
+/// * `node_visits`: nodes a walk visited (arena nodes and storage records
+///   after any patch resolution), one per lookup step.
+/// * `backptr_follows`: back-pointers followed (block changes).
+/// * `record_reads`: records parsed from storage bytes (plain nodes, patches
+///   and patch bases), not physical I/O: the bytes come from the mapping or
+///   SQLite's buffer.
+/// * `patch_cache_probes`: lookups in the resolved-patch cache, one per node
+///   read while the cache is enabled, before the record is read (both
+///   implementations probe by location first).
+/// * `patch_cache_hits`: probes answered by the cache.
+/// * `patch_cache_probe_miss_plain`: probes that missed and whose record was
+///   a plain node (pure probe overhead).
+/// * `patch_cache_admissions`: resolved chains stored in the cache.
+/// * `patch_cache_clears`: times the cache was emptied for being full
+///   (rewrite only; the reference evicts one entry at a time).
+/// * `patch_resolutions`: patch chains actually resolved (cache enabled or
+///   not); `patch_applications`: individual patches applied in them.
+/// * `owned_materializations`: owned node values built on the read path
+///   (patch bases decoded for resolution, owned decodes of records).
+/// * `location_sql`, `block_id_sql`: SQL lookups for a block's storage
+///   location and for a block hash's id (rewrite; the reference does not
+///   expose equivalents).
+/// * `result_cache_*`: the reference's lookup-result cache (the rewrite and
+///   upstream have none).
+/// * `cache_occupancy`: entries in the resolved-patch cache when the
+///   counters were taken.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Counters {
     pub available: bool,
-    pub node_visits: u64,
-    pub backptr_follows: u64,
-    pub record_reads: u64,
-    pub patch_cache_lookups: u64,
-    pub patch_cache_hits: u64,
-    pub patch_cache_misses: u64,
-    pub patch_cache_clears: u64,
-    pub patch_resolutions: u64,
-    pub patch_applications: u64,
-    pub owned_materializations: u64,
-    pub location_sql: u64,
-    pub block_id_sql: u64,
-    pub result_cache_hits: u64,
-    pub result_cache_misses: u64,
-    pub result_cache_invalidations: u64,
+    pub node_visits: Option<u64>,
+    pub backptr_follows: Option<u64>,
+    pub record_reads: Option<u64>,
+    pub patch_cache_probes: Option<u64>,
+    pub patch_cache_hits: Option<u64>,
+    pub patch_cache_probe_miss_plain: Option<u64>,
+    pub patch_cache_admissions: Option<u64>,
+    pub patch_cache_clears: Option<u64>,
+    pub patch_resolutions: Option<u64>,
+    pub patch_applications: Option<u64>,
+    pub owned_materializations: Option<u64>,
+    pub location_sql: Option<u64>,
+    pub block_id_sql: Option<u64>,
+    pub result_cache_hits: Option<u64>,
+    pub result_cache_misses: Option<u64>,
+    pub result_cache_invalidations: Option<u64>,
+    pub cache_occupancy: Option<u64>,
 }
 
 impl Counters {
-    pub fn fields(&self) -> Vec<(&'static str, u64)> {
+    pub fn fields(&self) -> Vec<(&'static str, Option<u64>)> {
         vec![
             ("node_visits", self.node_visits),
             ("backptr_follows", self.backptr_follows),
             ("record_reads", self.record_reads),
-            ("patch_cache_lookups", self.patch_cache_lookups),
+            ("patch_cache_probes", self.patch_cache_probes),
             ("patch_cache_hits", self.patch_cache_hits),
-            ("patch_cache_misses", self.patch_cache_misses),
+            ("patch_cache_probe_miss_plain", self.patch_cache_probe_miss_plain),
+            ("patch_cache_admissions", self.patch_cache_admissions),
             ("patch_cache_clears", self.patch_cache_clears),
             ("patch_resolutions", self.patch_resolutions),
             ("patch_applications", self.patch_applications),
@@ -149,7 +180,31 @@ impl Counters {
             ("result_cache_hits", self.result_cache_hits),
             ("result_cache_misses", self.result_cache_misses),
             ("result_cache_invalidations", self.result_cache_invalidations),
+            ("cache_occupancy", self.cache_occupancy),
         ]
+    }
+
+    /// The counters of the later take (used where a cell's warm passes are
+    /// taken once, after all of them).
+    pub fn max_merge(self, later: Counters) -> Counters {
+        later
+    }
+
+    /// `name=value` for every measured field, `name=n/a` for unavailable
+    /// ones, zeros omitted.
+    pub fn summary(&self) -> String {
+        if !self.available {
+            return "(no counters in this build)".into();
+        }
+        self.fields()
+            .into_iter()
+            .filter(|(_, v)| *v != Some(0))
+            .map(|(k, v)| match v {
+                Some(v) => format!("{k}={v}"),
+                None => format!("{k}=n/a"),
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -166,6 +221,8 @@ pub trait Direct {
     fn commit(&mut self);
     /// Abandon the block being built.
     fn drop_current(&mut self);
+    /// `begin` that reports failure instead of panicking (failed-begin path).
+    fn try_begin(&mut self, parent: &StacksBlockId, child: &StacksBlockId) -> bool;
     /// Returns whether the key was present.
     fn get(&mut self, tip: &StacksBlockId, key: &str) -> bool;
     /// The value stored for `key` at `tip`, if any.
@@ -175,6 +232,8 @@ pub trait Direct {
     fn root_hash(&mut self, tip: &StacksBlockId) -> Option<[u8; 32]>;
     /// Take the implementation's read-path counters since the last take.
     fn counters(&mut self) -> Counters;
+    /// Entries in the resolved-patch cache now, if the build exposes it.
+    fn cache_occupancy(&mut self) -> Option<u64>;
     /// Squash `src` at `height` on `tip`'s fork into `dst`; returns the number
     /// of nodes collected.
     fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64;
@@ -198,8 +257,13 @@ fn baseline_describe(opts: &Opts) -> String {
 }
 
 /// Upstream has no read counters.
-fn baseline_counters() -> Counters {
+fn baseline_counters(_occupancy: Option<u64>) -> Counters {
     Counters::default()
+}
+
+/// Upstream has no patch cache.
+fn baseline_occupancy(_m: &mut stacks_marf::MARF<StacksBlockId>) -> Option<u64> {
+    None
 }
 
 impl Direct for Baseline {
@@ -232,6 +296,9 @@ impl Direct for Baseline {
     fn drop_current(&mut self) {
         self.0.drop_current();
     }
+    fn try_begin(&mut self, parent: &StacksBlockId, child: &StacksBlockId) -> bool {
+        self.0.begin(parent, child).is_ok()
+    }
     fn get(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         use stacks_marf::marf::MarfConnection;
         self.0.get(tip, key).unwrap().is_some()
@@ -247,7 +314,11 @@ impl Direct for Baseline {
         self.0.get_root_hash_at(tip).ok().map(|h| h.0)
     }
     fn counters(&mut self) -> Counters {
-        baseline_counters()
+        let occupancy = baseline_occupancy(&mut self.0);
+        baseline_counters(occupancy)
+    }
+    fn cache_occupancy(&mut self) -> Option<u64> {
+        baseline_occupancy(&mut self.0)
     }
     fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64 {
         use stacks_marf::storage::TrieHashCalculationMode;
@@ -309,6 +380,9 @@ impl Direct for Rewrite {
     fn drop_current(&mut self) {
         self.0.drop_current();
     }
+    fn try_begin(&mut self, parent: &StacksBlockId, child: &StacksBlockId) -> bool {
+        self.0.begin(parent, child).is_ok()
+    }
     fn get(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         use stacks_marf_next::MarfConnection;
         self.0.get(tip, key).unwrap().is_some()
@@ -325,24 +399,39 @@ impl Direct for Rewrite {
         self.0.get_root_hash_at(tip).ok().map(|h| h.0)
     }
     fn counters(&mut self) -> Counters {
+        if !stacks_marf_next::stats::ENABLED {
+            return Counters::default();
+        }
         let c = stacks_marf_next::stats::take();
         Counters {
-            available: stacks_marf_next::stats::ENABLED,
-            node_visits: c.node_visits,
-            backptr_follows: c.backptr_follows,
-            record_reads: c.record_reads,
-            patch_cache_lookups: c.patch_cache_lookups,
-            patch_cache_hits: c.patch_cache_hits,
-            patch_cache_misses: c.patch_cache_misses,
-            patch_cache_clears: c.patch_cache_clears,
-            patch_resolutions: c.patch_resolutions,
-            patch_applications: c.patch_applications,
-            owned_materializations: c.owned_materializations,
-            location_sql: c.location_sql,
-            block_id_sql: c.block_id_sql,
-            result_cache_hits: 0,
-            result_cache_misses: 0,
-            result_cache_invalidations: 0,
+            available: true,
+            node_visits: Some(c.node_visits),
+            backptr_follows: Some(c.backptr_follows),
+            record_reads: Some(c.record_reads),
+            patch_cache_probes: Some(c.patch_cache_lookups),
+            patch_cache_hits: Some(c.patch_cache_hits),
+            patch_cache_probe_miss_plain: Some(c.patch_cache_probe_miss_plain),
+            patch_cache_admissions: Some(c.patch_cache_misses),
+            patch_cache_clears: Some(c.patch_cache_clears),
+            patch_resolutions: Some(c.patch_resolutions),
+            patch_applications: Some(c.patch_applications),
+            owned_materializations: Some(c.owned_materializations),
+            location_sql: Some(c.location_sql),
+            block_id_sql: Some(c.block_id_sql),
+            result_cache_hits: None,
+            result_cache_misses: None,
+            result_cache_invalidations: None,
+            cache_occupancy: self.cache_occupancy(),
+        }
+    }
+    fn cache_occupancy(&mut self) -> Option<u64> {
+        #[cfg(feature = "counters")]
+        {
+            Some(self.0.patch_cache_len() as u64)
+        }
+        #[cfg(not(feature = "counters"))]
+        {
+            None
         }
     }
     fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64 {
@@ -395,6 +484,88 @@ impl Samples {
     }
 }
 
+/// Identity of this run for the machine-readable output: harness,
+/// experiment, source revisions, provider, binary hash, features, arguments.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Manifest {
+    pub harness: &'static str,
+    pub experiment: String,
+    pub args: Vec<String>,
+    /// Revision of the tree the harness and the rewrite were built from
+    /// (`MARF_BENCH_TREE_REV` at build time).
+    pub tree_rev: String,
+    /// The oracle's source (`MARF_BENCH_PROVIDER` at build time: upstream
+    /// in-tree, or the reference revision for an overlay build).
+    pub oracle: String,
+    pub binary_sha256: String,
+    pub rustc: String,
+    pub profile: &'static str,
+    pub counters: bool,
+    pub alloc_count: bool,
+    pub reference_lateprobe: bool,
+    pub repeat: usize,
+    pub env: String,
+    pub started: String,
+}
+
+impl Manifest {
+    pub fn new(experiment: &str) -> Manifest {
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|b| stacks_common::util::hash::Sha256Sum::from_data(&b).to_hex())
+            .unwrap_or_else(|| "unknown".into());
+        Manifest {
+            harness: "marf-differential",
+            experiment: experiment.to_string(),
+            args: std::env::args().skip(1).collect(),
+            tree_rev: option_env!("MARF_BENCH_TREE_REV").unwrap_or("unknown").to_string(),
+            oracle: option_env!("MARF_BENCH_PROVIDER")
+                .unwrap_or("upstream stacks-marf (in tree)")
+                .to_string(),
+            binary_sha256: exe,
+            rustc: option_env!("MARF_BENCH_RUSTC").unwrap_or("unknown").to_string(),
+            profile: if cfg!(debug_assertions) { "debug" } else { "release" },
+            counters: cfg!(feature = "counters"),
+            alloc_count: ALLOC_COUNTING,
+            reference_lateprobe: cfg!(feature = "reference-lateprobe"),
+            repeat: repeat(),
+            env: environment(),
+            started: now_rfc3339(),
+        }
+    }
+}
+
+pub fn now_rfc3339() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // civil date from days since epoch (Howard Hinnant's algorithm)
+    let days = (secs / 86400) as i64;
+    let (h, m, s) = ((secs % 86400) / 3600, (secs % 3600) / 60, secs % 60);
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+/// Write `value` as JSON to the path in `JSON_OUT`, if set.
+pub fn write_json<T: serde::Serialize>(value: &T) {
+    if let Ok(path) = std::env::var("JSON_OUT") {
+        let s = serde_json::to_string_pretty(value).expect("json");
+        std::fs::write(&path, s).unwrap_or_else(|e| panic!("write {path}: {e}"));
+        eprintln!("[json] wrote {path}");
+    }
+}
+
 /// `REPEAT` from the environment (default 5, minimum 1).
 pub fn repeat() -> usize {
     std::env::var("REPEAT")
@@ -422,7 +593,7 @@ pub fn environment() -> String {
         .unwrap_or_default();
     format!(
         "env: {cpu} x{cores}, linux {kernel}, rustc {}, profile {}, alloc-count={}, counters={}, repeat={}",
-        option_env!("MARF_BENCH_RUSTC").unwrap_or("see build log"),
+        option_env!("MARF_BENCH_RUSTC").unwrap_or("unknown"),
         if cfg!(debug_assertions) { "debug" } else { "release" },
         ALLOC_COUNTING,
         cfg!(feature = "counters"),

@@ -1412,6 +1412,12 @@ impl<T: MarfTrieId> MARF<T> {
         )?))
     }
 
+    /// Entries in the resolved-patch cache (benchmark instrumentation).
+    #[cfg(any(test, feature = "testing", feature = "counters"))]
+    pub fn patch_cache_len(&self) -> usize {
+        self.inner.store.patch_cache_len()
+    }
+
     pub fn begin_tx(&mut self) -> Result<MarfTransaction<'_, T>, Error> {
         if self.inner.store.readonly {
             return Err(Error::ReadOnlyError);

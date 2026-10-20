@@ -866,6 +866,8 @@ name = "clarity-bench"
 version = "0.1.0"
 dependencies = [
  "clarity 0.0.1",
+ "serde",
+ "serde_json",
  "stacks-common 4.0.5",
  "stacks-marf-next",
  "stackslib 0.0.1",

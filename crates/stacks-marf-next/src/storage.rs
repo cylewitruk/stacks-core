@@ -885,6 +885,9 @@ fn resolve_in<'s>(
     let loc = location_in(locations, external, conn, block)?;
     let rec = record_in(blobs, bytes, conn, loc, block, &ptr)?;
     if depth == 0 {
+        if cache {
+            count!(patch_cache_probe_miss_plain);
+        }
         return Ok(Resolved {
             node: StoreNode::Record(rec),
             hash,
@@ -979,6 +982,15 @@ impl<T: MarfTrieId> Store<T> {
 
     pub fn prune_height(&self) -> Option<u32> {
         self.prune.as_ref().map(|s| s.prune_height)
+    }
+
+    /// Entries retained in the resolved-patch cache (benchmark
+    /// instrumentation). The scratch slot a resolved chain is returned from
+    /// when it is not cacheable (unconfirmed trie, or capacity 0) is not an
+    /// entry: nothing is ever looked up in it.
+    #[cfg(any(test, feature = "testing", feature = "counters"))]
+    pub fn patch_cache_len(&self) -> usize {
+        self.scratch.patched.len() - usize::from(self.scratch.patched.contains_key(&UNCONFIRMED_SLOT))
     }
 
     /// Forget everything cached from the database: block ids, locations and
