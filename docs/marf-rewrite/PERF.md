@@ -83,7 +83,7 @@ complete log exists under the path given in each section.
 | working sets by distinct patched nodes | 32, 64, 1,024 (`std`); 32, 64, 1,024, 4,096, 6,200 (`big`) | done |
 | reads during block construction | rewrite; reference with result cache 2,048 and 0; upstream | done |
 | construction counters | rewrite; reference with result cache 2,048 and 0 | done |
-| Clarity execution | rewrite; upstream; optimized MARF under upstream's consumer code; two passes in alternating order | CLARITY_STATUS |
+| Clarity execution | rewrite; upstream; optimized MARF under upstream's consumer code; two passes in alternating order | done (6 logs; equivalence lines identical) |
 | Clarity, whole optimized stack (optional) | worktree of 29ef093d as committed | not built in this round (the variant builder has the switch; its stackslib API differs and it is reported separately when it is) |
 | validation | crate + differential tests; all 132 hand-off boundaries both ways; consumer prune tests; counters build | VALIDATION_STATUS |
 
@@ -324,7 +324,82 @@ What this establishes:
 
 ## 6. Clarity execution
 
-CLARITY_RESULTS
+`contrib/clarity-bench` (`scripts/build-variants.sh`, `scripts/run.sh`),
+logs `contrib/clarity-bench/results/r4/clarity-<variant>-pass<1|2>.log`.
+Real contracts through `stackslib`'s `ClarityInstance` and `MarfedKV` with
+the clarity crate's unit-test header and burn databases (epoch 2.5,
+unlimited block limit). One contract: a `uint -> uint` map, two data
+variables, functions `set-many`/`read-many`/`update-then-read` over lists
+of 50 keys, `incr`, and `fail-after-write` (writes then returns `(err u1)`).
+Setup (untimed): genesis with the default cost contract plus `costs-3`,
+contract deployment, then 40 blocks populating 20,000 keys. Workloads, 10
+blocks each unless noted, every returned value checked against a model:
+
+* **read-heavy**: 20 `read-many` calls over random keys plus 10 over one
+  hot 50-key list per block (1,500 map reads per block).
+* **write-heavy**: `set-round` then 20 `update-then-read` calls, each
+  writing 50 random keys and reading them back in the same transaction.
+* **mixed**: 30 calls per block cycling `incr`, `set-many` on a hot list,
+  `read-many` on random keys.
+* **inherited-after-history** (5 blocks): `read-many` as read-heavy, after
+  the 70 blocks above, over keys written 40-70 blocks earlier.
+* **abort** (5 blocks): 20 `fail-after-write` calls, each followed by a
+  read proving the aborted write is invisible; then a whole block of
+  writes rolled back with `rollback_block`, and a block proving they are
+  gone.
+
+Variants (section 1): rewrite; upstream (worktree of `ad5c5778` as
+committed); optmarf (upstream's `stackslib` and `clarity-cli` over the
+optimized `stacks-marf` of `29ef093d`, with its `crates/stacks-mmap`, two
+workspace dependency entries and three `MarfCore` trait imports; the
+optimized crate's production options set explicitly). Each variant runs
+twice in alternating order (rewrite, upstream, optmarf; then the reverse),
+`REPEAT=5` fresh databases per run; the tables give the median of the 5
+repetitions for each pass. `exec` is every transaction of the 9 timed
+blocks (the first block of each workload is reported apart), `seal` the
+root computation, `commit` the serialized write.
+
+Equivalence: for every workload the cost totals (`runtime`, `read_count`,
+`read_length`, `write_count`, `write_length`) and the final block root are
+identical in all six logs (`grep last_root` in `run.sh` prints one line
+per workload, count 6).
+
+| workload (9 timed blocks) | txs | rewrite exec ms (pass 1 / pass 2) | optmarf exec ms | upstream exec ms | seal ms (rw / opt / up) | commit ms (rw / opt / up) |
+|---|---|---|---|---|---|---|
+| read-heavy | 270 | 358 / 438 | 388 / 481 | 1,048 / 1,083 | 3.5 / 4.8 / 5.9 | 11.1 / 12.4 / 17.1 |
+| write-heavy | 189 | 521 / 576 | 623 / 688 | 1,125 / 1,124 | 135 / 165 / 170 | 379 / 402 / 478 |
+| mixed | 270 | 292 / 260 | 314 / 317 | 841 / 797 | 27 / 35 / 33 | 19 / 23 / 31 |
+| inherited-after-history (4 timed) | 120 | 137 / 134 | 167 / 182 | 541 / 444 | 1.4 / 2.4 / 3.4 | 5.4 / 5.5 / 6.5 |
+| abort (4 timed) | 160 | 26 / 22 | 21 / 21 | 98 / 108 | 1.6 / 1.9 / 2.6 | 4.2 / 4.7 / 6.2 |
+
+First block of each workload (process caches cold for its keys), exec ms,
+pass 1: read-heavy 52 / 40 / 150; write-heavy 52 / 67 / 88; mixed 31 / 34
+/ 89; inherited 32 / 43 / 150; abort 6.8 / 5.5 / 25 (rewrite / optmarf /
+upstream). Populate (40 blocks, untimed): 1.47 s / 1.54 s / 2.88 s.
+
+What this establishes:
+
+* **Against upstream the speedup survives Clarity execution** at 2-3x on
+  execution time (read-heavy 2.5-2.9x, write-heavy 2.0-2.2x, mixed
+  2.9-3.1x, inherited 3.3-4.0x, abort 3.8-5.0x) and 1.2-1.5x on commit.
+* **Against the optimized MARF under the same consumer code the advantage
+  is modest**: 5-25% on execution (read-heavy 8-9%, write-heavy 16%,
+  mixed 7-18%, inherited 18-26%), 6-20% on seal and commit, and none on
+  the abort workload (21-26 ms both ways). Pass-to-pass variation (read-
+  heavy rewrite 358 vs 438 ms) is of the same order as the rewrite-optmarf
+  difference on read-heavy, so on that workload the two are within noise;
+  on write-heavy, mixed and inherited the ordering holds in both passes.
+* **Inferred: the interpreter dominates.** 1,500 map reads per read-heavy
+  block cost the rewrite about 40 ms of execution, roughly 27 µs per
+  `map-get?`, against 1.7-3 µs for the MARF lookup underneath (section 4);
+  the rest is Clarity's own work (cost tracking, value serialization, the
+  `MarfedKV` layer's key hashing and metadata lookups). A 5x MARF-level
+  gain therefore shows as a 5-25% end-to-end gain here, and the optimized
+  crate's result cache serves the repeated hot-list reads inside a block.
+* **Open**: which part of the per-read cost above the MARF is the
+  `MarfedKV` layer (it issues two MARF lookups per map read, value and
+  metadata) and whether the reference's whole optimized stack (its
+  `stackslib` value stores, not built in this round) changes the picture.
 
 ## 7. What the experiments establish
 
