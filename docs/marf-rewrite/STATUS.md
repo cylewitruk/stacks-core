@@ -242,17 +242,26 @@ key; the stored trie is identical for every implementation, so the same key
 has the same shape everywhere. `marf-differential alloc` profiles every key
 of the database at two tips (distinct keys by construction), buckets them by
 `hops` (back-pointers followed, 3+ capped) x `patch` (deepest chain on the
-path: none, 1-2, 3-4), and times each bucket under three explicit access
-patterns, each 5,000 lookups after one warming pass over the same keys:
+path: none, 1-2, 3-4), and times each bucket under three working-set
+sizes, each 5,000 lookups after one warming pass over the same keys:
 
-* **hot64**: 64 distinct keys cycled. Everything hits a result cache.
-* **fit(n)**: up to 1,024 distinct keys cycled. Fits any result cache of
-  2,048 entries or more (the reference's), so it still measures hits, with
-  less locality than hot64. `n` is the number of distinct keys timed.
+* **hot64**: 64 distinct keys cycled.
+* **fit(n)**: up to 1,024 distinct keys cycled; `n` is the number of
+  distinct keys timed.
 * **overflow(n)**: every distinct key of the bucket, in whole passes, only
-  for buckets of at least 4,096 keys (twice the reference's result cache):
-  an LRU result cache misses on every access. `n` is the bucket's
-  population, all of it timed.
+  for buckets of at least 4,096 keys; `n` is the bucket's population, all
+  of it timed.
+
+These are locality variations of committed reads, nothing more. No
+lookup-result cache takes part in them: the reference's result cache serves
+only the active mutable trie (`cached_result` in its `storage.rs` returns
+early unless the block is the open uncommitted one), and these reads
+happen after commit; upstream and the rewrite have no result cache at all.
+What the working-set size changes is page-cache and patch-cache locality
+and which patched nodes recur. The fourth-review correction: an earlier
+version of this section attributed the differences between these patterns
+to result-cache hits and misses, which was wrong. The patch cache's own
+behaviour is measured with counters in `PERF.md` (the `ablate` experiment).
 
 `~k nodes` is the average number of records read per walk. Workload as
 above (external blobs, compressed); times are best of three, µs per lookup.
@@ -305,19 +314,20 @@ What the buckets show:
   time); through the patched tip's small patch records it is 105-157 µs.
   Hops add roughly 10-15 µs each; hot64, fit and overflow are the same
   within noise, as expected without a result cache.
-* The reference's caches are visible: on the bulk tip, overflow costs 28%
-  more than fit (15.0 vs 12.3 µs) and on the patched tip 10-50% more than
-  hot64 in the shallow-patch buckets; its allocations per lookup drop as the
-  key set shrinks (0.6-2.3 against 4-7). Hops cost it 1-3 µs each. Its
-  lookups never go below 5 µs in any bucket: a hit still walks the trie
-  through its node readers.
+* The reference's cost varies with the working set: on the bulk tip,
+  overflow costs 28% more than fit (15.0 vs 12.3 µs) and on the patched tip
+  10-50% more than hot64 in the shallow-patch buckets, and its allocations
+  per lookup drop as the key set shrinks (0.6-2.3 against 4-7). Its result
+  cache is not involved (see above); what varies is how often its 64-entry
+  resolved-patch cache holds the patched nodes a walk meets, and locality in
+  the mapped file. Hops cost it 1-3 µs each; its lookups never go below
+  5 µs in any bucket.
 * The rewrite is 0.9-2.2 µs in every bucket with zero allocations, in all
   three patterns: records are borrowed from the mapping, a walk reads
   3.4-4.0 records, and the patch chains it meets are served from the
   resolved-patch cache after the warming pass. Overflow costs it 30-90%
   over hot64 (1.94 vs 1.03 µs at bulk hops=1), which is page-cache and
-  patch-cache locality, not a result cache (it has none). Back-pointer hops
-  cost it about 0.1-0.3 µs each.
+  patch-cache locality. Back-pointer hops cost it about 0.1-0.3 µs each.
 * The rewrite's figures above are warm-cache figures: the warming pass
   resolves each patch chain once (an owned `Branch`, see "Borrowed
   traversal"). A cold process pays that once per distinct patched node.
@@ -328,10 +338,11 @@ Reading the numbers:
   blobs) the rewrite's lookups are two to three orders of magnitude faster:
   upstream re-resolves patch chains on every read and allocates throughout;
   the rewrite's reads are borrowed and its resolved patches are cached.
-* Against the reference, which already has mmap reads, a result cache and a
-  patch cache, the rewrite's compressed lookups are 4 to 12x faster with
-  zero allocations (the gap is widest where the reference's result cache
-  misses). On the plain encoding the two are within noise of each other
+* Against the reference, which already has mmap reads and a patch cache
+  (its result cache does not apply to committed reads), the rewrite's
+  compressed lookups are 4 to 12x faster with zero allocations; the
+  ablation in `PERF.md` separates the patch cache's share from the rest.
+  On the plain encoding the two are within noise of each other
   (external: rewrite ahead by 3-25%; SQLite-internal: reference ahead by
   5-17%). Commit is faster in all three configurations. Seal is on par,
   not faster: SHA-512/256 bound in all three (70% of the rewrite's seal in
