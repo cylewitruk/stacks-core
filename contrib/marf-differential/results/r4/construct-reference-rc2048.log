@@ -1,0 +1,40 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=5
+construction workload: 20 blocks x 2000 inserts base chain, 5000 reads per read phase, external=true compress=true result_cache=Some(2048)
+INFO [1792517008.175627] [stacks-marf/src/file.rs:658] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpFZvkue/marf.sqlite.blobs
+INFO [1792517008.175697] [stacks-marf/src/file.rs:586] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+impl base: reference stacks-marf (29ef093d): external=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=2048
+INFO [1792517009.166888] [stacks-marf/src/file.rs:658] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpt6pztB/marf.sqlite.blobs
+INFO [1792517009.166990] [stacks-marf/src/file.rs:586] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792517010.044079] [stacks-marf/src/file.rs:658] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpxeuyVu/marf.sqlite.blobs
+INFO [1792517010.044144] [stacks-marf/src/file.rs:586] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792517010.922244] [stacks-marf/src/file.rs:658] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpoRPrfb/marf.sqlite.blobs
+INFO [1792517010.922307] [stacks-marf/src/file.rs:586] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792517011.824771] [stacks-marf/src/file.rs:658] [main] Migrate 0 blocks to external blob storage at /tmp/.tmphVdcPa/marf.sqlite.blobs
+INFO [1792517011.824842] [stacks-marf/src/file.rs:586] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+final roots: child=f4ff08dc7b29154e05e887cbd443da38e8804ba2c4b7c9e773745266f9d0d7aa rollback-rebuilt=195883d9dade12937f186c0ecd65185f636facd35b129e9e13c8a1302ae2da0c
+
+phase                                     kind      ops | median us/op       min-max us/op    median ms
+begin                                    write        1 |       481.58       414.06-686.63        0.482
+inherited hot64 (cycled)                  read     4992 |         0.69           0.64-0.95        3.456
+inherited wide (distinct once)            read     5000 |         8.97          8.78-11.21       44.837
+insert 500 new                           write      500 |         9.91          9.33-14.17        4.955
+inserted hot64 (cycled)                   read     4992 |         0.64           0.52-0.74        3.178
+inserted all 500 (x10)                    read     5000 |         0.66           0.61-1.09        3.279
+update 200 inherited                     write      200 |         7.87          7.03-13.35        1.573
+updated 200 (x25)                         read     5000 |         0.59           0.54-0.92        2.959
+misses 500 (x10)                          read     5000 |         0.72           0.66-1.16        3.608
+insert the 500 missed                    write      500 |         6.10          5.32-11.59        3.052
+formerly missed 500 (x10)                 read     5000 |         0.63           0.60-1.02        3.140
+successive updates x100: writes          write      100 |        15.01         13.75-29.29        1.501
+successive updates x100: reads            read      100 |         1.20           1.07-2.06        0.120
+ancestor reads: parent tip 2000           read     2000 |         8.73          8.06-12.70       17.460
+ancestor reads: block-10 tip 2000         read     2000 |         6.72           6.48-7.24       13.445
+inherited hot64 after ancestor reads      read     4992 |         0.55           0.54-0.66        2.755
+seal                                     write        1 |     17489.22   16764.43-20469.48       17.489
+commit                                   write        1 |      6428.52     6187.13-7744.31        6.429
+whole construction (begin..commit)       total        1 |    139149.42 136058.14-176294.80      139.149
+after commit: updated 200                 read      200 |        11.96         11.67-14.01        2.393
+rollback: reads before drop               read      500 |         1.36           1.31-1.50        0.678
+rollback: begin+insert+drop              write      500 |        12.99         12.25-13.61        6.493
+rebuilt after rollback: reads             read      500 |         7.56          6.65-10.40        3.778
+sum of medians: reads 105.084 ms, writes 41.973 ms (whole construction above includes both)
