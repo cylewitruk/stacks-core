@@ -1,0 +1,200 @@
+--------------------------------------------------------------------------------
+Profile data file 'callgrind.rewrite-cap4096.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 626119802
+Trigger: Program termination
+Profiled target:  marf-differential-upstream ablate rewrite std (PID 16866, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                     
+--------------------------------------------------------------------------------
+9,344,605,118 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                      file:function
+--------------------------------------------------------------------------------
+9,344,605,118 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+9,344,124,065 (99.99%)  ???:(below main) [marf-differential-upstream]
+9,344,124,053 (99.99%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+9,344,123,870 (99.99%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+9,344,121,817 (99.99%)  ???:main [marf-differential-upstream]
+9,344,004,382 (99.99%)  std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [marf-differential-upstream]
+9,344,004,379 (99.99%)  core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+9,344,004,378 (99.99%)  contrib/marf-differential/src/bin/main.rs:marf_differential::main [marf-differential-upstream]
+9,344,001,858 (99.99%)  contrib/marf-differential/src/ablate.rs:marf_differential::main
+9,344,001,850 (99.99%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Rewrite> [marf-differential-upstream]
+4,471,017,178 (47.85%)  sha2-0.10.8/src/sha512.rs:sha2::sha512::compress512 [marf-differential-upstream]
+4,465,397,461 (47.79%)  sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::compress512
+4,460,714,399 (47.74%)  sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2 [marf-differential-upstream]
+3,396,994,829 (36.35%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2 [marf-differential-upstream]
+3,091,123,002 (33.08%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value [marf-differential-upstream]
+2,936,742,548 (31.43%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::seal [marf-differential-upstream]
+2,936,741,820 (31.43%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::seal
+2,936,366,209 (31.42%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal [marf-differential-upstream]
+2,934,010,220 (31.40%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal
+2,934,009,772 (31.40%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}> [marf-differential-upstream]
+2,555,615,965 (27.35%)  contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Rewrite>::{closure#0}> [marf-differential-upstream]
+2,554,678,445 (27.34%)  contrib/marf-differential/src/ablate.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Rewrite>::{closure#0}>
+2,499,452,445 (26.75%)  sha2-0.10.8/src/core_api.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+1,953,579,403 (20.91%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Manifest>::new [marf-differential-upstream]
+1,953,546,458 (20.91%)  sha2-0.10.8/src/core_api.rs:<marf_differential::alloc::Manifest>::new
+1,953,546,442 (20.91%)  sha2-0.10.8/src/sha256.rs:sha2::sha256::compress256 [marf-differential-upstream]
+1,951,516,280 (20.88%)  sha2-asm-0.6.3/src/lib.rs:sha2::sha256::compress256
+1,949,486,270 (20.86%)  sha2-asm-0.6.3/src/sha256_x64.S:0x0000000000292963 [marf-differential-upstream]
+1,781,918,229 (19.07%)  stacks-common/src/types/chainstate.rs:<stacks_common::types::chainstate::TrieHash>::from_data [marf-differential-upstream]
+1,732,359,104 (18.54%)  sha2-0.10.8/src/core_api.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+1,725,255,715 (18.46%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::lookup [marf-differential-upstream]
+1,724,862,618 (18.46%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+1,357,876,704 (14.53%)  stacks-common/src/types/chainstate.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+1,015,108,441 (10.86%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::resolve_in [marf-differential-upstream]
+  973,908,432 (10.42%)  core/src/intrinsics/mod.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  968,814,062 (10.37%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth [marf-differential-upstream]
+  930,868,502 ( 9.96%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth
+  845,750,715 ( 9.05%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::NodeView>::descend [marf-differential-upstream]
+  798,979,921 ( 8.55%)  core/src/num/uint_macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  706,652,076 ( 7.56%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::marf::NodeView>::descend
+  661,486,760 ( 7.08%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::skip_scan [marf-differential-upstream]
+  600,424,328 ( 6.43%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::key_sets [marf-differential-upstream]
+  540,823,949 ( 5.79%)  contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Rewrite>::{closure#0}> [marf-differential-upstream]
+  540,636,445 ( 5.79%)  contrib/marf-differential/src/ablate.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Rewrite>::{closure#0}>
+  502,604,040 ( 5.38%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::profiles [marf-differential-upstream]
+  495,937,310 ( 5.31%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile [marf-differential-upstream]
+  355,691,306 ( 3.81%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::insert_batch [marf-differential-upstream]
+  354,385,668 ( 3.79%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::insert_batch [marf-differential-upstream]
+  352,776,274 ( 3.78%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::insert_batch [marf-differential-upstream]
+  345,467,594 ( 3.70%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::resolve_in
+  344,298,648 ( 3.68%)  core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  339,994,078 ( 3.64%)  core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)> [marf-differential-upstream]
+  249,115,296 ( 2.67%)  core/src/cmp.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  247,172,122 ( 2.65%)  core/src/iter/range.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  234,898,874 ( 2.51%)  crates/stacks-marf-next/src/hash.rs:stacks_marf_next::hash::leaf_hash [marf-differential-upstream]
+  228,279,000 ( 2.44%)  stacks-common/src/types/chainstate.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile
+  228,177,807 ( 2.44%)  sha2-0.10.8/src/core_api.rs:stacks_marf_next::hash::leaf_hash
+  227,501,939 ( 2.43%)  core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32> [marf-differential-upstream]
+  214,455,845 ( 2.29%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::location_in [marf-differential-upstream]
+  200,574,456 ( 2.15%)  std/src/hash/random.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write [marf-differential-upstream]
+  196,893,333 ( 2.11%)  stacks-common/src/types/chainstate.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::insert_batch
+  192,632,400 ( 2.06%)  core/src/../../stdarch/crates/core_arch/src/x86/avx2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  185,632,457 ( 1.99%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::commit [marf-differential-upstream]
+  185,632,065 ( 1.99%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::commit
+  185,369,259 ( 1.98%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MarfTransaction<stacks_common::types::chainstate::StacksBlockId>>::commit [marf-differential-upstream]
+  184,650,079 ( 1.98%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::flush [marf-differential-upstream]
+  163,077,782 ( 1.75%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::record_in [marf-differential-upstream]
+  151,106,771 ( 1.62%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::location_in
+  149,490,078 ( 1.60%)  core/src/hash/sip.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+  116,456,702 ( 1.25%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+  115,221,532 ( 1.23%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_hash [marf-differential-upstream]
+  114,788,561 ( 1.23%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::codec::make_patch [marf-differential-upstream]
+  113,914,217 ( 1.22%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::trie_bytes [marf-differential-upstream]
+  110,180,877 ( 1.18%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_id [marf-differential-upstream]
+  109,930,272 ( 1.18%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::insert_batch
+  104,988,391 ( 1.12%)  core/src/hash/sip.rs:<core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write [marf-differential-upstream]
+   91,457,822 ( 0.98%)  /rust/deps/hashbrown-0.17.1/src/map.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_id
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: sha2-0.10.8/src/core_api.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 28 ----------------------------------------
+        .           
+        .           impl BufferKindUser for Sha256VarCore {
+        .               type BufferKind = Eager;
+        .           }
+        .           
+        .           impl UpdateCore for Sha256VarCore {
+        .               #[inline]
+        .               fn update_blocks(&mut self, blocks: &[Block<Self>]) {
+        2 ( 0.00%)          self.block_len += blocks.len() as u64;
+        2 ( 0.00%)          compress256(&mut self.state, blocks);
+1,953,540,616 (20.91%)  => sha2-0.10.8/src/sha256.rs:sha2::sha256::compress256 (1x)
+        .               }
+        .           }
+        .           
+        .           impl OutputSizeUser for Sha256VarCore {
+        .               type OutputSize = U32;
+        .           }
+        .           
+        .           impl VariableOutputCore for Sha256VarCore {
+-- line 45 ----------------------------------------
+-- line 54 ----------------------------------------
+        .                   };
+        .                   let block_len = 0;
+        .                   Ok(Self { state, block_len })
+        .               }
+        .           
+        .               #[inline]
+        .               fn finalize_variable_core(&mut self, buffer: &mut Buffer<Self>, out: &mut Output<Self>) {
+        .                   let bs = Self::BlockSize::U64;
+        4 ( 0.00%)          let bit_len = 8 * (buffer.get_pos() as u64 + bs * self.block_len);
+        8 ( 0.00%)          buffer.len64_padding_be(bit_len, |b| compress256(&mut self.state, from_ref(b)));
+    5,826 ( 0.00%)  => sha2-0.10.8/src/sha256.rs:sha2::sha256::compress256 (2x)
+        .           
+        .                   for (chunk, v) in out.chunks_exact_mut(4).zip(self.state.iter()) {
+        .                       chunk.copy_from_slice(&v.to_be_bytes());
+        .                   }
+        .               }
+        .           }
+        .           
+        .           impl AlgorithmName for Sha256VarCore {
+-- line 71 ----------------------------------------
+-- line 100 ----------------------------------------
+        .           
+        .           impl BufferKindUser for Sha512VarCore {
+        .               type BufferKind = Eager;
+        .           }
+        .           
+        .           impl UpdateCore for Sha512VarCore {
+        .               #[inline]
+        .               fn update_blocks(&mut self, blocks: &[Block<Self>]) {
+  110,913 ( 0.00%)          self.block_len += blocks.len() as u128;
+  131,299 ( 0.00%)          compress512(&mut self.state, blocks);
+15,862,364 ( 0.17%)  => sha2-0.10.8/src/sha512.rs:sha2::sha512::compress512 (84x)
+        .               }
+        .           }
+        .           
+        .           impl OutputSizeUser for Sha512VarCore {
+        .               type OutputSize = U64;
+        .           }
+        .           
+        .           impl VariableOutputCore for Sha512VarCore {
+-- line 117 ----------------------------------------
+-- line 128 ----------------------------------------
+        .                   };
+        .                   let block_len = 0;
+        .                   Ok(Self { state, block_len })
+        .               }
+        .           
+        .               #[inline]
+        .               fn finalize_variable_core(&mut self, buffer: &mut Buffer<Self>, out: &mut Output<Self>) {
+        .                   let bs = Self::BlockSize::U64 as u128;
+2,587,146 ( 0.03%)          let bit_len = 8 * (buffer.get_pos() as u128 + bs * self.block_len);
+1,293,845 ( 0.01%)          buffer.len128_padding_be(bit_len, |b| compress512(&mut self.state, from_ref(b)));
+  131,768 ( 0.00%)  => sha2-0.10.8/src/sha512.rs:sha2::sha512::compress512 (28x)
+        .           
+        .                   for (chunk, v) in out.chunks_exact_mut(8).zip(self.state.iter()) {
+1,725,308 ( 0.02%)              chunk.copy_from_slice(&v.to_be_bytes());
+        .                   }
+        .               }
+        .           }
+        .           
+        .           impl AlgorithmName for Sha512VarCore {
+        .               #[inline]
+        .               fn write_alg_name(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        .                   f.write_str("Sha512")
+-- line 148 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: crates/stacks-marf-next/src/trie.rs
+--------------------------------------------------------------------------------
+Ir                 
