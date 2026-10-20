@@ -4400,7 +4400,7 @@ fn test_contract_call_across_clarity_versions() {
     )
     .unwrap();
 
-    let mut peer_config = TestPeerConfig::new(function_name!(), 2024, 2025);
+    let mut peer_config = TestPeerConfig::new(function_name!(), 12024, 12025);
     peer_config.chain_config.initial_balances = vec![
         (addr.to_account_principal(), 1000000000),
         (addr_anchored.to_account_principal(), 1000000000),
