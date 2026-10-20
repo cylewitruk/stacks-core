@@ -9,9 +9,9 @@
 #   2. the current tree's crates/stacks-marf-next and contrib/marf-differential
 #      copied in (directories created) and registered as workspace members;
 #   3. the checked-in overlays applied: reference/harness.patch (adapter
-#      differences, production options, counters) and
-#      reference/reference-counters.patch (counters added to the reference's
-#      opt-in read_bench module); see reference/README.md;
+#      differences, production options, counters) and reference/reference.patch
+#      (feature-gated counters and the late-probe diagnostic in the reference
+#      crate); see reference/README.md;
 #   4. three binaries built into target/bench-bin/:
 #        marf-differential-reference            timing, no instrumentation
 #        marf-differential-reference-counters   read counters (the reference's
@@ -67,8 +67,7 @@ PY
 
 # 3. overlays
 (cd "$WORKTREE" && patch -p1 --no-backup-if-mismatch < "$TREE/contrib/marf-differential/reference/harness.patch")
-(cd "$WORKTREE" && git apply "$TREE/contrib/marf-differential/reference/reference-counters.patch")
-(cd "$WORKTREE" && git apply "$TREE/contrib/marf-differential/reference/reference-lateprobe.patch")
+(cd "$WORKTREE" && git apply "$TREE/contrib/marf-differential/reference/reference.patch")
 
 # 4. binaries
 (cd "$WORKTREE" && cargo build --release -p marf-differential)
@@ -87,7 +86,7 @@ cp "$WORKTREE/target/release/marf-differential" "$OUT/marf-differential-referenc
   echo "tree_rev $(git rev-parse HEAD) $(git describe --always --dirty)"
   echo "reference_rev $actual"
   echo "toolchain $MARF_BENCH_RUSTC"
-  for p in harness reference-counters reference-lateprobe; do
+  for p in harness reference; do
     echo "overlay $p.patch sha256 $(sha256sum "$TREE/contrib/marf-differential/reference/$p.patch" | cut -d' ' -f1)"
   done
   for b in reference reference-counters reference-lateprobe; do
