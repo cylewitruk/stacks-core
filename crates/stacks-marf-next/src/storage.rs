@@ -227,16 +227,49 @@ impl Blobs {
         write_all_at(&self.file, data, offset)?;
         self.file.sync_data()
     }
+
+    /// [`Blobs::write_at`] without the sync, for callers that write a blob in
+    /// several pieces and call [`Blobs::sync`] once at the end.
+    pub fn write_at_unsynced(&self, offset: u64, data: &[u8]) -> io::Result<()> {
+        write_all_at(&self.file, data, offset)
+    }
+
+    pub fn sync(&self) -> io::Result<()> {
+        self.file.sync_data()
+    }
 }
 
 #[cfg(unix)]
-fn write_all_at(file: &File, buf: &[u8], offset: u64) -> io::Result<()> {
+pub(crate) fn write_all_at(file: &File, buf: &[u8], offset: u64) -> io::Result<()> {
     use std::os::unix::fs::FileExt;
     file.write_all_at(buf, offset)
 }
 
+#[cfg(unix)]
+pub(crate) fn read_exact_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    file.read_exact_at(buf, offset)
+}
+
 #[cfg(windows)]
-fn write_all_at(file: &File, mut buf: &[u8], mut offset: u64) -> io::Result<()> {
+pub(crate) fn read_exact_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    while !buf.is_empty() {
+        let n = file.seek_read(buf, offset)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "blobs file shorter than the record",
+            ));
+        }
+        buf = &mut buf[n..];
+        offset += n as u64;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn write_all_at(file: &File, mut buf: &[u8], mut offset: u64) -> io::Result<()> {
     use std::os::windows::fs::FileExt;
     while !buf.is_empty() {
         let n = file.seek_write(buf, offset)?;
@@ -928,6 +961,9 @@ impl<T: MarfTrieId> Store<T> {
         self.hashes.clear();
         self.locations.clear();
         self.scratch.patched.clear();
+        // a sidecar retirement issued inside the rolled-back transaction was
+        // undone with it; the next write must issue it again
+        self.sidecar_retired = self.readonly;
         self.scratch.bytes.key = None;
     }
 
@@ -1090,22 +1126,30 @@ impl<T: MarfTrieId> Store<T> {
         Ok(id)
     }
 
-    /// Append `blob` to the external blobs file and point every confirmed row
-    /// at it (the squashed layout: one shared trie for all historical blocks).
-    pub fn write_shared_blob(&mut self, conn: &Connection, blob: &[u8]) -> Result<u64, Error> {
+    /// Write a pruned MARF's shared trie blob at the end of the blobs file
+    /// and point every confirmed `marf_data` row at it. `write(blobs, base)`
+    /// produces the blob at file offset `base`, in as many positioned writes
+    /// as it likes, and returns the blob's length; the file is synced once
+    /// afterwards. Returns `base`.
+    pub fn write_shared_blob_with(
+        &mut self,
+        conn: &Connection,
+        write: impl FnOnce(&Blobs, u64) -> Result<u64, Error>,
+    ) -> Result<u64, Error> {
         let blobs = self
             .blobs
             .as_ref()
             .ok_or_else(|| corrupt!("prune destination requires external blobs"))?;
-        let offset = external_blobs_length(conn)?;
-        blobs.write_at(offset, blob)?;
+        let base = external_blobs_length(conn)?;
+        let len = write(blobs, base)?;
+        blobs.sync()?;
         conn.execute(
             "UPDATE marf_data SET external_offset = ?1, external_length = ?2 WHERE unconfirmed = 0",
-            params![u64_sql(offset)?, u64_sql(blob.len() as u64)?],
+            params![u64_sql(base)?, u64_sql(len)?],
         )?;
         self.locations.clear();
         self.scratch.patched.clear();
-        Ok(offset)
+        Ok(base)
     }
 
     /// Write the squash side tables.
@@ -1465,4 +1509,62 @@ pub fn clear_locks(db_path: &Path) -> Result<(), Error> {
     let conn = sqlite_open(db_path, OpenFlags::SQLITE_OPEN_READ_WRITE, false)?;
     conn.execute("DELETE FROM block_extension_locks", NO_PARAMS)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use stacks_common::types::chainstate::StacksBlockId;
+
+    use super::*;
+    use crate::marf::{MARFOpenOpts, MarfConnection, MARF};
+    use crate::{ClarityMarfTrieId, MARFValue};
+
+    fn sidecar_valid(marf: &MARF<StacksBlockId>) -> i64 {
+        marf.sqlite_conn()
+            .query_row(
+                "SELECT valid FROM marf_direct_hash_index WHERE id = 1",
+                NO_PARAMS,
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    /// The direct-hash sidecar is retired inside the first writing
+    /// transaction. If that transaction rolls back, the retirement rolls back
+    /// with it, and the next write must issue it again (review finding).
+    #[test]
+    fn sidecar_retirement_is_redone_after_a_rolled_back_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("marf.sqlite");
+        let mut marf = MARF::<StacksBlockId>::from_path(&path, MARFOpenOpts::default()).unwrap();
+        marf.sqlite_conn()
+            .execute_batch(
+                "CREATE TABLE marf_direct_hash_index (id INTEGER PRIMARY KEY, valid INTEGER NOT NULL);
+                 INSERT INTO marf_direct_hash_index (id, valid) VALUES (1, 1);",
+            )
+            .unwrap();
+        let b1 = StacksBlockId([1u8; 32]);
+        let value = MARFValue([7u8; 40]);
+
+        // first commit fails after the retirement: a row for the block
+        // appears underneath it, so the trie insert hits the UNIQUE index
+        let mut tx = marf.begin_tx().unwrap();
+        tx.begin(&StacksBlockId::sentinel(), &b1).unwrap();
+        tx.insert("k", value.clone()).unwrap();
+        tx.sqlite_tx()
+            .execute(
+                "INSERT INTO marf_data (block_hash, data, unconfirmed) VALUES (?1, ?2, 0)",
+                params![&b1, &[] as &[u8]],
+            )
+            .unwrap();
+        assert!(tx.commit().is_err());
+        assert_eq!(sidecar_valid(&marf), 1, "the failed commit rolled the retirement back");
+
+        // the next commit succeeds and must retire the sidecar
+        let mut tx = marf.begin_tx().unwrap();
+        tx.begin(&StacksBlockId::sentinel(), &b1).unwrap();
+        tx.insert("k", value).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(sidecar_valid(&marf), 0);
+    }
 }

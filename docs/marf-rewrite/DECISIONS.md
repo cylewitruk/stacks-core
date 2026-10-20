@@ -81,14 +81,35 @@ same inputs. Proof *generation* is written against the new node model
 (`walk_segment`, `proof_node`, `make_backptr_shunt_proof`) and checked against
 recorded baseline proofs byte for byte.
 
-## ADR-10: Squash keeps collected nodes in memory
+## ADR-10: Pruning stages nodes on disk and streams the blob
 
-`squash_to_path` collects the reachable nodes into a `Vec<Node>`, remaps
-pointers, and reuses `Trie::seal`/`Trie::serialize` to hash and write the
-shared blob. The original spills nodes to a temporary file and reads headers
-in parallel. Spilling is a local change inside `squash.rs` if mainnet-sized
-tries need it; it was left out to keep the first version small and obviously
-correct (its output is validated against baseline fixtures).
+Superseded in part. The first version collected the reachable nodes into a
+`Vec<Node>` and reused `Trie::seal`/`Trie::serialize`, which is simple but
+holds the decoded trie and then the whole serialized blob in memory; the
+third review called that out as a capability lost against upstream, whose
+squash stages nodes in a temporary file (`squash/node_store.rs`) and streams
+the output (`squash/stream.rs`). `Prune::prune_to_path` now does the same:
+
+* Collection writes each node once into a temporary file beside the
+  destination, in the plain record encoding behind a 4-byte length
+  (`pruning::Staged`). A node's index is assigned when its parent is visited
+  (pre-order), so parents are written with child pointers already rewritten
+  to inline indices annotated with the child's archival block; there is no
+  remap pass, and the dedup index is dropped as soon as collection ends.
+* Hashing runs in reverse index order (children before parents) with one
+  node decoded at a time and a 32-byte hash per node kept in memory.
+* The blob is streamed into the blobs file children-first through a 1 MiB
+  buffer, so each pointer's target offset is known when the pointer is
+  written; the root goes last into a slot reserved for its widest encoding,
+  as upstream does, and the header is written with it. Any slack between the
+  root and the first descendant is unused bytes, which readers never see
+  (they follow offsets); upstream's squash blobs have the same slack.
+* In memory per node: a stage offset, a hash and a blob offset (48 bytes),
+  plus the dedup index while collecting. The temp file is about the size of
+  the output blob and is removed on drop.
+
+The in-memory `Trie::from_nodes`/`seal`/`serialize` path remains for
+ordinary commits, where a trie is one block's worth of nodes.
 
 ## ADR-11: The differential harness serializes runs
 
@@ -136,14 +157,16 @@ Reads are expressed over views that borrow their bytes: `codec::Record`
 operations exist on the views: `descend(key, depth)` compares the node's
 path and selects the child for the next key byte in a single pass over the
 slot list; `path`, `child`, `leaf_value`, `for_each_child` for the callers
-that need one of them. Plain-encoded `Node256` and `Node48` bodies are
-indexed directly (exact slot positions from the per-pointer wide flag, the
-`Node48` index array for the character); compressed bodies are skip-scanned
-(two bytes per slot) without decoding. Owned `Branch`/`Leaf`/`Node` values
-are produced only where the algorithm needs to own them: copy-on-write into
-the arena, proof nodes (the wire format), pruning. A `Cow`-style "maybe
-owned" type was rejected: the owned cases are few and explicit, and a blanket
-`Cow` would hide allocations in the read path. The hot decoding loops return
+that need one of them. Every encoding, plain `Node256`/`Node48` included,
+is skip-scanned: one pass reading two bytes per slot (the per-pointer wide
+flag decides each pointer's width, so slot positions are not computable
+without it); the `Node48` index array is validated on decode but not used
+for lookup. Owned `Branch`/`Leaf`/`Node` values are produced only where the
+algorithm needs to own them: copy-on-write into the arena, proof nodes (the
+wire format), pruning, and the resolution of a patch chain on a patch-cache
+miss (the resolved `Branch` is cached and borrowed afterwards). A
+`Cow`-style "maybe owned" type was rejected: the owned cases are few and
+explicit, and a blanket `Cow` would hide allocations in the read path. The hot decoding loops return
 a two-variant error (`Bad`) converted to `Error` at the public boundary,
 after profiling showed `Result<_, Error>` drop glue at 16% of lookup time.
 

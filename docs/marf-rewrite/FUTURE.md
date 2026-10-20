@@ -119,7 +119,11 @@ what the tooling publishes (§1, §2) and to fail closed on partial state;
 
 ## Not planned
 
-Pruning with a disk-backed node store and parallel header reads (reference
-`squash/node_store.rs`, `squash/stream.rs`): the rewrite's
-`Prune::prune_to_path` keeps nodes in memory (ADR-10); spilling is local to
-`pruning.rs` if mainnet-sized tries need it.
+Pruning already stages nodes on disk and streams the blob (ADR-10, matching
+upstream's `squash/node_store.rs` and `squash/stream.rs`). What the
+reference adds on top, parallel header pre-reads (`pre_read_blob_headers`)
+during collection, is local to `pruning.rs` if collection time on a
+mainnet-sized trie turns out to matter. A squash crate with its own source
+and destination traits, shared by both implementations and used by
+`contrib/marf-squash`, is the natural next refactor once the upstream crate
+may be touched.

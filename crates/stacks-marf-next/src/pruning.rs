@@ -11,16 +11,28 @@
 //! copy-on-write turns those annotations back into back-pointers, so the
 //! root hashes of new blocks match what the archival MARF would produce.
 //! Per-height archival root hashes and block ids live in `marf_squashed_blocks`.
+//!
+//! Memory: the collected nodes are staged in a temporary file beside the
+//! destination ([`Staged`]), and the output blob is streamed into the blobs
+//! file; what stays in memory is per-node bookkeeping (a file offset, a
+//! hash, a blob offset: 48 bytes a node, plus the dedup index while
+//! collecting), never the decoded trie or the serialized blob. The original
+//! does the same (`squash::node_store`, `squash::stream`).
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use stacks_common::types::chainstate::TrieHash;
 
+use crate::codec::{self, Decoded, HASH_LEN, MAX_NODE_LEN};
+use crate::hash::{branch_hash, leaf_hash, ChildHash, HashScratch};
 use crate::marf::{MARFOpenOpts, MarfConnection, TrieHashCalculationMode, MARF};
-use crate::node::{Node, Ptr, BACKPTR};
-use crate::trie::{Trie, ROOT_OFFSET};
+use crate::node::{id, Node, Ptr, BACKPTR};
+use crate::storage::{read_exact_at, write_all_at};
+use crate::trie::{HEADER_LEN, ROOT_OFFSET};
 use crate::{corrupt, Error, MarfTrieId};
 
 /// Metadata of a pruned MARF, cached at open time.
@@ -71,6 +83,137 @@ fn child_location(ptr: &Ptr, origin_block: u32) -> (u32, u64) {
     } else {
         (origin_block, ptr.ptr)
     }
+}
+
+
+/// Write buffer size for the stage file and the output blob.
+const STREAM_BUFFER: usize = 1 << 20;
+
+/// Nodes collected for pruning, staged in a temporary file. Each node is
+/// written once, in its plain record encoding (`codec::encode_node`, no
+/// hash) behind a 4-byte length, and read back by index; indices are handed
+/// out in discovery order, so a node's index is always greater than its
+/// parent's, and child pointers hold indices. The file is removed on drop.
+struct Staged {
+    path: PathBuf,
+    file: File,
+    /// Appended records not yet written to the file.
+    pending: Vec<u8>,
+    /// Bytes written to the file so far.
+    flushed: u64,
+    /// Start of each node's record in the file; `u64::MAX` until written.
+    offsets: Vec<u64>,
+    encode: Vec<u8>,
+    read: Vec<u8>,
+}
+
+impl Staged {
+    fn create(dir: &Path) -> Result<Staged, Error> {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = dir.join(format!(".prune_nodes_{}_{nanos}.tmp", std::process::id()));
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        Ok(Staged {
+            path,
+            file,
+            pending: Vec::with_capacity(STREAM_BUFFER + MAX_NODE_LEN + 4),
+            flushed: 0,
+            offsets: vec![],
+            encode: Vec::with_capacity(MAX_NODE_LEN),
+            read: Vec::with_capacity(MAX_NODE_LEN),
+        })
+    }
+
+    /// Hand out the next index (the node is written later).
+    fn reserve(&mut self) -> Result<u32, Error> {
+        let idx = u32::try_from(self.offsets.len()).map_err(|_| Error::OverflowError)?;
+        self.offsets.push(u64::MAX);
+        Ok(idx)
+    }
+
+    fn len(&self) -> u32 {
+        self.offsets.len() as u32
+    }
+
+    fn write(&mut self, idx: u32, node: &Node) -> Result<(), Error> {
+        self.encode.clear();
+        codec::encode_node(node, false, &mut self.encode);
+        let len = u32::try_from(self.encode.len()).map_err(|_| Error::OverflowError)?;
+        let slot = self
+            .offsets
+            .get_mut(idx as usize)
+            .ok_or_else(|| corrupt!("stage: index {idx} was never reserved"))?;
+        if *slot != u64::MAX {
+            return Err(corrupt!("stage: node {idx} written twice"));
+        }
+        *slot = self.flushed + self.pending.len() as u64;
+        self.pending.extend_from_slice(&len.to_le_bytes());
+        self.pending.extend_from_slice(&self.encode);
+        if self.pending.len() >= STREAM_BUFFER {
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), Error> {
+        if !self.pending.is_empty() {
+            write_all_at(&self.file, &self.pending, self.flushed)?;
+            self.flushed += self.pending.len() as u64;
+            self.pending.clear();
+        }
+        Ok(())
+    }
+
+    /// Read node `idx` back; call [`Staged::flush`] once collection is done.
+    fn read(&mut self, idx: u32) -> Result<Node, Error> {
+        let offset = *self
+            .offsets
+            .get(idx as usize)
+            .ok_or_else(|| corrupt!("stage: index {idx} out of range ({})", self.offsets.len()))?;
+        if offset == u64::MAX {
+            return Err(corrupt!("stage: node {idx} was never written"));
+        }
+        let mut len = [0u8; 4];
+        read_exact_at(&self.file, &mut len, offset)?;
+        let len = u32::from_le_bytes(len) as usize;
+        if len == 0 || len > MAX_NODE_LEN {
+            return Err(corrupt!("stage: node {idx} has record length {len}"));
+        }
+        self.read.resize(len, 0);
+        read_exact_at(&self.file, &mut self.read, offset + 4)?;
+        match codec::decode(&self.read, self.read[0])? {
+            (Decoded::Node(node), _) => Ok(node),
+            (Decoded::Patch(_), _) => Err(corrupt!("stage: node {idx} decoded as a patch")),
+        }
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+/// The stage index an inline child pointer of node `parent` refers to; the
+/// pre-order invariant (`parent < child < n`) is what lets hashing and
+/// serialization run in reverse index order, children before parents.
+fn inline_child(p: &Ptr, parent: u32, n: u32) -> Result<u32, Error> {
+    if p.is_back() {
+        return Err(corrupt!("squash trie has a back-pointer at node {parent}"));
+    }
+    let child = u32::try_from(p.ptr).map_err(|_| Error::OverflowError)?;
+    if child <= parent || child >= n {
+        return Err(corrupt!(
+            "node {parent}: child index {child} breaks the pre-order invariant (n = {n})"
+        ));
+    }
+    Ok(child)
 }
 
 impl<T: MarfTrieId> Prune<T> for MARF<T> {
@@ -169,54 +312,77 @@ impl<T: MarfTrieId> Prune<T> for MARF<T> {
         })?;
         info!("[{label}] squash: indexed {} heights", blocks.len());
 
-        // [2] collect every node reachable at the squash tip, in pre-order.
-        let (mut nodes, _origins) = src.with_conn(|v| {
+        // [2] collect every node reachable at the squash tip into the stage,
+        // pre-order. A child's index is assigned when its parent is visited,
+        // so parents are written with their child pointers already rewritten
+        // to inline indices annotated with the child's archival block, and no
+        // remap pass is needed.
+        let stage_dir = dst_db_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let mut stage = Staged::create(stage_dir)?;
+        src.with_conn(|v| {
             let tip_id = v.inner.store.block_id(v.db, &block_at_height)?;
-            let mut nodes: Vec<Node> = vec![];
-            let mut origins: Vec<u32> = vec![];
             let mut index: HashMap<(u32, u64), u32> = HashMap::new();
-            let mut stack: Vec<(u32, u64, u8)> =
-                vec![(tip_id, ROOT_OFFSET, crate::node::id::NODE256)];
-            while let Some((block, offset, kind)) = stack.pop() {
-                if index.contains_key(&(block, offset)) {
-                    continue;
-                }
-                let (node, _, _) =
+            let root_idx = stage.reserve()?;
+            index.insert((tip_id, ROOT_OFFSET), root_idx);
+            let mut stack: Vec<(u32, u64, u8, u32)> =
+                vec![(tip_id, ROOT_OFFSET, id::NODE256, root_idx)];
+            let mut discovered: Vec<(u32, u64, u8, u32)> = vec![];
+            while let Some((block, offset, kind, idx)) = stack.pop() {
+                let (mut node, _, _) =
                     v.inner
                         .store
                         .read_node(v.db, block, &Ptr::new(kind, 0, offset))?;
-                let idx = nodes.len() as u32;
-                index.insert((block, offset), idx);
-                if let Node::Branch(b) = &node {
-                    for child in b.children.iter().rev() {
-                        let (cb, co) = child_location(child, block);
-                        stack.push((cb, co, child.kind_id()));
-                    }
-                }
-                nodes.push(node);
-                origins.push(block);
-            }
-            // remap child pointers to arena indices; keep the origin block as annotation
-            for (i, node) in nodes.iter_mut().enumerate() {
-                let origin = origins[i];
-                if let Node::Branch(b) = node {
+                if let Node::Branch(b) = &mut node {
+                    discovered.clear();
                     for child in b.children.iter_mut() {
-                        let loc = child_location(child, origin);
-                        let idx = *index
-                            .get(&loc)
-                            .ok_or_else(|| corrupt!("remap: child {loc:?} not collected"))?;
-                        child.ptr = u64::from(idx);
+                        let loc = child_location(child, block);
+                        let child_idx = match index.entry(loc) {
+                            Entry::Occupied(e) => *e.get(),
+                            Entry::Vacant(e) => {
+                                let i = stage.reserve()?;
+                                e.insert(i);
+                                discovered.push((loc.0, loc.1, child.kind_id(), i));
+                                i
+                            }
+                        };
+                        child.ptr = u64::from(child_idx);
                         child.id &= !BACKPTR;
                         child.back_block = loc.0;
                     }
+                    // first child on top: pre-order, slot order
+                    stack.extend(discovered.iter().rev().copied());
                 }
+                stage.write(idx, &node)?;
             }
-            Ok::<_, Error>((nodes, origins))
+            Ok::<_, Error>(())
         })?;
-        let node_count = nodes.len() as u64;
+        stage.flush()?;
+        let n = stage.len();
+        let node_count = u64::from(n);
         info!("[{label}] squash: collected {node_count} nodes");
 
-        // [3] destination: placeholder rows in height order, then the tip.
+        // [3] hash, children before parents (reverse index order).
+        let mut hashes: Vec<TrieHash> = vec![TrieHash::ZERO; n as usize];
+        let mut scratch = HashScratch::default();
+        for idx in (0..n).rev() {
+            let node = stage.read(idx)?;
+            let hash = match &node {
+                Node::Leaf(leaf) => leaf_hash(leaf),
+                Node::Branch(b) => branch_hash::<Error>(
+                    b,
+                    |p| Ok(ChildHash::inline(hashes[inline_child(p, idx, n)? as usize])),
+                    &mut scratch,
+                )?,
+            };
+            hashes[idx as usize] = hash;
+        }
+        let prune_root_node_hash = hashes[0];
+        info!("[{label}] squash: hashed {node_count} nodes");
+
+        // [4] destination: placeholder rows in height order, then the tip.
         let dst_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
         let mut dst = MARF::<T>::from_path(&dst_db_path, dst_opts)?;
         dst.sqlite_conn()
@@ -254,25 +420,80 @@ impl<T: MarfTrieId> Prune<T> for MARF<T> {
             }
             drop(src);
 
-            // [4] rewrite annotations to destination ids, hash, serialize.
-            for node in nodes.iter_mut() {
+            // [5] stream the shared blob: nodes children-first, so every
+            // pointer's target offset is known when the pointer is written,
+            // then the root into a slot reserved for its widest encoding (the
+            // original's `stream_squash_blob` layout). Annotations become
+            // destination block ids on the way out.
+            let squashed = |archival: u32| -> Result<u32, Error> {
+                archival_to_squashed
+                    .get(&archival)
+                    .copied()
+                    .ok_or_else(|| corrupt!("block_id {archival} not in block_id_map"))
+            };
+            let remap = |node: &mut Node, idx: u32, offsets: &[u64]| -> Result<(), Error> {
                 if let Node::Branch(b) = node {
                     for child in b.children.iter_mut() {
-                        child.back_block =
-                            *archival_to_squashed.get(&child.back_block).ok_or_else(|| {
-                                corrupt!("block_id {} not in block_id_map", child.back_block)
-                            })?;
+                        let c = inline_child(child, idx, n)?;
+                        child.ptr = offsets[c as usize];
+                        child.back_block = squashed(child.back_block)?;
                     }
                 }
-            }
-            let mut trie = Trie::from_nodes(block_at_height.clone(), T::sentinel(), nodes)?;
-            let prune_root_node_hash =
-                trie.seal(|_| Err(corrupt!("squash trie has no back-pointers")))?;
-            trie.set_root_hash(prune_root_node_hash);
-            let blob = trie.serialize(false, |_, _, _| Ok(None))?;
-            drop(trie);
+                Ok(())
+            };
+            let blob_len = {
+                let v = tx.view();
+                v.inner.store.write_shared_blob_with(v.db, |blobs, base| {
+                    let mut root = stage.read(0)?;
+                    let widest = |p: &Ptr| -> Ptr {
+                        if p.is_back() {
+                            *p
+                        } else {
+                            Ptr { ptr: u64::MAX, ..*p }
+                        }
+                    };
+                    let reserved = codec::node_len_mapped(&root, false, &widest) as u64;
+                    let mut offsets: Vec<u64> = vec![0; n as usize];
+                    let mut out: Vec<u8> = Vec::with_capacity(STREAM_BUFFER + MAX_NODE_LEN + HASH_LEN);
+                    let mut flushed = ROOT_OFFSET + HASH_LEN as u64 + reserved;
+                    let mut pos = flushed;
+                    for idx in (1..n).rev() {
+                        let mut node = stage.read(idx)?;
+                        remap(&mut node, idx, &offsets)?;
+                        offsets[idx as usize] = pos;
+                        out.extend_from_slice(hashes[idx as usize].as_bytes());
+                        codec::encode_node(&node, false, &mut out);
+                        pos = flushed + out.len() as u64;
+                        if out.len() >= STREAM_BUFFER {
+                            blobs.write_at_unsynced(base + flushed, &out)?;
+                            flushed = pos;
+                            out.clear();
+                        }
+                    }
+                    if !out.is_empty() {
+                        blobs.write_at_unsynced(base + flushed, &out)?;
+                        out.clear();
+                    }
+                    // header and root
+                    remap(&mut root, 0, &offsets)?;
+                    out.extend_from_slice(T::sentinel().as_bytes());
+                    out.extend_from_slice(&0u32.to_le_bytes());
+                    debug_assert_eq!(out.len(), HEADER_LEN);
+                    out.extend_from_slice(hashes[0].as_bytes());
+                    codec::encode_node(&root, false, &mut out);
+                    if out.len() as u64 > ROOT_OFFSET + HASH_LEN as u64 + reserved {
+                        return Err(corrupt!(
+                            "squash root needs {} bytes, {reserved} reserved",
+                            out.len() as u64 - ROOT_OFFSET - HASH_LEN as u64
+                        ));
+                    }
+                    blobs.write_at_unsynced(base, &out)?;
+                    Ok(pos)
+                })?
+            };
+            drop(stage);
 
-            // [5] persist the shared blob and the side tables.
+            // [6] the side tables.
             let source_root_hash = blocks
                 .iter()
                 .find(|(_, b, _)| *b == block_at_height)
@@ -280,7 +501,6 @@ impl<T: MarfTrieId> Prune<T> for MARF<T> {
                 .ok_or(Error::NotFoundError)?;
             {
                 let v = tx.view();
-                v.inner.store.write_shared_blob(v.db, &blob)?;
                 v.inner.store.write_prune_metadata(
                     v.db,
                     &source_root_hash,
@@ -293,7 +513,7 @@ impl<T: MarfTrieId> Prune<T> for MARF<T> {
             (
                 historical,
                 prune_root_node_hash,
-                blob.len(),
+                blob_len,
                 source_root_hash,
             )
         };
