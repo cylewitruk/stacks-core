@@ -4,6 +4,8 @@ members = [
     "stackslib",
     "stacks-common",
     "stacks-marf",
+    "crates/stacks-marf-next",
+    "contrib/marf-differential",
     "stacks-codec",
     "crates/stacks-transactions",
     "pox-locking",
