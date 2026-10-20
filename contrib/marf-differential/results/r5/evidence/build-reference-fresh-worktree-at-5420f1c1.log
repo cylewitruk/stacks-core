@@ -1,0 +1,70 @@
+tree rev 5420f1c184470e37011c916a6280d968100f229f (5420f1c184); reference 29ef093da5dd58c1fa484624d94a9d972356c629; rustc 1.98.0 (88d9e12ae 2026-08-18)
+Preparing worktree (detached HEAD 29ef093da5)
+HEAD is now at 29ef093da5 Merge upstream/main into perf/optimized-stacks-bench-integration
+patching file contrib/marf-differential/Cargo.toml
+patching file contrib/marf-differential/src/alloc.rs
+patching file contrib/marf-differential/src/baseline.rs
+warning: use of deprecated method `tempfile::TempDir::into_path`: use TempDir::keep()
+  --> contrib/marf-differential/src/bench.rs:82:24
+   |
+82 |         let path = dir.into_path();
+   |                        ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: `marf-differential` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 4m 08s
+warning: use of deprecated method `tempfile::TempDir::into_path`: use TempDir::keep()
+  --> contrib/marf-differential/src/bench.rs:82:24
+   |
+82 |         let path = dir.into_path();
+   |                        ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: `marf-differential` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.30s
+warning: use of deprecated method `tempfile::TempDir::into_path`: use TempDir::keep()
+  --> contrib/marf-differential/src/bench.rs:82:24
+   |
+82 |         let path = dir.into_path();
+   |                        ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: `marf-differential` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 2m 00s
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+warning: use of deprecated method `tempfile::TempDir::into_path`: use TempDir::keep()
+  --> contrib/marf-differential/src/bench.rs:82:24
+   |
+82 |         let path = dir.into_path();
+   |                        ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: `marf-differential` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 58s
+warning: use of deprecated method `tempfile::TempDir::into_path`: use TempDir::keep()
+  --> contrib/marf-differential/src/bench.rs:82:24
+   |
+82 |         let path = dir.into_path();
+   |                        ^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: `marf-differential` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 55s
+built 2026-10-20T19:04:34Z
+tree_rev 5420f1c184470e37011c916a6280d968100f229f 5420f1c184-dirty
+reference_rev 29ef093da5dd58c1fa484624d94a9d972356c629
+toolchain rustc 1.98.0 (88d9e12ae 2026-08-18)
+overlay harness.patch sha256 c888fe9bfa2e36b5ccb378d7c5dcdacb79354b16c22e9044781446918d90ea03
+overlay reference.patch sha256 c76fdf3523c78adaed5c50dc2933393a89e6ca2f3a728529e7ee54ac1090b0ec
+binary marf-differential-reference sha256 b46858c41a70f800f4cdb90ea0bdd815f2372a6ceae4a548cfa8f7827dd950b2
+binary marf-differential-reference-counters sha256 e0a086fa54854a4ee18ceb573fa22b8cf8c4539b80c6009df1ba99eee61a7a5c
+binary marf-differential-reference-lateprobe sha256 a88e60bccbc0450122ecf1915462cdee1a6bffecd9ba502711df29f6cd85e68c
+binary marf-differential-reference-lateprobe-counters sha256 f9876dffc2da75e07605f59d867269af7ccec0682070cc82ab509c597baf3e88
+EXIT=0
