@@ -1,0 +1,308 @@
+{
+  "harness": "clarity-bench",
+  "experiment": "clarity",
+  "variant": "stacks-marf package of this workspace: external_blobs=true compress=true (rewrite: mmap always, patch cache 4096; upstream: no caches)",
+  "tree_rev": "d6fd444c54baabf6cb937493f452efce1ff3b89d",
+  "binary_sha256": "0f9f2caad47f2f813cc84b660ffb5a2a3aa4220d7a5fa342e5ce4c7cac63dead",
+  "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "profile": "release",
+  "repeat": 1,
+  "blocks": 10,
+  "keys": 20000,
+  "started": "",
+  "populate_ns": [
+    1397804490
+  ],
+  "workloads": {
+    "abort": {
+      "first_exec": [
+        {
+          "secs": 0,
+          "nanos": 7947497
+        }
+      ],
+      "rest_exec": [
+        {
+          "secs": 0,
+          "nanos": 34288690
+        }
+      ],
+      "rest_seal": [
+        {
+          "secs": 0,
+          "nanos": 2243277
+        }
+      ],
+      "rest_commit": [
+        {
+          "secs": 0,
+          "nanos": 5473597
+        }
+      ],
+      "rest_total": [
+        {
+          "secs": 0,
+          "nanos": 42005564
+        }
+      ],
+      "rest_harness": [
+        {
+          "secs": 0,
+          "nanos": 141594
+        }
+      ],
+      "txs": 160,
+      "blocks": 4,
+      "cost": {
+        "write_length": 5000,
+        "write_count": 100,
+        "read_length": 178200,
+        "read_count": 800,
+        "runtime": 283300000
+      },
+      "roots": [
+        "77386ae6e0c18ee181aaf2cf81a949128797bfdf49a616ba456c34a5e63921bc",
+        "6602c3accf1d616ad701d211ff6686b25bce96836900037951c71f458bdcc5b5",
+        "cc8b903257b98cf254ab0a1fa1a008386d0ddbbe1071fc438f983618d2eef52a",
+        "25e97ebf2105867d5d07c49d2c4210cf4f1489b33cc0b85d72f0f138aa144a23",
+        "420724d1fa4e0da710e7cc57637d5fa460329e7c26d93478e8b271b847186f1d"
+      ],
+      "values_digest": "f4f8935c256ef973"
+    },
+    "inherited-after-history": {
+      "first_exec": [
+        {
+          "secs": 0,
+          "nanos": 35130883
+        }
+      ],
+      "rest_exec": [
+        {
+          "secs": 0,
+          "nanos": 159600164
+        }
+      ],
+      "rest_seal": [
+        {
+          "secs": 0,
+          "nanos": 1652137
+        }
+      ],
+      "rest_commit": [
+        {
+          "secs": 0,
+          "nanos": 5347461
+        }
+      ],
+      "rest_total": [
+        {
+          "secs": 0,
+          "nanos": 166599762
+        }
+      ],
+      "rest_harness": [
+        {
+          "secs": 0,
+          "nanos": 3110970
+        }
+      ],
+      "txs": 120,
+      "blocks": 4,
+      "cost": {
+        "write_length": 0,
+        "write_count": 0,
+        "read_length": 504900,
+        "read_count": 7950,
+        "runtime": 1640550000
+      },
+      "roots": [
+        "800af72fa3df14f7dc9790b905ce844827b5e1343ee007f74211cc3549262f21",
+        "1d727b32903cc41aec259105ec0b3fd9520bbd19aa03dd1d893867d46d0e49b8",
+        "71eb97dded211a40c371cf07a5063a4fe67a7d079ea371faf81446937e001c0c",
+        "23f6b14efc16c4354a7c3758187fb57d7076a943850ad8275a30f5d2cf097404",
+        "d52dfdc7ede4ca3e347f5090d5bb5184f73916fce02355c8a3cb184ea686b6a4"
+      ],
+      "values_digest": "ac9a07fbb226499b"
+    },
+    "mixed": {
+      "first_exec": [
+        {
+          "secs": 0,
+          "nanos": 28770843
+        }
+      ],
+      "rest_exec": [
+        {
+          "secs": 0,
+          "nanos": 276583785
+        }
+      ],
+      "rest_seal": [
+        {
+          "secs": 0,
+          "nanos": 26697956
+        }
+      ],
+      "rest_commit": [
+        {
+          "secs": 0,
+          "nanos": 18924686
+        }
+      ],
+      "rest_total": [
+        {
+          "secs": 0,
+          "nanos": 322206427
+        }
+      ],
+      "rest_harness": [
+        {
+          "secs": 0,
+          "nanos": 4974286
+        }
+      ],
+      "txs": 270,
+      "blocks": 9,
+      "cost": {
+        "write_length": 251800,
+        "write_count": 5100,
+        "read_length": 603400,
+        "read_count": 16200,
+        "runtime": 2171900000
+      },
+      "roots": [
+        "89c58920b789ecb791fef41b5a0cea74bce2c6390f34c4476de76fc3c76d065c",
+        "fcf3aadea577e78f4dce1437aa921088c56043d83e1a1e165a66732719a15669",
+        "7f0d2e74714716d98cf20fe63ac9f46792ed79c3def9b2608799b681f0ef235a",
+        "e5c3ace8b7fe78b4ab98ac42e163c87c613bd495aacc123a760a4c3f057375e7",
+        "894b86188f25ba423b839772b7552f8cb9ac3b38ac8df1e7889f186661e6d591",
+        "fa6b4099e5569dbd69ade105ac337ea9a3805ca7dbdee994d62647b9a5367fae",
+        "8b86ffed4cafa0ac23bd8022b81739755484bf0ec5b218e9ca12a30a7e8a3ca4",
+        "76caec806dff2bd7126d805553996840ac12d67611df00d83032f190352529c3",
+        "9ebc43e32aa68c59c00ea4b3e4dec1a6fd0172901cc6885506b6fc781bf7dad6",
+        "a5fdcceaf24ecd7b62211965bb06d33e4ca584e70703ad7f6529545bf6d4aee2"
+      ],
+      "values_digest": "f0e7e5bdd83ea93b"
+    },
+    "read-heavy": {
+      "first_exec": [
+        {
+          "secs": 0,
+          "nanos": 33977388
+        }
+      ],
+      "rest_exec": [
+        {
+          "secs": 0,
+          "nanos": 303831852
+        }
+      ],
+      "rest_seal": [
+        {
+          "secs": 0,
+          "nanos": 3310446
+        }
+      ],
+      "rest_commit": [
+        {
+          "secs": 0,
+          "nanos": 11146198
+        }
+      ],
+      "rest_total": [
+        {
+          "secs": 0,
+          "nanos": 318288496
+        }
+      ],
+      "rest_harness": [
+        {
+          "secs": 0,
+          "nanos": 6001030
+        }
+      ],
+      "txs": 270,
+      "blocks": 9,
+      "cost": {
+        "write_length": 0,
+        "write_count": 0,
+        "read_length": 1009800,
+        "read_count": 15900,
+        "runtime": 3281100000
+      },
+      "roots": [
+        "3cc4ec6f61ee554250893efe5cb4335668c8abc4eaa11752f9a22ef6706f877c",
+        "dad0ce03c5091d0656d0502a454f820d0034a68979d6f7c8a7850d4c797efb6a",
+        "1908af3d6e2c95d2e24059acaea049507c2af54859db501176cd77af8a217724",
+        "113df3e436c27488724cea7b4740325a624f537c152d65d3fe4d2bed48c5b4e7",
+        "49f76e422a2e980b03b60fc45e06d8f95a11814eaa426307bc30f2d2aa413745",
+        "2522833e7c3a9f0772506abfbf80367c61bbda90fbc322c018bfc2040eb4611c",
+        "ffbdd3c4a5c47e93b3f6776e2389f0691669f5f137d87071ef8bf9172a9387cc",
+        "672c1bb488b157e14177b55912324d46af9186004551c1c73340f4b847fccb13",
+        "16599e10da196d249ee85e21c23d4a2f3afad5bac77cf9c9b8105220116c7324",
+        "f8ccaa4bc5ddc69fdda0b4f4927a79031249f6b1acc39228d3de42ac751f0880"
+      ],
+      "values_digest": "c8338937b2d7c054"
+    },
+    "write-heavy": {
+      "first_exec": [
+        {
+          "secs": 0,
+          "nanos": 47394603
+        }
+      ],
+      "rest_exec": [
+        {
+          "secs": 0,
+          "nanos": 498109795
+        }
+      ],
+      "rest_seal": [
+        {
+          "secs": 0,
+          "nanos": 138485148
+        }
+      ],
+      "rest_commit": [
+        {
+          "secs": 0,
+          "nanos": 347626892
+        }
+      ],
+      "rest_total": [
+        {
+          "secs": 0,
+          "nanos": 984221835
+        }
+      ],
+      "rest_harness": [
+        {
+          "secs": 0,
+          "nanos": 8944375
+        }
+      ],
+      "txs": 189,
+      "blocks": 9,
+      "cost": {
+        "write_length": 500180,
+        "write_count": 10010,
+        "read_length": 861860,
+        "read_count": 30640,
+        "runtime": 3669430000
+      },
+      "roots": [
+        "10e39a8c0f8fd4d07756c3e904a69225beaddddc886306679c411821704460e6",
+        "1f05f02cd334a2832d0075adb7dbc05138e834a31e6276cc1066cd78f440b7dd",
+        "783353801e2c6f524b5a0228ac8c39b408c66044bb383c9e1949ba3b37133b1a",
+        "840f471709dca30fbf7e4f375aaeb1df094331f064348694d90d2302ba297d83",
+        "5572b4e5c4d34944d50a05fab8397fddfad75157a37bf2e321656dbd5662069c",
+        "735f68fafebb7b62118b805d77eb0d0bbe43ae01106e5201bff6171d0b0da90d",
+        "511e0828c93e20808e377da739f7fad02b3bfc2494080399ee93e053768b41b8",
+        "2344b74b72605605027e105aa65996d795099a8d4368b385fc504165f5315f7c",
+        "b6101cbd0190dec7897284b841144d7e05d23cd529c434b5e300d585dcf3bbc3",
+        "1e777387254fb038a2993ec13c1460de863c86f590cdf3998760e29b4c85c608"
+      ],
+      "values_digest": "b2bbf6c653504624"
+    }
+  }
+}

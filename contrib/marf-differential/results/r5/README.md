@@ -18,7 +18,11 @@ diagnostic build; `-counters` files from the counter binaries never feed a
 timing table. `CHECK.txt` is the output of `scripts/tables.py check` over
 this directory (cross-provider digests, roots and costs). Tables in
 `docs/marf-rewrite/PERF.md` are generated from these files by
-`scripts/tables.py ablate|construct|clarity`.
+`scripts/tables.py ablate|construct|clarity`; `TABLES-*.md` are that
+script's complete outputs over this directory (including every counter
+table), committed for reading without running it. The Clarity runs
+(`clarity-*.json/.log`) are in this directory too, written by the same
+batch script.
 
 Subdirectories:
 

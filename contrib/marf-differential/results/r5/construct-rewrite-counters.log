@@ -1,0 +1,56 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=true, repeat=1
+construction workload: 20 blocks x 2000 inserts base chain, 5000 reads per read phase, external=true compress=true result_cache=None
+impl next: rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+final roots: child=05963d25b7d19184cab31e3f9fcde64a6ee276d727091c0a61ead4f650be31bd rollback-rebuilt=a9acf74af85d68899fa90377e6d5f0200250823d3adbd085f7a0d14086007f84
+
+phase                                     kind      ops | median us/op       min-max us/op    median ms
+begin                                    write        1 |       648.32       648.32-648.32        0.648
+inherited hot64 (cycled)                  read     4992 |         1.39           1.39-1.39        6.949
+inherited wide (distinct once)            read     5000 |         3.97           3.97-3.97       19.840
+insert 500 new                           write      500 |         3.06           3.06-3.06        1.532
+inserted hot64 (cycled)                   read     4992 |         0.61           0.61-0.61        3.045
+inserted all 500 (x10)                    read     5000 |         1.06           1.06-1.06        5.310
+update 200 inherited                     write      200 |         3.80           3.80-3.80        0.760
+updated 200 (x25)                         read     5000 |         0.94           0.94-0.94        4.703
+misses 500 (x10)                          read     5000 |         1.14           1.14-1.14        5.711
+insert the 500 missed                    write      500 |         1.48           1.48-1.48        0.738
+formerly missed 500 (x10)                 read     5000 |         0.94           0.94-0.94        4.683
+successive updates x100: writes          write      100 |         9.42           9.42-9.42        0.942
+successive updates x100: reads            read      100 |         0.87           0.87-0.87        0.087
+ancestor reads: parent tip 2000           read     2000 |         2.90           2.90-2.90        5.795
+ancestor reads: block-10 tip 2000         read     2000 |         2.86           2.86-2.86        5.721
+inherited hot64 after ancestor reads      read     4992 |         1.19           1.19-1.19        5.940
+seal                                     write        1 |     23971.06   23971.06-23971.06       23.971
+commit                                   write        1 |      6261.35     6261.35-6261.35        6.261
+whole construction (begin..commit)       total        1 |    115038.76 115038.76-115038.76      115.039
+after commit: updated 200                 read      200 |        11.09         11.09-11.09        2.219
+rollback: reads before drop               read      500 |         1.20           1.20-1.20        0.599
+rollback: begin+insert+drop              write      500 |         8.03           8.03-8.03        4.015
+rebuilt after rollback: reads             read      500 |         4.67           4.67-4.67        2.336
+sum of medians: reads 72.939 ms, writes 38.868 ms (whole construction above includes both)
+
+counters per phase (first repetition):
+  begin                                    node_visits=4 record_reads=50 patch_cache_probes=17 patch_cache_hits=3 patch_cache_probe_miss_plain=7 patch_cache_admissions=7 patch_resolutions=7 patch_applications=22 owned_materializations=20 location_sql=1 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=3743
+  inherited hot64 (cycled)                 node_visits=17082 backptr_follows=10296 record_reads=14006 patch_cache_probes=12090 patch_cache_hits=5166 patch_cache_probe_miss_plain=6864 patch_cache_admissions=60 patch_resolutions=60 patch_applications=158 owned_materializations=60 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=3803
+  inherited wide (distinct once)           node_visits=17320 backptr_follows=9931 record_reads=17327 patch_cache_probes=12236 patch_cache_hits=4417 patch_cache_probe_miss_plain=6877 patch_cache_admissions=942 patch_cache_clears=1 patch_resolutions=942 patch_applications=1689 owned_materializations=942 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=649
+  insert 500 new                           record_reads=474 patch_cache_probes=439 patch_cache_hits=207 patch_cache_probe_miss_plain=223 patch_cache_admissions=9 patch_resolutions=9 patch_applications=10 owned_materializations=448 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=658
+  inserted hot64 (cycled)                  node_visits=16770 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=658
+  inserted all 500 (x10)                   node_visits=17330 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=658
+  update 200 inherited                     record_reads=615 patch_cache_probes=325 patch_cache_hits=28 patch_cache_probe_miss_plain=279 patch_cache_admissions=18 patch_resolutions=18 patch_applications=21 owned_materializations=343 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=676
+  updated 200 (x25)                        node_visits=17725 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=676
+  misses 500 (x10)                         node_visits=12390 backptr_follows=2610 record_reads=4504 patch_cache_probes=2610 patch_cache_hits=362 patch_cache_probe_miss_plain=2240 patch_cache_admissions=8 patch_resolutions=8 patch_applications=8 owned_materializations=8 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=684
+  insert the 500 missed                    record_reads=444 patch_cache_probes=248 patch_cache_hits=26 patch_cache_probe_miss_plain=222 owned_materializations=248 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=684
+  formerly missed 500 (x10)                node_visits=17430 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=684
+  successive updates x100: writes          node_visits=300 record_reads=2 patch_cache_probes=1 patch_cache_probe_miss_plain=1 owned_materializations=1 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=684
+  successive updates x100: reads           (no counters in this build)
+  ancestor reads: parent tip 2000          node_visits=6921 backptr_follows=2033 record_reads=5884 patch_cache_probes=6921 patch_cache_hits=4057 patch_cache_probe_miss_plain=2734 patch_cache_admissions=130 patch_resolutions=130 patch_applications=156 owned_materializations=130 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=814
+  ancestor reads: block-10 tip 2000        node_visits=6509 backptr_follows=2002 record_reads=6241 patch_cache_probes=6509 patch_cache_hits=3727 patch_cache_probe_miss_plain=2495 patch_cache_admissions=287 patch_resolutions=287 patch_applications=677 owned_materializations=287 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=1101
+  inherited hot64 after ancestor reads     node_visits=17082 backptr_follows=5226 record_reads=13110 patch_cache_probes=6942 patch_cache_hits=388 patch_cache_probe_miss_plain=6552 patch_cache_admissions=2 patch_resolutions=2 patch_applications=2 owned_materializations=2 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=1103
+  seal                                     node_visits=38 backptr_follows=4 record_reads=13 patch_cache_probes=6 patch_cache_probe_miss_plain=5 patch_cache_admissions=1 patch_resolutions=1 patch_applications=1 owned_materializations=1 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=1104
+  commit                                   record_reads=368 patch_cache_probes=437 patch_cache_hits=253 patch_cache_probe_miss_plain=184 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=1104
+  whole construction (begin..commit)       (no counters in this build)
+  after commit: updated 200                node_visits=710 record_reads=1847 patch_cache_probes=710 patch_cache_hits=45 patch_cache_probe_miss_plain=439 patch_cache_admissions=226 patch_resolutions=226 patch_applications=517 owned_materializations=226 location_sql=19 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=226
+  rollback: reads before drop              node_visits=1727 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=322
+  rollback: begin+insert+drop              (no counters in this build)
+  rebuilt after rollback: reads            node_visits=1727 record_reads=2596 patch_cache_probes=1727 patch_cache_hits=686 patch_cache_probe_miss_plain=828 patch_cache_admissions=213 patch_resolutions=213 patch_applications=514 owned_materializations=213 location_sql=1 result_cache_hits=n/a result_cache_misses=n/a result_cache_invalidations=n/a cache_occupancy=536
+[json] wrote contrib/marf-differential/results/r5/construct-rewrite-counters.json

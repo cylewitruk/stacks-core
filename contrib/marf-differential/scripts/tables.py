@@ -66,48 +66,61 @@ def ablate(d):
             e["cold"].append(c["cold_ns"] / 1000.0 / c["n_keys"])
             e["warm"].extend(x / 1000.0 / c["n_keys"] for x in c["warm_ns"])
             e["meta"] = c
+            e["passes"] = r["passes"]
             e["occ"].append(c["occupancy_exit"])
     groups = defaultdict(dict)
     for key, e in cells.items():
         groups[key[:4]][key[4:]] = e
+    tag_order = ["rewrite", "reference", "reference-lateprobe", "upstream"]
     for (wl, plain, mode, pc), cs in sorted(groups.items()):
         print(f"\n### workload `{wl}`, {'plain' if plain else 'compressed'}, mode {mode}, {'page-cold' if pc else 'process-cold'}\n")
-        tags = sorted({k[0] for k in cs})
-        caps = sorted({k[2] for k in cs}, key=lambda x: (x != "None", int(x) if x not in ("None",) else 10**9))
+        n = sorted({len(e["cold"]) for e in cs.values()})
+        print(f"Per cell: first-pass (cold) median / warmed median (warmed min-max) in µs per lookup; "
+              f"{'-'.join(str(x) for x in n)} repetitions x {next(iter(cs.values()))['passes']} warm passes.\n")
+        cols = sorted({(k[0], k[2]) for k in cs},
+                      key=lambda x: (tag_order.index(x[0]) if x[0] in tag_order else 99, x[1] != "None", int(x[1]) if x[1] != "None" else 10**9))
         sets = []
         for k in cs:
             if k[1] not in sets:
                 sets.append(k[1])
-        hdr = "| set | n keys | distinct patched nodes | " + " | ".join(f"{t} cap {c if c != 'None' else 'prod'} cold / warm µs (occ)" for t in tags for c in caps) + " |"
+        hdr = "| set | n keys | distinct patched nodes | " + " | ".join(f"{t} cap {c if c != 'None' else 'prod'}" for t, c in cols) + " |"
         print(hdr)
-        print("|" + "---|" * (3 + len(tags) * len(caps)))
+        print("|" + "---|" * (3 + len(cols)))
         for st in sets:
             m = next(e["meta"] for k, e in cs.items() if k[1] == st)
             row = f"| {st} | {m['n_keys']:,} | {m['distinct_patched_nodes']:,} | "
             vals = []
-            for t in tags:
-                for c in caps:
-                    e = cs.get((t, st, c))
-                    if not e:
-                        vals.append("-")
-                        continue
-                    occ = e["occ"][0]
-                    vals.append(f"{med(e['cold']):.1f} / {med(e['warm']):.1f} ({'n/a' if occ is None else occ}; n={len(e['cold'])})")
+            for t, c in cols:
+                e = cs.get((t, st, c))
+                if not e:
+                    vals.append("-")
+                    continue
+                vals.append(f"{med(e['cold']):.1f} / {med(e['warm']):.1f} ({min(e['warm']):.1f}-{max(e['warm']):.1f})")
             print(row + " | ".join(vals) + " |")
     if counters:
-        print("\n### counters (first repetition of each counter run; warm = all warm passes)\n")
-        print("| run | set | capacity | probes | hits | plain misses | admissions | resolutions | applications | materializations | occupancy entry/exit |")
-        print("|---|---|---|---|---|---|---|---|---|---|---|")
+        def g(w, k):
+            v = w.get(k)
+            return "n/a" if v is None else f"{v:,}"
+        def occ(v):
+            return "n/a" if v is None else f"{v:,}"
         for r in counters:
             tag = r["_tag"]
+            m0 = r["cells"][0] if r["cells"] else None
+            if m0 is None:
+                continue
+            print(f"\n### counters: {tag}, workload `{m0['workload']}`, {'plain' if m0['plain'] else 'compressed'}, mode {m0['mode']} (`{r['_file']}`)\n")
+            print("Cold = the first pass of the cell; warm = all warm passes of the cell together. "
+                  "Occupancy = entries retained in the patch cache at cell entry / after the cold pass / at cell exit; "
+                  "n/a = the provider has no equivalent counter.\n")
+            print("| set | capacity | pass | node visits | probes | hits | plain misses | admissions | clears | resolutions | applications | materializations | record reads | occupancy entry / after cold / exit | preceding sets |")
+            print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             for c in r["cells"]:
                 if c["repetition"] != 0:
                     continue
-                w = c["counters_warm"]
-                def g(k):
-                    v = w.get(k)
-                    return "n/a" if v is None else f"{v:,}"
-                print(f"| {tag} {c['workload']} {c['mode']} | {c['set']} | {c['capacity'] if c['capacity'] is not None else 'prod'} | {g('patch_cache_probes')} | {g('patch_cache_hits')} | {g('patch_cache_probe_miss_plain')} | {g('patch_cache_admissions')} | {g('patch_resolutions')} | {g('patch_applications')} | {g('owned_materializations')} | {c['occupancy_entry']}/{c['occupancy_exit']} |")
+                cap = c["capacity"] if c["capacity"] is not None else "prod"
+                pre = ", ".join(c.get("preceding_sets") or []) or "-"
+                for label, w in (("cold", c["counters_cold"]), ("warm", c["counters_warm"])):
+                    print(f"| {c['set']} | {cap} | {label} | {g(w,'node_visits')} | {g(w,'patch_cache_probes')} | {g(w,'patch_cache_hits')} | {g(w,'patch_cache_probe_miss_plain')} | {g(w,'patch_cache_admissions')} | {g(w,'patch_cache_clears')} | {g(w,'patch_resolutions')} | {g(w,'patch_applications')} | {g(w,'owned_materializations')} | {g(w,'record_reads')} | {occ(c['occupancy_entry'])} / {occ(c['occupancy_after_cold'])} / {occ(c['occupancy_exit'])} | {pre} |")
 
 
 def construct(d, check_only=False):
