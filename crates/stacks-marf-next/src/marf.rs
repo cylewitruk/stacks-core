@@ -313,6 +313,9 @@ impl<'a> NodeView<'a> {
 #[cfg(any(test, feature = "testing"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WalkProfile {
+    /// Locations `(block_id, offset)` of the patched records met, in walk
+    /// order (the resolved-patch cache's keys); at most 8 are kept.
+    pub patched_sites: [(u32, u64); 8],
     /// Records read, root and leaf included.
     pub nodes: u32,
     /// Back-pointers followed (each one moves the walk to an older block).
@@ -545,10 +548,18 @@ impl<'a, T: MarfTrieId> View<'a, T> {
             if ptr.is_back() {
                 profile.backptr_hops += 1;
             }
+            let location = match (site, ptr.is_back()) {
+                (_, true) => Some((ptr.back_block, ptr.ptr)),
+                (Site::Block(id), false) => Some((id, ptr.ptr)),
+                (Site::Mem, false) => None,
+            };
             let (next_site, node, patch_depth) = self.read_with_depth(site, &ptr)?;
             site = next_site;
             profile.nodes += 1;
             if patch_depth > 0 {
+                if let (Some(loc), true) = (location, (profile.patched_nodes as usize) < 8) {
+                    profile.patched_sites[profile.patched_nodes as usize] = loc;
+                }
                 profile.patched_nodes += 1;
                 profile.max_patch_depth = profile.max_patch_depth.max(patch_depth);
             }
