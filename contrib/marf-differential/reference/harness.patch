@@ -1,0 +1,109 @@
+--- a/contrib/marf-differential/Cargo.toml
++++ b/contrib/marf-differential/Cargo.toml
+@@ -24,7 +24,7 @@
+ alloc-count = []
+ # Read-path operation counters in the implementations (separate build from
+ # timing runs).
+-counters = ["stacks-marf-next/counters"]
++counters = ["stacks-marf-next/counters", "stacks-marf/marf-read-bench-counters"]
+ 
+ [[bin]]
+ name = "marf-differential"
+--- a/contrib/marf-differential/src/alloc.rs
++++ b/contrib/marf-differential/src/alloc.rs
+@@ -182,26 +182,61 @@
+ 
+ pub struct Baseline(stacks_marf::MARF<StacksBlockId>);
+ 
+-/// Upstream's open options for `opts`. (The reference overlay replaces this
+-/// to set its mmap, root-cache, patch-cache and result-cache options.)
++/// The optimization reference's open options for `opts`: its production
++/// settings (`Config::get_marf_opts` on the reference branch: mmap on, root
++/// node cache off, resolved-patch cache 64, result cache 2,048) unless an
++/// experiment asks for other capacities. (Reference overlay of the upstream
++/// function.)
+ fn baseline_open_opts(opts: &Opts) -> stacks_marf::MARFOpenOpts {
+     use stacks_marf::storage::TrieHashCalculationMode;
+-    stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
++    let mut o = stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
+         .with_compression(opts.compress)
++        .with_mmap(true);
++    o.root_node_cache = false;
++    o.resolved_patch_cache_capacity = opts.patch_cache_capacity.unwrap_or(64);
++    o.result_cache_capacity = opts.result_cache_capacity.unwrap_or(2048);
++    o
+ }
+ 
+ fn baseline_describe(opts: &Opts) -> String {
++    let o = baseline_open_opts(opts);
+     format!(
+-        "upstream stacks-marf: external={} compress={} (no mmap, no caches; requested patch_cache={:?} result_cache={:?} not applicable)",
+-        opts.external, opts.compress, opts.patch_cache_capacity, opts.result_cache_capacity
++        "reference stacks-marf (29ef093d): external={} compress={} mmap={} root_node_cache={} resolved_patch_cache={} result_cache={}",
++        o.external_blobs, o.compress, o.mmap, o.root_node_cache, o.resolved_patch_cache_capacity, o.result_cache_capacity
+     )
+ }
+ 
+-/// Upstream has no read counters.
++/// The reference's `read_bench` counters (its `marf-read-bench-counters`
++/// feature, switched on by this harness's `counters` feature), plus the
++/// result-cache counters the overlay adds.
++#[cfg(not(feature = "counters"))]
+ fn baseline_counters() -> Counters {
+     Counters::default()
+ }
+ 
++#[cfg(feature = "counters")]
++fn baseline_counters() -> Counters {
++    let c = stacks_marf::read_bench::take();
++    Counters {
++        available: true,
++        node_visits: c.cursor_steps,
++        backptr_follows: c.backpointer_follows,
++        record_reads: c.resolved_item_reads + c.mmap_node_returns,
++        patch_cache_lookups: c.resolved_patch_cache_hits + c.resolved_patch_cache_misses,
++        patch_cache_hits: c.resolved_patch_cache_hits,
++        patch_cache_misses: c.resolved_patch_cache_misses,
++        patch_cache_clears: 0,
++        patch_resolutions: c.resolved_patch_cache_misses,
++        patch_applications: c.patch_records,
++        owned_materializations: c.resolved_patch_cache_misses,
++        location_sql: 0,
++        block_id_sql: 0,
++        result_cache_hits: c.result_cache_hits,
++        result_cache_misses: c.result_cache_misses,
++        result_cache_invalidations: c.result_cache_invalidations,
++    }
++}
++
+ impl Direct for Baseline {
+     const NAME: &'static str = "base";
+     fn open(path: &Path, opts: &Opts) -> Self {
+@@ -241,6 +276,7 @@
+         self.0.get(tip, key).unwrap().map(|v| v.0)
+     }
+     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {
++        use stacks_marf::marf::MarfConnection;
+         self.0.get_with_proof(tip, key).unwrap().is_some()
+     }
+     fn root_hash(&mut self, tip: &StacksBlockId) -> Option<[u8; 32]> {
+--- a/contrib/marf-differential/src/baseline.rs
++++ b/contrib/marf-differential/src/baseline.rs
+@@ -55,7 +55,7 @@
+         Error::RestoreMarfBlockError(_) => "RestoreMarfBlock",
+         Error::NonMatchingForks(..) => "NonMatchingForks",
+         Error::OverflowError => "Overflow",
+-        Error::Patch(..) => "Patch",
++        Error::Patch(_) => "Patch",
+         Error::NodeTooDeep => "NodeTooDeep",
+         Error::HistoricalReadInSquashedRange { .. } => "HistoricalReadInPrunedRange",
+         Error::UnsupportedOnSquashedMarf(_) => "UnsupportedOnPrunedMarf",
+@@ -173,7 +173,7 @@
+             c.get_block_height(&bid(block), &bid(tip)),
+             Observation::Height,
+         ),
+-        Op::CheckAncestor { tip, block } => match c.with_conn(|s| s.open_block(&bid(tip))) {
++        Op::CheckAncestor { tip, block } => match c.open_block(&bid(tip), None) {
+             Err(e) => Observation::Err(error_kind(&e)),
+             Ok(()) => unit(c.check_ancestor_block_hash(&bid(block))),
+         },

@@ -1,0 +1,62 @@
+diff --git a/stacks-marf/src/read_bench.rs b/stacks-marf/src/read_bench.rs
+index ab9a2918b6..17520f5b91 100644
+--- a/stacks-marf/src/read_bench.rs
++++ b/stacks-marf/src/read_bench.rs
+@@ -29,6 +29,12 @@ pub struct Counters {
+     pub cursor_steps: u64,
+     /// Inter-trie backpointers followed by the lookup walker.
+     pub backpointer_follows: u64,
++    /// Lookup-result cache hits (benchmark overlay).
++    pub result_cache_hits: u64,
++    /// Lookup-result cache lookups that found no usable entry (benchmark overlay).
++    pub result_cache_misses: u64,
++    /// Lookup-result cache clears: generation changes and raw-write clears (benchmark overlay).
++    pub result_cache_invalidations: u64,
+ }
+ 
+ thread_local! {
+diff --git a/stacks-marf/src/result_cache.rs b/stacks-marf/src/result_cache.rs
+index 25da549e1c..a57265f2a2 100644
+--- a/stacks-marf/src/result_cache.rs
++++ b/stacks-marf/src/result_cache.rs
+@@ -141,6 +141,10 @@ impl ResultCache {
+         }
+         let generation = self.control.generation.load(Ordering::Relaxed);
+         if generation != self.generation {
++            #[cfg(feature = "marf-read-bench-counters")]
++            if !self.index.is_empty() {
++                crate::read_bench::update(|c| c.result_cache_invalidations += 1);
++            }
+             self.clear();
+             self.generation = generation;
+         }
+@@ -150,9 +154,17 @@ impl ResultCache {
+     /// Return a cached value/absence, or outer `None` when no entry is usable.
+     pub fn get(&mut self, key: &TrieHash) -> Option<Option<TrieLeaf>> {
+         if !self.ready() {
++            #[cfg(feature = "marf-read-bench-counters")]
++            crate::read_bench::update(|c| c.result_cache_misses += 1);
+             return None;
+         }
+-        let slot = *self.index.get(key)?;
++        let Some(&slot) = self.index.get(key) else {
++            #[cfg(feature = "marf-read-bench-counters")]
++            crate::read_bench::update(|c| c.result_cache_misses += 1);
++            return None;
++        };
++        #[cfg(feature = "marf-read-bench-counters")]
++        crate::read_bench::update(|c| c.result_cache_hits += 1);
+         self.unlink(slot);
+         self.append(slot);
+         Some(
+@@ -204,6 +216,10 @@ impl ResultCache {
+     /// Invalidate all results before an untracked low-level node mutation.
+     pub fn before_raw_write(&mut self) {
+         if self.control.writes.load(Ordering::Relaxed) == 0 {
++            #[cfg(feature = "marf-read-bench-counters")]
++            if !self.index.is_empty() {
++                crate::read_bench::update(|c| c.result_cache_invalidations += 1);
++            }
+             self.clear();
+         }
+     }
