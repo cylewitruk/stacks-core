@@ -344,6 +344,12 @@ elsewhere) all three pass in about one second each: **3 passed, 0 failed**,
 bringing the consumer run to **921 of 921**. The stall was environmental,
 not a MARF behaviour.
 
+After the staged-pruning change (third review) the pruning consumers were
+re-run: the snapshot `clarity` and `index` tests in `stackslib` (which call
+`prune_to_path` on real chainstate) and the complete `marf-squash` and
+`clarity-cli` packages, **68 of 68 passed**, alongside the 17 crate and
+differential tests (both hand-off directions include squash boundaries).
+
 ## Known differences and limitations
 
 * Format-6 / stable-ID databases of the optimization reference are refused
