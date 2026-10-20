@@ -1,0 +1,12 @@
+rev b553f53df41dcbe3d0a530e77075b943a5e2a11d (b553f53df4), rustc 1.98.0 (88d9e12ae 2026-08-18)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 42s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 39s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1m 42s
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.42s
+built 2026-10-20T19:25:27Z
+tree_rev b553f53df41dcbe3d0a530e77075b943a5e2a11d d6fd444c54
+oracle upstream stacks-marf ad5c57786bb51b58d4bdb4992ad534f762d8cf03 (in tree)
+toolchain rustc 1.98.0 (88d9e12ae 2026-08-18)
+binary marf-differential-upstream sha256 b3212a12bcfcce85d94d4eef5539ec94d9e0a2e996235e4e88a609d149a29a2b
+binary marf-differential-upstream-counters sha256 91563a8f25ae4e96777963cdf5b973f6daf6cbf09d17b1524dddd54ca6d2cae5
+binary marf-differential-upstream-alloc sha256 573f4ecfcb9d7bb3944160957083ffec0298d807c19678b1c7060c1c73eaf4f8

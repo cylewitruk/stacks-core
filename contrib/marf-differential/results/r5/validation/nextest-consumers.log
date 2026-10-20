@@ -1,0 +1,78 @@
+   Compiling stacks-marf-next v4.0.5 (/home/user/stacks-core/crates/stacks-marf-next)
+   Compiling stackslib v0.0.1 (/home/user/stacks-core/stackslib)
+   Compiling clarity-cli v0.1.0 (/home/user/stacks-core/contrib/clarity-cli)
+   Compiling marf-squash v0.1.0 (/home/user/stacks-core/contrib/marf-squash)
+    Finished `test` profile [optimized + debuginfo] target(s) in 9m 26s
+────────────
+ Nextest run ID 49d5acd8-7879-4d7c-90bd-ebd7ecaf98df with nextest profile: default
+    Starting 68 tests across 4 binaries (2203 tests skipped)
+        PASS [   0.110s] ( 1/68) clarity-cli test::test_check_clarity3_contract_passes_with_clarity3_flag
+        PASS [   0.153s] ( 2/68) clarity-cli test::test_check_clarity3_contract_fails_with_clarity2_flag
+        PASS [   0.180s] ( 3/68) clarity-cli test::test_check_clarity3_contract_fails_with_epoch21_flag
+        PASS [   0.131s] ( 4/68) clarity-cli test::test_init_mainnet
+        PASS [   0.215s] ( 5/68) clarity-cli test::test_eval_clarity3_contract_fails_with_clarity2_flag
+        PASS [   0.218s] ( 6/68) clarity-cli test::test_eval_clarity3_contract_passes_with_clarity3_flag
+        PASS [   0.439s] ( 7/68) clarity-cli test::test_assets
+        PASS [   0.167s] ( 8/68) clarity-cli test::test_initial_alloc
+        PASS [   0.010s] ( 9/68) clarity-cli test::test_read_file_returns_its_contents
+        PASS [   0.198s] (10/68) clarity-cli test::test_init_testnet
+        PASS [   0.012s] (11/68) clarity-cli test::test_read_missing_file_is_an_error
+        PASS [   0.009s] (12/68) clarity-cli::bin/clarity-cli tests::test_execute_missing_required_args
+        PASS [   0.010s] (13/68) clarity-cli::bin/clarity-cli tests::test_execute_variadic_args
+        PASS [   0.018s] (14/68) clarity-cli::bin/clarity-cli tests::test_launch_missing_required_args
+        PASS [   0.009s] (15/68) clarity-cli::bin/clarity-cli tests::test_no_command_rejected
+        PASS [   0.010s] (16/68) clarity-cli::bin/clarity-cli tests::test_unknown_command_rejected
+        PASS [   0.011s] (17/68) clarity-cli::bin/clarity-cli tests::verify_cli_structure
+        PASS [   0.215s] (18/68) clarity-cli test::test_launch_clarity3_contract_fails_with_clarity2_flag
+        PASS [   0.014s] (19/68) marf-squash::bin/marf-squash checksums::tests::sha256_file_matches_known_vector
+        PASS [   0.011s] (20/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_1
+        PASS [   0.162s] (21/68) clarity-cli test::test_launch_clarity3_contract_passes_with_clarity3_flag
+        PASS [   0.011s] (22/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_2
+        PASS [   0.019s] (23/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_3
+        PASS [   0.017s] (24/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_4
+        PASS [   0.012s] (25/68) marf-squash::bin/marf-squash commands::tests::known_networks
+        PASS [   0.015s] (26/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_1
+        PASS [   0.011s] (27/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_3
+        PASS [   0.013s] (28/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_2
+        PASS [   0.008s] (29/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_6
+        PASS [   0.010s] (30/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_4
+        PASS [   0.012s] (31/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_5
+        PASS [   0.010s] (32/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_7
+        PASS [   0.010s] (33/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_8
+        PASS [   0.012s] (34/68) marf-squash::bin/marf-squash commands::tests::output_lands_under_network_subdir
+        PASS [   0.009s] (35/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_3
+        PASS [   0.019s] (36/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_1
+        PASS [   0.022s] (37/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_2
+        PASS [   0.010s] (38/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_4
+        PASS [   0.017s] (39/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_5
+        PASS [   0.018s] (40/68) marf-squash::bin/marf-squash tests::test_compute_checksums_clean_dir
+        PASS [   0.020s] (41/68) marf-squash::bin/marf-squash tests::test_compute_checksums_ignores_sqlite_sidecars
+        PASS [   0.011s] (42/68) marf-squash::bin/marf-squash tests::test_compute_checksums_rejects_stale_block_file
+        PASS [   0.012s] (43/68) marf-squash::bin/marf-squash tests::test_manifest_rejects_symlinks
+        PASS [   0.020s] (44/68) marf-squash::bin/marf-squash tests::test_manifest_rejects_extra_file_in_outdir
+        PASS [   0.028s] (45/68) marf-squash::bin/marf-squash tests::test_parse_squash_args::case_1
+        PASS [   0.018s] (46/68) marf-squash::bin/marf-squash tests::test_parse_squash_args::case_2
+        PASS [   0.086s] (47/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_copy_clarity_side_tables_with_double_colon_metadata_keys
+        PASS [   0.085s] (48/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_malformed_metadata_key_is_corruption
+        PASS [   0.087s] (49/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_metadata_exclusions
+        PASS [   0.053s] (50/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_no_unclassified_clarity_source_tables
+        PASS [   0.070s] (51/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_check_schema_passes
+        PASS [   0.118s] (52/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_mismatched_clarity_db_causes_data_read_failure
+        PASS [   0.076s] (53/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_data_reads_work
+        PASS [   0.037s] (54/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_unclassified_source_table_is_rejected
+        PASS [   0.106s] (55/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_extend_hash_equality
+        PASS [   0.077s] (56/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_metadata_reads_work
+        PASS [   0.084s] (57/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_canonical_block_missing_from_src_is_corruption
+        PASS [   0.088s] (58/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_copy_excludes_fork_rows
+        PASS [   0.129s] (59/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_copy_index_side_tables_round_trip
+        PASS [   0.017s] (60/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_index_copy_specs_well_formed
+        PASS [   0.085s] (61/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_empty_canonical_set_is_corruption
+        PASS [   0.097s] (62/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_epoch2_tip_above_nakamoto_block_is_corruption
+        PASS [   0.054s] (63/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_no_unclassified_source_tables
+        PASS [   0.706s] (64/68) clarity-cli test::test_samples
+        PASS [   0.104s] (65/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_signer_stats_copied_through_tip_reward_cycle
+        PASS [   0.085s] (66/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_src_without_nakamoto_blocks_is_corruption
+        PASS [   0.052s] (67/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_unclassified_source_table_is_rejected
+        PASS [   0.100s] (68/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_staging_blocks_populated_for_canonical
+────────────
+     Summary [   1.303s] 68 tests run: 68 passed, 2203 skipped

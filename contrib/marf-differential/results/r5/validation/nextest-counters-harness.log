@@ -1,0 +1,14 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.31s
+────────────
+ Nextest run ID 693c2b6c-e7da-4254-96b4-a2c4d078df0e with nextest profile: default
+    Starting 8 tests across 4 binaries
+        PASS [   0.171s] (1/8) marf-differential::counters rewrite_counters_are_consistent
+        PASS [   0.428s] (2/8) marf-differential::counters baseline_counters_are_consistent_or_unavailable
+        PASS [  15.217s] (3/8) marf-differential::fixtures rewrite_reproduces_fixtures
+        PASS [  15.255s] (4/8) marf-differential::fixtures rewrite_reproduces_supported_fixture_ops
+        PASS [   0.028s] (5/8) marf-differential::fixtures storage_variants_agree_on_consensus_observations
+        PASS [  24.865s] (6/8) marf-differential::fixtures baseline_reproduces_fixtures
+        PASS [  54.559s] (7/8) marf-differential::fixtures baseline_then_rewrite_handoff
+        PASS [  53.377s] (8/8) marf-differential::fixtures rewrite_then_baseline_handoff
+────────────
+     Summary [  68.768s] 8 tests run: 8 passed, 0 skipped
