@@ -34,7 +34,9 @@ REF_REV=29ef093da5dd58c1fa484624d94a9d972356c629
 WORK=${WORK:-$PWD/target/clarity-variants}
 OUT=$PWD/target/bench-bin
 mkdir -p "$OUT" "$WORK"
-echo "tree $(git rev-parse HEAD) ($(git describe --always --dirty)); $(rustc -V)"
+export MARF_BENCH_RUSTC="$(rustc -V)"
+export MARF_BENCH_TREE_REV="$(git rev-parse HEAD)$(git diff --quiet HEAD -- crates contrib stackslib || echo -dirty)"
+echo "tree $MARF_BENCH_TREE_REV ($(git describe --always --dirty)); $MARF_BENCH_RUSTC"
 
 add_member() { # <worktree>: register contrib/clarity-bench in the workspace
   python3 - "$1" <<'PY'
@@ -125,4 +127,16 @@ if [ "${OPTSTACK:-0}" = 1 ]; then
     echo "optstack variant did not build (its stackslib API differs); see above" >&2
   fi
 fi
+{
+  echo "built $(date -u +%FT%TZ)"
+  echo "tree_rev $MARF_BENCH_TREE_REV $(git describe --always --dirty)"
+  echo "upstream_rev $UP_REV"
+  echo "reference_rev $REF_REV"
+  echo "toolchain $MARF_BENCH_RUSTC"
+  for v in rewrite upstream optmarf optstack; do
+    [ -x "$OUT/clarity-bench-$v" ] && echo "binary clarity-bench-$v sha256 $(sha256sum "$OUT/clarity-bench-$v" | cut -d' ' -f1)"
+  done
+  echo "optmarf worktree changes vs $UP_REV:"; (cd "$WORK/optmarf" && git diff --stat -- stackslib Cargo.toml | tail -5)
+} > "$OUT/MANIFEST.clarity"
+cat "$OUT/MANIFEST.clarity"
 ls -la "$OUT"

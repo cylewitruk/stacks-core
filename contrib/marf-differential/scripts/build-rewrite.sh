@@ -11,7 +11,9 @@ cd "$(dirname "$0")/../../.."
 OUT=target/bench-bin
 mkdir -p "$OUT"
 export MARF_BENCH_RUSTC="$(rustc -V)"
-echo "rev $(git rev-parse HEAD) ($(git describe --always --dirty)), $MARF_BENCH_RUSTC"
+export MARF_BENCH_TREE_REV="$(git rev-parse HEAD)$(git diff --quiet HEAD -- crates contrib || echo -dirty)"
+export MARF_BENCH_PROVIDER="upstream stacks-marf ad5c57786bb51b58d4bdb4992ad534f762d8cf03 (in tree)"
+echo "rev $MARF_BENCH_TREE_REV ($(git describe --always --dirty)), $MARF_BENCH_RUSTC"
 cargo build --release -p marf-differential
 cp target/release/marf-differential "$OUT/marf-differential-upstream"
 cargo build --release -p marf-differential --features counters
@@ -20,4 +22,13 @@ cargo build --release -p marf-differential --features alloc-count
 cp target/release/marf-differential "$OUT/marf-differential-upstream-alloc"
 # leave the plain binary in place
 cargo build --release -p marf-differential
-ls -la "$OUT"
+{
+  echo "built $(date -u +%FT%TZ)"
+  echo "tree_rev $MARF_BENCH_TREE_REV $(git describe --always --dirty)"
+  echo "oracle $MARF_BENCH_PROVIDER"
+  echo "toolchain $MARF_BENCH_RUSTC"
+  for b in upstream upstream-counters upstream-alloc; do
+    echo "binary marf-differential-$b sha256 $(sha256sum "$OUT/marf-differential-$b" | cut -d' ' -f1)"
+  done
+} > "$OUT/MANIFEST.upstream"
+cat "$OUT/MANIFEST.upstream"
