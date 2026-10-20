@@ -236,7 +236,40 @@ What the buckets show:
   roots, blocks of 2,000 or 50 inserts always leave the second level (or the
   root) as patch chains. A workload whose blocks rewrite every root child
   would be needed to measure un-patched walks.
-* Reference-branch columns for the same buckets: REFERENCE_QUALIFIED
+* The optimization reference (production options, measured in its own
+  worktree with the same rewrite sources; this run overlapped a test-binary
+  rebuild, so treat its absolute times as +-20%): its result cache shows up
+  as the gap between spread and hot64, its patch cache keeps patched walks
+  cheap, and hops cost it 1-2 µs each.
+
+| tip | hops | patch | pattern | reference alloc/op | reference KB/op | reference µs | rewrite µs (same run) |
+|---|---|---|---|---|---|---|---|
+| bulk | 0 | 3-4 | spread | 4.9 | 4.3 | 7.4 | 1.28 |
+| bulk | 0 | 3-4 | hot64 | 1.7 | 1.0 | 1.75 | 0.95 |
+| bulk | 1 | 3-4 | spread | 4.9 | 4.3 | 7.3 | 1.56 |
+| bulk | 1 | 3-4 | hot64 | 1.6 | 1.0 | 1.74 | 0.92 |
+| bulk | 2 | 3-4 | spread | 7.0 | 5.1 | 9.1 | 1.13 |
+| bulk | 2 | 3-4 | hot64 | 6.8 | 4.8 | 8.1 | 0.93 |
+| patched | 1 | 1-2 | spread | 2.1 | 2.0 | 3.0 | 1.40 |
+| patched | 1 | 1-2 | hot64 | 2.0 | 1.9 | 2.4 | 1.19 |
+| patched | 1 | 3-4 | spread | 1.7 | 0.8 | 2.9 | 1.06 |
+| patched | 1 | 3-4 | hot64 | 1.3 | 0.5 | 1.55 | 0.85 |
+| patched | 2 | 1-2 | spread | 2.7 | 3.2 | 3.9 | 2.18 |
+| patched | 2 | 1-2 | hot64 | 2.4 | 2.8 | 2.7 | 1.50 |
+| patched | 2 | 3-4 | spread | 4.2 | 3.1 | 7.6 | 1.39 |
+| patched | 2 | 3-4 | hot64 | 1.3 | 0.5 | 1.51 | 0.91 |
+| patched | 3+ | 1-2 | spread | 5.1 | 4.7 | 5.0 | 1.83 |
+| patched | 3+ | 1-2 | hot64 | 5.4 | 5.2 | 5.3 | 1.59 |
+| patched | 3+ | 3-4 | spread | 7.0 | 4.5 | 9.0 | 1.03 |
+| patched | 3+ | 3-4 | hot64 | 6.8 | 4.4 | 8.1 | 0.89 |
+
+  Across the three implementations the picture is consistent: upstream's
+  lookup cost is dominated by decoding full records and re-resolving patch
+  chains (100 µs to 1.2 ms); the reference brings that to 1.5-9 µs with
+  caches whose benefit depends on key locality and hop count; the rewrite
+  is 0.9-2.2 µs in every bucket, allocation-free, with the smallest
+  dependence on walk shape (back-pointer hops cost it about 0.1-0.3 µs
+  each because the mapped record is already in memory).
 
 Reading the numbers:
 
