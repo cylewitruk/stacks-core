@@ -173,6 +173,71 @@ Two oracles, measured separately with their own binaries:
 | patched_get | 5,000 | 17.9 | 31.7 | 0 | 24.5 | 0.00 | 23.8 |
 | proof | 500 | 1,798 | 7,128 | 210 | 6,893 | 126.3 | 7,460 |
 
+### Lookups qualified by walk shape
+
+A MARF lookup's cost depends on what the walk meets: how many back-pointers
+it follows into older blocks, whether the records on the path are stored as
+patch chains and how deep, and whether the key was read recently. The
+rewrite's test-only `View::lookup_profile` reports those properties for a
+key; the stored trie is identical for every implementation, so the same key
+has the same shape everywhere. `marf-differential alloc` samples 15,000 keys
+at two tips, buckets them by `hops` (back-pointers followed, 3+ capped) x
+`patch` (deepest chain on the path: none, 1-2, 3-4), and times each bucket
+two ways: **spread** = every key of the bucket once per pass (no key is hot;
+defeats result caches), **hot64** = 64 keys of the bucket cycled (favours
+result caches). `n` is the bucket population, `~k nodes` the average records
+read per walk. Workload as above (external blobs, compressed); times are
+best of three, µs per lookup; "oracle" columns are the upstream crate.
+
+* **bulk tip** = block 20, written by 2,000-key blocks: its root is a full
+  `Node256` and the second-level `Node256` nodes are patch chains of depth
+  3-4 against earlier blocks.
+* **patched tip** = block 28, after eight 50-key blocks: root and hot
+  children are small patch chains; `hops=0` keys are those written by the
+  tip block itself.
+
+| tip | hops | patch | n | ~nodes | pattern | upstream alloc/op | upstream KB/op | upstream µs | rewrite alloc/op | rewrite µs |
+|---|---|---|---|---|---|---|---|---|---|---|
+| bulk | 0 | 3-4 | 2,989 | 3.5 | spread | 42.2 | 92.7 | 1,241 | 0 | 1.17 |
+| bulk | 0 | 3-4 | | | hot64 | 41.7 | 92.5 | 1,289 | 0 | 0.97 |
+| bulk | 1 | 3-4 | 13,056 | 3.4 | spread | 43.6 | 94.0 | 1,217 | 0 | 1.55 |
+| bulk | 1 | 3-4 | | | hot64 | 43.4 | 94.0 | 1,211 | 0 | 0.97 |
+| bulk | 2 | 3-4 | 954 | 4.0 | spread | 56.0 | 96.8 | 1,286 | 0 | 1.19 |
+| bulk | 2 | 3-4 | | | hot64 | 56.4 | 97.1 | 1,297 | 0 | 0.95 |
+| patched | 1 | 1-2 | 1,488 | 3.4 | spread | 31.8 | 47.4 | 102 | 0 | 1.21 |
+| patched | 1 | 1-2 | | | hot64 | 31.5 | 47.4 | 101 | 0 | 1.10 |
+| patched | 1 | 3-4 | 1,291 | 3.4 | spread | 41.7 | 49.8 | 137 | 0 | 1.03 |
+| patched | 1 | 3-4 | | | hot64 | 41.5 | 49.8 | 139 | 0 | 0.88 |
+| patched | 2 | 1-2 | 5,479 | 3.4 | spread | 34.7 | 52.6 | 105 | 0 | 2.15 |
+| patched | 2 | 1-2 | | | hot64 | 35.2 | 52.6 | 108 | 0 | 1.50 |
+| patched | 2 | 3-4 | 5,856 | 3.4 | spread | 47.8 | 56.1 | 141 | 0 | 1.33 |
+| patched | 2 | 3-4 | | | hot64 | 47.9 | 56.0 | 147 | 0 | 0.87 |
+| patched | 3+ | 1-2 | 395 | 4.0 | spread | 44.8 | 53.6 | 103 | 0 | 1.59 |
+| patched | 3+ | 1-2 | | | hot64 | 44.8 | 53.4 | 117 | 0 | 1.57 |
+| patched | 3+ | 3-4 | 471 | 4.0 | spread | 58.3 | 57.0 | 144 | 0 | 0.93 |
+| patched | 3+ | 3-4 | | | hot64 | 57.5 | 57.0 | 154 | 0 | 0.94 |
+
+(µs column values above 1,000 are milliseconds: 1,241 µs = 1.24 ms.)
+
+What the buckets show:
+
+* Upstream's cost is set by the records on the path, not by the number of
+  hops: through the bulk tip's full `Node256` records it is about 1.2 ms per
+  lookup with ~93 KB allocated (every record is decoded into owned
+  256-slot nodes, patch chains re-resolved each time); through the patched
+  tip's small patch records it is 100-150 µs. Hops add roughly 10-15 µs
+  each; a hot key set does not help upstream (no result cache).
+* The rewrite is flat at 0.9-2.2 µs across every bucket with zero
+  allocations: records are borrowed from the mapping, a walk reads 3.4-4.0
+  records, and the patch chains it meets are served from the resolved-patch
+  cache after the first encounter. The spread/hot gap (about 30%) is cache
+  locality in the page cache and the patch cache, not a result cache.
+* `patch=none` does not occur at either tip in this workload: with 256-way
+  roots, blocks of 2,000 or 50 inserts always leave the second level (or the
+  root) as patch chains. A workload whose blocks rewrite every root child
+  would be needed to measure un-patched walks.
+* Reference-branch columns for the same buckets: REFERENCE_QUALIFIED
+
 Reading the numbers:
 
 * Against upstream on the production configuration (compressed external
