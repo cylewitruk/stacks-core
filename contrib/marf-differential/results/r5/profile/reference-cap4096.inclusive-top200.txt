@@ -1,0 +1,200 @@
+--------------------------------------------------------------------------------
+Profile data file 'callgrind.reference-cap4096.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 2373126174
+Trigger: Program termination
+Profiled target:  marf-differential-reference ablate baseline std (PID 16468, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                      
+--------------------------------------------------------------------------------
+17,667,251,456 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                       file:function
+--------------------------------------------------------------------------------
+17,667,251,456 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+17,666,766,502 (100.0%)  ???:(below main) [marf-differential-reference]
+17,666,766,490 (100.0%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+17,666,766,307 (100.0%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+17,666,759,149 (100.0%)  ???:main [marf-differential-reference]
+17,666,639,544 (100.0%)  std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [marf-differential-reference]
+17,666,639,541 (100.0%)  core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+17,666,639,540 (100.0%)  target/reference-worktree/contrib/marf-differential/src/bin/main.rs:marf_differential::main [marf-differential-reference]
+17,666,637,005 (100.0%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::main
+17,666,636,997 (100.0%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Baseline> [marf-differential-reference]
+10,352,070,852 (58.59%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::marf::MarfCore<stacks_common::types::chainstate::StacksBlockId>>::with_read_ctx::<<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::marf::MarfConnection<stacks_common::types::chainstate::StacksBlockId>>::get::{closure#0}, core::result::Result<core::option::Option<stacks_marf::MARFValue>, stacks_marf::Error>> [marf-differential-reference]
+10,336,141,860 (58.50%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MarfReadCtx<stacks_common::types::chainstate::StacksBlockId, stacks_marf::scratch::MarfReadState, stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId>>>::get_by_key [marf-differential-reference]
+ 8,802,081,394 (49.82%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Baseline>::{closure#0}> [marf-differential-reference]
+ 8,793,924,434 (49.78%)  target/reference-worktree/stacks-marf/src/marf.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Baseline>::{closure#0}>
+ 6,506,858,499 (36.83%)  target/reference-worktree/stacks-marf/src/lib.rs:<stacks_marf::marf::MarfReadCtx<stacks_common::types::chainstate::StacksBlockId, stacks_marf::scratch::MarfReadState, stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId>>>::get_by_key
+ 4,859,985,073 (27.51%)  sha2-0.10.9/src/sha512.rs:sha2::sha512::compress512 [marf-differential-reference]
+ 4,847,592,376 (27.44%)  sha2-0.10.9/src/sha512/x86.rs:sha2::sha512::compress512
+ 4,837,265,164 (27.38%)  sha2-0.10.9/src/sha512/x86.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2 [marf-differential-reference]
+ 4,553,672,222 (25.77%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::TrieReadStorage<stacks_common::types::chainstate::StacksBlockId>>::read_node_with_state::<stacks_marf::scratch::MarfReadState> [marf-differential-reference]
+ 3,894,730,295 (22.04%)  target/reference-worktree/stacks-marf/src/cache.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get [marf-differential-reference]
+ 2,992,168,896 (16.94%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_node_hashes'2 [marf-differential-reference]
+ 2,860,936,884 (16.19%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Baseline as marf_differential::alloc::Direct>::seal [marf-differential-reference]
+ 2,859,792,718 (16.19%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MarfTransaction<stacks_common::types::chainstate::StacksBlockId>>::seal [marf-differential-reference]
+ 2,859,790,534 (16.19%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::marf::MarfTransaction<stacks_common::types::chainstate::StacksBlockId>>::seal
+ 2,859,781,518 (16.19%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::inner_seal_marf [marf-differential-reference]
+ 2,856,813,851 (16.17%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_node_hashes [marf-differential-reference]
+ 2,856,813,179 (16.17%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_branch_hashes::<256> [marf-differential-reference]
+ 2,653,275,895 (15.02%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_branch_hashes::<256>'2 [marf-differential-reference]
+ 2,147,689,835 (12.16%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Manifest>::new [marf-differential-reference]
+ 2,147,656,759 (12.16%)  sha2-0.10.9/src/core_api.rs:<marf_differential::alloc::Manifest>::new
+ 2,147,656,748 (12.16%)  sha2-0.10.9/src/sha256.rs:sha2::sha256::compress256 [marf-differential-reference]
+ 2,145,424,904 (12.14%)  sha2-asm-0.6.3/src/lib.rs:sha2::sha256::compress256
+ 2,143,193,186 (12.13%)  sha2-asm-0.6.3/src/sha256_x64.S:0x00000000002f5843 [marf-differential-reference]
+ 2,027,010,058 (11.47%)  target/reference-worktree/stacks-marf/src/storage.rs:stacks_marf::storage::open_block_impl::<stacks_common::types::chainstate::StacksBlockId> [marf-differential-reference]
+ 2,026,535,511 (11.47%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::TrieReadStorage<stacks_common::types::chainstate::StacksBlockId>>::open_block [marf-differential-reference]
+ 1,969,545,187 (11.15%)  target/reference-worktree/stacks-marf/src/storage.rs:stacks_marf::storage::get_block_id_caching_impl::<stacks_common::types::chainstate::StacksBlockId> [marf-differential-reference]
+ 1,928,411,494 (10.92%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TrieCursor<stacks_common::types::chainstate::StacksBlockId>>::walk_read [marf-differential-reference]
+ 1,782,457,088 (10.09%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_common::types::chainstate::TrieHash>::from_data [marf-differential-reference]
+ 1,775,791,726 (10.05%)  target/reference-worktree/stacks-marf/src/trie_sql.rs:stacks_marf::trie_sql::get_block_identifier::<stacks_common::types::chainstate::StacksBlockId> [marf-differential-reference]
+ 1,732,882,866 ( 9.81%)  sha2-0.10.9/src/core_api.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+ 1,643,804,208 ( 9.30%)  core/src/slice/cmp.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get
+ 1,568,134,000 ( 8.88%)  target/reference-worktree/stacks-marf/src/lib.rs:<stacks_marf::ReadTrieNode>::path_bytes [marf-differential-reference]
+ 1,561,454,546 ( 8.84%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Baseline>::{closure#0}> [marf-differential-reference]
+ 1,559,823,154 ( 8.83%)  target/reference-worktree/stacks-marf/src/marf.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Baseline>::{closure#0}>
+ 1,557,209,940 ( 8.81%)  target/reference-worktree/stacks-marf/src/lib.rs:<stacks_marf::ReadTrieNode>::decoded_from_bytes [marf-differential-reference]
+ 1,416,278,802 ( 8.02%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TrieNodeType>::write_consensus_bytes_with_child_hashes::<digest::core_api::wrapper::CoreWrapper<digest::core_api::ct_variable::CtVariableCoreWrapper<sha2::core_api::Sha512VarCore, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, sha2::OidSha512_256>>> [marf-differential-reference]
+ 1,378,707,578 ( 7.80%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,371,366,344 ( 7.76%)  sha2-0.10.9/src/core_api.rs:<stacks_marf::node::TrieNodeType>::write_consensus_bytes_with_child_hashes::<digest::core_api::wrapper::CoreWrapper<digest::core_api::ct_variable::CtVariableCoreWrapper<sha2::core_api::Sha512VarCore, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, sha2::OidSha512_256>>>
+ 1,357,597,248 ( 7.68%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_marf::marf::MarfReadCtx<stacks_common::types::chainstate::StacksBlockId, stacks_marf::scratch::MarfReadState, stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId>>>::get_by_key
+ 1,348,528,482 ( 7.63%)  target/reference-worktree/stacks-marf/src/record.rs:<stacks_marf::record::NodeRecord>::decode_node [marf-differential-reference]
+ 1,306,683,752 ( 7.40%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::inner_insert_leaf_batch::<stacks_marf::scratch::MarfReadState> [marf-differential-reference]
+ 1,301,591,017 ( 7.37%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Baseline as marf_differential::alloc::Direct>::insert_batch [marf-differential-reference]
+ 1,299,973,765 ( 7.36%)  target/reference-worktree/stacks-marf/src/marf.rs:<marf_differential::alloc::Baseline as marf_differential::alloc::Direct>::insert_batch
+ 1,299,561,586 ( 7.36%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::inner_insert_batch::<stacks_marf::scratch::MarfReadState> [marf-differential-reference]
+ 1,183,492,968 ( 6.70%)  sha2-0.10.9/src/core_api.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_branch_hashes::<256>'2
+ 1,179,689,304 ( 6.68%)  target/reference-worktree/stacks-marf/src/bits.rs:stacks_marf::bits::ptrs_from_parts_into [marf-differential-reference]
+ 1,179,228,908 ( 6.67%)  rusqlite-0.31.0/src/row.rs:<rusqlite::row::Rows as fallible_streaming_iterator::FallibleStreamingIterator>::advance [marf-differential-reference]
+ 1,170,452,006 ( 6.62%)  rusqlite-0.31.0/src/raw_statement.rs:<rusqlite::row::Rows as fallible_streaming_iterator::FallibleStreamingIterator>::advance
+ 1,158,050,656 ( 6.55%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3_step [marf-differential-reference]
+ 1,145,809,248 ( 6.49%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TrieNode256 as stacks_marf::node::TrieNode>::load_from_parts [marf-differential-reference]
+ 1,131,148,328 ( 6.40%)  core/src/slice/iter/macros.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get
+ 1,112,652,123 ( 6.30%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3VdbeExec [marf-differential-reference]
+ 1,108,189,836 ( 6.27%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::do_insert_leaf::<stacks_marf::scratch::MarfReadState> [marf-differential-reference]
+ 1,090,369,284 ( 6.17%)  rusqlite-0.31.0/src/row.rs:stacks_marf::trie_sql::get_block_identifier::<stacks_common::types::chainstate::StacksBlockId>
+ 1,007,935,696 ( 5.71%)  core/src/intrinsics/mod.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   768,344,424 ( 4.35%)  core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   696,192,931 ( 3.94%)  core/src/ptr/mod.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get
+   658,556,686 ( 3.73%)  target/reference-worktree/stacks-marf/src/trie.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::do_insert_leaf::<stacks_marf::scratch::MarfReadState>
+   608,281,004 ( 3.44%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TriePtr>::from_slice_compressed [marf-differential-reference]
+   599,787,531 ( 3.39%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::ablate::key_sets [marf-differential-reference]
+   556,636,619 ( 3.15%)  core/src/num/uint_macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   502,625,142 ( 2.84%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::ablate::profiles [marf-differential-reference]
+   495,947,562 ( 2.81%)  target/reference-worktree/crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile [marf-differential-reference]
+   400,695,748 ( 2.27%)  core/src/cmp.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   366,262,928 ( 2.07%)  core/src/ptr/non_null.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get
+   362,037,757 ( 2.05%)  rusqlite-0.31.0/src/statement.rs:stacks_marf::trie_sql::get_block_identifier::<stacks_common::types::chainstate::StacksBlockId>
+   357,199,136 ( 2.02%)  rusqlite-0.31.0/src/params.rs:<[&stacks_common::types::chainstate::StacksBlockId; 1] as rusqlite::params::Params>::__bind_in [marf-differential-reference]
+   329,967,533 ( 1.87%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:btreeBeginTrans [marf-differential-reference]
+   301,385,148 ( 1.71%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3VdbeHalt [marf-differential-reference]
+   279,873,047 ( 1.58%)  target/reference-worktree/stacks-marf/src/bits.rs:stacks_marf::bits::get_leaf_hash [marf-differential-reference]
+   278,118,046 ( 1.57%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3BtreeIndexMoveto [marf-differential-reference]
+   271,139,583 ( 1.53%)  sha2-0.10.9/src/core_api.rs:stacks_marf::bits::get_leaf_hash
+   242,515,986 ( 1.37%)  target/reference-worktree/stacks-common/src/util/hash.rs:<[&stacks_common::types::chainstate::StacksBlockId; 1] as rusqlite::params::Params>::__bind_in
+   241,752,154 ( 1.37%)  target/reference-worktree/stacks-common/src/util/hash.rs:stacks_common::util::hash::to_hex_prefixed [marf-differential-reference]
+   228,279,000 ( 1.29%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile
+   211,565,539 ( 1.20%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId, rusqlite::transaction::Transaction> as stacks_marf::TrieReadStorage<stacks_common::types::chainstate::StacksBlockId>>::read_node_with_state::<stacks_marf::scratch::MarfReadState> [marf-differential-reference]
+   209,960,568 ( 1.19%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3PagerSharedLock [marf-differential-reference]
+   209,750,522 ( 1.19%)  target/reference-worktree/stacks-marf/src/storage.rs:stacks_marf::storage::read_patched_persisted_node::<stacks_marf::scratch::MarfReadState> [marf-differential-reference]
+   204,528,755 ( 1.16%)  target/reference-worktree/stacks-marf/src/trie.rs:<stacks_marf::trie::Trie>::insert_leaf::<stacks_common::types::chainstate::StacksBlockId, rusqlite::transaction::Transaction> [marf-differential-reference]
+   197,125,356 ( 1.12%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::inner_insert_leaf_batch::<stacks_marf::scratch::MarfReadState>
+   189,669,698 ( 1.07%)  ./malloc/./malloc/malloc.c:free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   189,594,441 ( 1.07%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Baseline>
+   188,651,403 ( 1.07%)  core/src/mem/mod.rs:core::ptr::drop_glue::<rusqlite::cache::CachedStatement> [marf-differential-reference]
+   179,091,227 ( 1.01%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::extend_trie::<stacks_marf::scratch::MarfReadState> [marf-differential-reference]
+   174,653,559 ( 0.99%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:walTryBeginRead [marf-differential-reference]
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: rusqlite-0.31.0/src/raw_statement.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 35 ----------------------------------------
+        .                       tail,
+        .                       cache: ParamIndexCache::default(),
+        .                       statement_cache_key: None,
+        .                   }
+        .               }
+        .           
+        .               #[inline]
+        .               pub fn is_null(&self) -> bool {
+  321,005 ( 0.00%)          self.ptr.is_null()
+        .               }
+        .           
+        .               #[inline]
+        .               pub(crate) fn set_statement_cache_key(&mut self, p: impl Into<Arc<str>>) {
+  962,115 ( 0.01%)          self.statement_cache_key = Some(p.into());
+        .               }
+        .           
+        .               #[inline]
+        .               pub(crate) fn statement_cache_key(&self) -> Option<Arc<str>> {
+        .                   self.statement_cache_key.clone()
+        .               }
+        .           
+        .               #[inline]
+        .               pub unsafe fn ptr(&self) -> *mut ffi::sqlite3_stmt {
+        .                   self.ptr
+        .               }
+        .           
+        .               #[inline]
+        .               pub fn column_count(&self) -> usize {
+        .                   // Note: Can't cache this as it changes if the schema is altered.
+  164,904 ( 0.00%)          unsafe { ffi::sqlite3_column_count(self.ptr) as usize }
+       65 ( 0.00%)  => libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3_column_count (13x)
+        .               }
+        .           
+        .               #[inline]
+        .               pub fn column_type(&self, idx: usize) -> c_int {
+  124,680 ( 0.00%)          unsafe { ffi::sqlite3_column_type(self.ptr, idx as c_int) }
+2,244,240 ( 0.01%)  => libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3_column_type (41,560x)
+        .               }
+        .           
+        .               #[inline]
+        .               #[cfg(feature = "column_decltype")]
+        .               pub fn column_decltype(&self, idx: usize) -> Option<&CStr> {
+        .                   unsafe {
+        .                       let decltype = ffi::sqlite3_column_decltype(self.ptr, idx as c_int);
+        .                       if decltype.is_null() {
+-- line 77 ----------------------------------------
+-- line 80 ----------------------------------------
+        .                           Some(CStr::from_ptr(decltype))
+        .                       }
+        .                   }
+        .               }
+        .           
+        .               #[inline]
+        .               pub fn column_name(&self, idx: usize) -> Option<&CStr> {
+        .                   let idx = idx as c_int;
+  204,500 ( 0.00%)          if idx < 0 || idx >= self.column_count() as c_int {
+        .                       return None;
+        .                   }
+        .                   unsafe {
+  122,700 ( 0.00%)              let ptr = ffi::sqlite3_column_name(self.ptr, idx);
+2,494,900 ( 0.01%)  => libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3_column_name (40,900x)
+        .                       // If ptr is null here, it's an OOM, so there's probably nothing
+        .                       // meaningful we can do. Just assert instead of returning None.
+        .                       assert!(
+   81,800 ( 0.00%)                  !ptr.is_null(),
+        .                           "Null pointer from sqlite3_column_name: Out of memory?"
+        .                       );
+        .                       Some(CStr::from_ptr(ptr))
+        .                   }
+        .               }
+        .           
+        .               #[inline]
+        .               #[cfg(not(feature = "unlock_notify"))]

@@ -1,0 +1,200 @@
+--------------------------------------------------------------------------------
+Profile data file 'callgrind.lateprobe-cap4096.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 2083419473
+Trigger: Program termination
+Profiled target:  marf-differential-reference-lateprobe ablate baseline std (PID 16616, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                      
+--------------------------------------------------------------------------------
+15,255,240,126 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                       file:function
+--------------------------------------------------------------------------------
+15,255,240,126 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+15,254,755,158 (100.0%)  ???:(below main) [marf-differential-reference-lateprobe]
+15,254,755,146 (100.0%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+15,254,754,963 (100.0%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+15,254,747,835 (100.0%)  ???:main [marf-differential-reference-lateprobe]
+15,254,628,196 (100.0%)  std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [marf-differential-reference-lateprobe]
+15,254,628,193 (100.0%)  core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+15,254,628,192 (100.0%)  target/reference-worktree/contrib/marf-differential/src/bin/main.rs:marf_differential::main [marf-differential-reference-lateprobe]
+15,254,625,465 (100.0%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::main
+15,254,625,457 (100.0%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Baseline> [marf-differential-reference-lateprobe]
+ 7,959,015,522 (52.17%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::marf::MarfCore<stacks_common::types::chainstate::StacksBlockId>>::with_read_ctx::<<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::marf::MarfConnection<stacks_common::types::chainstate::StacksBlockId>>::get::{closure#0}, core::result::Result<core::option::Option<stacks_marf::MARFValue>, stacks_marf::Error>> [marf-differential-reference-lateprobe]
+ 7,943,086,530 (52.07%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MarfReadCtx<stacks_common::types::chainstate::StacksBlockId, stacks_marf::scratch::MarfReadState, stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId>>>::get_by_key [marf-differential-reference-lateprobe]
+ 6,667,914,818 (43.71%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Baseline>::{closure#0}> [marf-differential-reference-lateprobe]
+ 6,659,757,858 (43.66%)  target/reference-worktree/stacks-marf/src/marf.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Baseline>::{closure#0}>
+ 4,859,985,073 (31.86%)  sha2-0.10.9/src/sha512.rs:sha2::sha512::compress512 [marf-differential-reference-lateprobe]
+ 4,847,592,376 (31.78%)  sha2-0.10.9/src/sha512/x86.rs:sha2::sha512::compress512
+ 4,837,265,164 (31.71%)  sha2-0.10.9/src/sha512/x86.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2 [marf-differential-reference-lateprobe]
+ 4,113,783,635 (26.97%)  target/reference-worktree/stacks-marf/src/lib.rs:<stacks_marf::marf::MarfReadCtx<stacks_common::types::chainstate::StacksBlockId, stacks_marf::scratch::MarfReadState, stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId>>>::get_by_key
+ 2,992,168,922 (19.61%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_node_hashes'2 [marf-differential-reference-lateprobe]
+ 2,860,830,124 (18.75%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Baseline as marf_differential::alloc::Direct>::seal [marf-differential-reference-lateprobe]
+ 2,859,677,458 (18.75%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MarfTransaction<stacks_common::types::chainstate::StacksBlockId>>::seal [marf-differential-reference-lateprobe]
+ 2,859,675,274 (18.75%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::marf::MarfTransaction<stacks_common::types::chainstate::StacksBlockId>>::seal
+ 2,859,665,586 (18.75%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::inner_seal_marf [marf-differential-reference-lateprobe]
+ 2,856,813,879 (18.73%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_node_hashes [marf-differential-reference-lateprobe]
+ 2,856,813,207 (18.73%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_branch_hashes::<256> [marf-differential-reference-lateprobe]
+ 2,653,275,945 (17.39%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_branch_hashes::<256>'2 [marf-differential-reference-lateprobe]
+ 2,160,903,430 (14.16%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::TrieReadStorage<stacks_common::types::chainstate::StacksBlockId>>::read_node_with_state::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+ 2,147,632,206 (14.08%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Manifest>::new [marf-differential-reference-lateprobe]
+ 2,147,599,019 (14.08%)  sha2-0.10.9/src/core_api.rs:<marf_differential::alloc::Manifest>::new
+ 2,147,599,008 (14.08%)  sha2-0.10.9/src/sha256.rs:sha2::sha256::compress256 [marf-differential-reference-lateprobe]
+ 2,145,367,224 (14.06%)  sha2-asm-0.6.3/src/lib.rs:sha2::sha256::compress256
+ 2,143,135,566 (14.05%)  sha2-asm-0.6.3/src/sha256_x64.S:0x00000000002f57d3 [marf-differential-reference-lateprobe]
+ 2,026,702,854 (13.29%)  target/reference-worktree/stacks-marf/src/storage.rs:stacks_marf::storage::open_block_impl::<stacks_common::types::chainstate::StacksBlockId> [marf-differential-reference-lateprobe]
+ 2,026,228,365 (13.28%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId> as stacks_marf::TrieReadStorage<stacks_common::types::chainstate::StacksBlockId>>::open_block [marf-differential-reference-lateprobe]
+ 1,969,237,964 (12.91%)  target/reference-worktree/stacks-marf/src/storage.rs:stacks_marf::storage::get_block_id_caching_impl::<stacks_common::types::chainstate::StacksBlockId> [marf-differential-reference-lateprobe]
+ 1,928,573,637 (12.64%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TrieCursor<stacks_common::types::chainstate::StacksBlockId>>::walk_read [marf-differential-reference-lateprobe]
+ 1,782,457,088 (11.68%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_common::types::chainstate::TrieHash>::from_data [marf-differential-reference-lateprobe]
+ 1,775,790,984 (11.64%)  target/reference-worktree/stacks-marf/src/trie_sql.rs:stacks_marf::trie_sql::get_block_identifier::<stacks_common::types::chainstate::StacksBlockId> [marf-differential-reference-lateprobe]
+ 1,732,882,866 (11.36%)  sha2-0.10.9/src/core_api.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+ 1,568,145,441 (10.28%)  target/reference-worktree/stacks-marf/src/lib.rs:<stacks_marf::ReadTrieNode>::path_bytes [marf-differential-reference-lateprobe]
+ 1,557,221,381 (10.21%)  target/reference-worktree/stacks-marf/src/lib.rs:<stacks_marf::ReadTrieNode>::decoded_from_bytes [marf-differential-reference-lateprobe]
+ 1,429,917,495 ( 9.37%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+ 1,416,278,802 ( 9.28%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TrieNodeType>::write_consensus_bytes_with_child_hashes::<digest::core_api::wrapper::CoreWrapper<digest::core_api::ct_variable::CtVariableCoreWrapper<sha2::core_api::Sha512VarCore, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, sha2::OidSha512_256>>> [marf-differential-reference-lateprobe]
+ 1,371,366,344 ( 8.99%)  sha2-0.10.9/src/core_api.rs:<stacks_marf::node::TrieNodeType>::write_consensus_bytes_with_child_hashes::<digest::core_api::wrapper::CoreWrapper<digest::core_api::ct_variable::CtVariableCoreWrapper<sha2::core_api::Sha512VarCore, typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UInt<typenum::uint::UTerm, typenum::bit::B1>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, typenum::bit::B0>, sha2::OidSha512_256>>>
+ 1,357,597,248 ( 8.90%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_marf::marf::MarfReadCtx<stacks_common::types::chainstate::StacksBlockId, stacks_marf::scratch::MarfReadState, stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId>>>::get_by_key
+ 1,346,962,890 ( 8.83%)  target/reference-worktree/stacks-marf/src/record.rs:<stacks_marf::record::NodeRecord>::decode_node [marf-differential-reference-lateprobe]
+ 1,302,565,792 ( 8.54%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Baseline>::{closure#0}> [marf-differential-reference-lateprobe]
+ 1,300,934,400 ( 8.53%)  target/reference-worktree/stacks-marf/src/marf.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Baseline>::{closure#0}>
+ 1,288,536,171 ( 8.45%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::inner_insert_leaf_batch::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+ 1,283,431,052 ( 8.41%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Baseline as marf_differential::alloc::Direct>::insert_batch [marf-differential-reference-lateprobe]
+ 1,281,814,312 ( 8.40%)  target/reference-worktree/stacks-marf/src/marf.rs:<marf_differential::alloc::Baseline as marf_differential::alloc::Direct>::insert_batch
+ 1,281,403,493 ( 8.40%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::inner_insert_batch::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+ 1,260,935,117 ( 8.27%)  target/reference-worktree/stacks-marf/src/bits.rs:stacks_marf::bits::ptrs_from_parts_into [marf-differential-reference-lateprobe]
+ 1,227,752,426 ( 8.05%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TrieNode256 as stacks_marf::node::TrieNode>::load_from_parts [marf-differential-reference-lateprobe]
+ 1,183,492,968 ( 7.76%)  sha2-0.10.9/src/core_api.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_branch_hashes::<256>'2
+ 1,179,229,042 ( 7.73%)  rusqlite-0.31.0/src/row.rs:<rusqlite::row::Rows as fallible_streaming_iterator::FallibleStreamingIterator>::advance [marf-differential-reference-lateprobe]
+ 1,170,452,140 ( 7.67%)  rusqlite-0.31.0/src/raw_statement.rs:<rusqlite::row::Rows as fallible_streaming_iterator::FallibleStreamingIterator>::advance
+ 1,158,050,842 ( 7.59%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3_step [marf-differential-reference-lateprobe]
+ 1,112,652,309 ( 7.29%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3VdbeExec [marf-differential-reference-lateprobe]
+ 1,090,369,284 ( 7.15%)  rusqlite-0.31.0/src/row.rs:stacks_marf::trie_sql::get_block_identifier::<stacks_common::types::chainstate::StacksBlockId>
+ 1,090,042,255 ( 7.15%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::do_insert_leaf::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+ 1,089,586,142 ( 7.14%)  target/reference-worktree/stacks-marf/src/cache.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get [marf-differential-reference-lateprobe]
+ 1,007,935,696 ( 6.61%)  core/src/intrinsics/mod.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   768,344,424 ( 5.04%)  core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   666,411,526 ( 4.37%)  core/src/ptr/mod.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get
+   650,558,299 ( 4.26%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TriePtr>::from_slice_compressed [marf-differential-reference-lateprobe]
+   642,248,182 ( 4.21%)  target/reference-worktree/stacks-marf/src/trie.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::do_insert_leaf::<stacks_marf::scratch::MarfReadState>
+   600,407,844 ( 3.94%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::ablate::key_sets [marf-differential-reference-lateprobe]
+   556,636,619 ( 3.65%)  core/src/num/uint_macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   502,945,226 ( 3.30%)  target/reference-worktree/contrib/marf-differential/src/ablate.rs:marf_differential::ablate::profiles [marf-differential-reference-lateprobe]
+   496,267,666 ( 3.25%)  target/reference-worktree/crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile [marf-differential-reference-lateprobe]
+   400,695,748 ( 2.63%)  core/src/cmp.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   392,086,527 ( 2.57%)  target/reference-worktree/stacks-marf/src/storage.rs:stacks_marf::storage::read_patched_persisted_node::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+   362,037,691 ( 2.37%)  rusqlite-0.31.0/src/statement.rs:stacks_marf::trie_sql::get_block_identifier::<stacks_common::types::chainstate::StacksBlockId>
+   357,199,070 ( 2.34%)  rusqlite-0.31.0/src/params.rs:<[&stacks_common::types::chainstate::StacksBlockId; 1] as rusqlite::params::Params>::__bind_in [marf-differential-reference-lateprobe]
+   329,967,684 ( 2.16%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:btreeBeginTrans [marf-differential-reference-lateprobe]
+   301,385,148 ( 1.98%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3VdbeHalt [marf-differential-reference-lateprobe]
+   279,873,047 ( 1.83%)  target/reference-worktree/stacks-marf/src/bits.rs:stacks_marf::bits::get_leaf_hash [marf-differential-reference-lateprobe]
+   278,118,046 ( 1.82%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3BtreeIndexMoveto [marf-differential-reference-lateprobe]
+   271,139,583 ( 1.78%)  sha2-0.10.9/src/core_api.rs:stacks_marf::bits::get_leaf_hash
+   242,515,899 ( 1.59%)  target/reference-worktree/stacks-common/src/util/hash.rs:<[&stacks_common::types::chainstate::StacksBlockId; 1] as rusqlite::params::Params>::__bind_in
+   241,752,067 ( 1.58%)  target/reference-worktree/stacks-common/src/util/hash.rs:stacks_common::util::hash::to_hex_prefixed [marf-differential-reference-lateprobe]
+   228,279,000 ( 1.50%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile
+   225,958,847 ( 1.48%)  target/reference-worktree/stacks-marf/src/file.rs:<stacks_marf::file::TrieFile>::read_trie_item_borrowed [marf-differential-reference-lateprobe]
+   211,874,445 ( 1.39%)  target/reference-worktree/stacks-marf/src/record.rs:<stacks_marf::record::NodeRecord>::decode_into_scratch::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+   209,960,937 ( 1.38%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3PagerSharedLock [marf-differential-reference-lateprobe]
+   203,192,174 ( 1.33%)  target/reference-worktree/stacks-marf/src/trie.rs:<stacks_marf::trie::Trie>::insert_leaf::<stacks_common::types::chainstate::StacksBlockId, rusqlite::transaction::Transaction> [marf-differential-reference-lateprobe]
+   199,213,551 ( 1.31%)  core/src/slice/cmp.rs:<stacks_marf::cache::SharedLru<(stacks_common::types::chainstate::StacksBlockId, u64), (stacks_marf::node::TrieNodeType, core::option::Option<stacks_common::types::chainstate::TrieHash>, usize)>>::get
+   197,125,356 ( 1.29%)  target/reference-worktree/stacks-common/src/types/chainstate.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::inner_insert_leaf_batch::<stacks_marf::scratch::MarfReadState>
+   196,129,666 ( 1.29%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId, rusqlite::transaction::Transaction> as stacks_marf::TrieReadStorage<stacks_common::types::chainstate::StacksBlockId>>::read_node_with_state::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+   192,580,219 ( 1.26%)  ./malloc/./malloc/malloc.c:free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   190,675,774 ( 1.25%)  target/reference-worktree/stacks-marf/src/scratch.rs:<stacks_marf::record::NodeRecord>::decode_into_scratch::<stacks_marf::scratch::MarfReadState>
+   188,651,729 ( 1.24%)  core/src/mem/mod.rs:core::ptr::drop_glue::<rusqlite::cache::CachedStatement> [marf-differential-reference-lateprobe]
+   187,781,818 ( 1.23%)  target/reference-worktree/contrib/marf-differential/src/alloc.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Baseline>
+   179,097,296 ( 1.17%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::extend_trie::<stacks_marf::scratch::MarfReadState> [marf-differential-reference-lateprobe]
+   174,653,916 ( 1.14%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:walTryBeginRead [marf-differential-reference-lateprobe]
+   172,546,088 ( 1.13%)  target/reference-worktree/stacks-marf/src/marf.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::commit [marf-differential-reference-lateprobe]
+   171,360,596 ( 1.12%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieStorageConnection<stacks_common::types::chainstate::StacksBlockId, rusqlite::transaction::Transaction>>::inner_flush [marf-differential-reference-lateprobe]
+   171,359,700 ( 1.12%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::commit
+   170,155,199 ( 1.12%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::extend_trie::<stacks_marf::scratch::MarfReadState>
+   170,043,507 ( 1.11%)  target/reference-worktree/stacks-marf/src/trie_sql.rs:stacks_marf::trie_sql::count_blocks [marf-differential-reference-lateprobe]
+   169,638,463 ( 1.11%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   169,485,815 ( 1.11%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::dump_compressed_consume::<core::io::cursor::Cursor<alloc::vec::Vec<u8>>> [marf-differential-reference-lateprobe]
+   169,183,675 ( 1.11%)  target/reference-worktree/stacks-marf/src/trie.rs:<stacks_marf::trie::Trie>::append_leaf::<stacks_common::types::chainstate::StacksBlockId, rusqlite::transaction::Transaction> [marf-differential-reference-lateprobe]
+   167,195,574 ( 1.10%)  core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&stacks_common::types::chainstate::StacksBlockId> [marf-differential-reference-lateprobe]
+   164,621,714 ( 1.08%)  target/reference-worktree/stacks-marf/src/storage.rs:<stacks_marf::storage::TrieRAM<stacks_common::types::chainstate::StacksBlockId>>::calculate_branch_hashes::<48> [marf-differential-reference-lateprobe]
+   158,876,058 ( 1.04%)  libsqlite3-sys-0.28.0/sqlite3/sqlite3.c:sqlite3BtreeCommitPhaseTwo [marf-differential-reference-lateprobe]
+   158,557,551 ( 1.04%)  target/reference-worktree/stacks-marf/src/bits.rs:stacks_marf::storage::read_patched_persisted_node::<stacks_marf::scratch::MarfReadState>
+   158,208,422 ( 1.04%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf::storage::get_block_id_caching_impl::<stacks_common::types::chainstate::StacksBlockId>
+   155,920,442 ( 1.02%)  target/reference-worktree/stacks-marf/src/node.rs:<stacks_marf::node::TrieCursor<stacks_common::types::chainstate::StacksBlockId>>::walk_borrowed [marf-differential-reference-lateprobe]
+   151,258,111 ( 0.99%)  core/src/num/uint_macros.rs:stacks_marf::bits::ptrs_from_parts_into
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: target/reference-worktree/stacks-marf/src/lib.rs
+--------------------------------------------------------------------------------
+Ir                  
+
+-- line 159 ----------------------------------------
+         .           
+         .           impl Eq for NodePath {}
+         .           
+         .           impl NodePath {
+         .               /// Create a `NodePath` from a byte slice. Returns `None` if `s.len() > 32`.
+         .               #[inline]
+         .               pub fn from_slice(s: &[u8]) -> Option<Self> {
+         .                   let len = s.len();
+   659,346 ( 0.00%)          if len > 32 {
+         .                       return None;
+         .                   }
+   908,329 ( 0.01%)          let mut data = [0u8; 32];
+         .                   data.get_mut(..len)?.copy_from_slice(s);
+   400,974 ( 0.00%)          Some(Self {
+         .                       data,
+         .                       len: len as u8,
+         .                   })
+         .               }
+         .           
+         .               /// The path bytes as a slice.
+         .               #[inline]
+         .               pub fn as_slice(&self) -> &[u8] {
+         .                   // `len` is always <= 32: only set by validated paths (`from_slice`, `set_from_slice`, or
+         .                   // `read_from` after callers validate against `TRIEHASH_ENCODED_SIZE`).
+ 1,302,694 ( 0.01%)          self.data
+ 3,214,622 ( 0.02%)              .get(..self.len as usize)
+         .                       .expect("BUG: NodePath len invariant violated")
+         .               }
+         .           
+         .               /// The length of the path in bytes.
+         .               #[inline]
+         .               pub fn len(&self) -> usize {
+   208,631 ( 0.00%)          self.len as usize
+         .               }
+         .           
+         .               /// Returns `true` if the path is empty.
+         .               #[inline]
+         .               pub fn is_empty(&self) -> bool {
+    17,134 ( 0.00%)          self.len == 0
+         .               }
+         .           
+         .               /// Set the path from a reader.
+         .               ///
+         .               /// `len` must be <= 32 (callers validate via [`TRIEHASH_ENCODED_SIZE`] before calling).
+         .               #[inline]
+         .               pub fn read_from<R: io::Read>(&mut self, len: u8, r: &mut R) -> Result<(), io::Error> {
+         .                   self.len = len;
+-- line 205 ----------------------------------------
+-- line 213 ----------------------------------------
+         .               /// Set the path from a byte slice. Returns `None` if `s.len() > 32`.
+         .               #[inline]
+         .               pub fn set_from_slice(&mut self, s: &[u8]) -> Option<()> {
+         .                   let len = s.len();
+         .                   if len > 32 {
+         .                       return None;
+         .                   }
+         .                   self.data.get_mut(..len)?.copy_from_slice(s);

@@ -1,0 +1,200 @@
+--------------------------------------------------------------------------------
+Profile data file 'callgrind.rewrite-cap64.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 1161307889
+Trigger: Program termination
+Profiled target:  marf-differential-upstream ablate rewrite std (PID 17015, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                      
+--------------------------------------------------------------------------------
+12,015,681,784 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                      file:function
+--------------------------------------------------------------------------------
+1,949,486,270 (16.22%)  sha2-asm-0.6.3/src/sha256_x64.S:0x0000000000292963 [marf-differential-upstream]
+1,444,661,348 (12.02%)  sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2 [marf-differential-upstream]
+  973,908,432 ( 8.11%)  core/src/intrinsics/mod.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  798,979,921 ( 6.65%)  core/src/num/uint_macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  545,069,212 ( 4.54%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end [marf-differential-upstream]
+  499,933,958 ( 4.16%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::skip_scan [marf-differential-upstream]
+  344,298,648 ( 2.87%)  core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  266,604,525 ( 2.22%)  crates/stacks-marf-next/src/node.rs:stacks_marf_next::codec::apply_patch
+  255,647,139 ( 2.13%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0} [marf-differential-upstream]
+  249,115,296 ( 2.07%)  core/src/cmp.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  247,172,122 ( 2.06%)  core/src/iter/range.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  192,632,400 ( 1.60%)  core/src/../../stdarch/crates/core_arch/src/x86/avx2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+  167,899,638 ( 1.40%)  core/src/hash/sip.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+  161,635,408 ( 1.35%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::codec::apply_patch [marf-differential-upstream]
+  157,155,558 ( 1.31%)  core/src/slice/mod.rs:<stacks_marf_next::node::Branch>::insert
+  155,144,715 ( 1.29%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+  153,639,863 ( 1.28%)  core/src/num/uint_macros.rs:<stacks_marf_next::codec::BranchView>::fill_with_end
+  138,890,999 ( 1.16%)  core/src/intrinsics/mod.rs:<stacks_marf_next::codec::BranchView>::fill_with_end
+   99,449,884 ( 0.83%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::resolve_in [marf-differential-upstream]
+   99,100,845 ( 0.82%)  ./malloc/./malloc/malloc.c:_int_malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   80,469,788 ( 0.67%)  core/src/hash/sip.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32>
+   80,237,247 ( 0.67%)  crates/stacks-marf-next/src/node.rs:<stacks_marf_next::node::Branch>::insert [marf-differential-upstream]
+   78,403,429 ( 0.65%)  core/src/hash/sip.rs:<core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write [marf-differential-upstream]
+   63,157,661 ( 0.53%)  core/src/slice/index.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+   59,075,905 ( 0.49%)  core/src/slice/iter/macros.rs:stacks_marf_next::codec::make_patch
+   58,917,870 ( 0.49%)  core/src/hash/sip.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)>
+   57,487,440 ( 0.48%)  core/src/intrinsics/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32>
+   57,206,900 ( 0.48%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Blobs>::slice [marf-differential-upstream]
+   56,482,923 ( 0.47%)  alloc/src/vec/mod.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0}
+   52,158,678 ( 0.43%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::trie_bytes [marf-differential-upstream]
+   51,287,487 ( 0.43%)  core/src/ptr/non_null.rs:stacks_marf_next::codec::apply_patch
+   49,848,247 ( 0.41%)  core/src/slice/iter/macros.rs:stacks_marf_next::codec::apply_patch
+   48,880,328 ( 0.41%)  core/src/../../stdarch/crates/core_arch/src/macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   46,593,687 ( 0.39%)  core/src/slice/index.rs:<stacks_marf_next::node::Branch>::insert
+   45,510,890 ( 0.38%)  core/src/num/uint_macros.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32>
+   44,021,024 ( 0.37%)  core/src/ptr/mod.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   43,754,733 ( 0.36%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::location_in [marf-differential-upstream]
+   42,807,200 ( 0.36%)  core/src/ptr/non_null.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   42,791,520 ( 0.36%)  core/src/intrinsics/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)>
+   41,092,079 ( 0.34%)  ./malloc/./malloc/malloc.c:_int_free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   37,442,580 ( 0.31%)  core/src/num/uint_macros.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)>
+   37,021,360 ( 0.31%)  core/src/num/int_macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   36,528,977 ( 0.30%)  core/src/result.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+   33,431,119 ( 0.28%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::storage::resolve_in
+   32,887,494 ( 0.27%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::codec::make_patch [marf-differential-upstream]
+   31,638,949 ( 0.26%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::lookup [marf-differential-upstream]
+   30,516,824 ( 0.25%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::storage::record_in
+   29,988,424 ( 0.25%)  core/src/slice/mod.rs:stacks_marf_next::storage::descend_branch
+   29,489,992 ( 0.25%)  core/src/cmp.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+   29,489,992 ( 0.25%)  core/src/iter/range.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+   28,613,128 ( 0.24%)  core/src/result.rs:stacks_marf_next::storage::resolve_in
+   28,601,293 ( 0.24%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::record_in [marf-differential-upstream]
+   28,454,310 ( 0.24%)  alloc/src/vec/mod.rs:stacks_marf_next::storage::resolve_in
+   26,665,170 ( 0.22%)  core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)> [marf-differential-upstream]
+   26,302,155 ( 0.22%)  ./malloc/./malloc/malloc.c:_int_realloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   26,235,649 ( 0.22%)  ./malloc/./malloc/malloc.c:realloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   25,909,998 ( 0.22%)  core/src/iter/range.rs:<stacks_marf_next::codec::BranchView>::fill_with_end
+   25,823,640 ( 0.21%)  core/src/cmp.rs:<stacks_marf_next::codec::BranchView>::fill_with_end
+   24,576,456 ( 0.20%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth [marf-differential-upstream]
+   24,001,194 ( 0.20%)  core/src/ptr/mod.rs:core::ptr::drop_glue::<stacks_marf_next::Error> [marf-differential-upstream]
+   22,230,186 ( 0.19%)  core/src/ptr/mod.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0}
+   22,230,186 ( 0.19%)  core/src/ptr/mut_ptr.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0}
+   21,817,654 ( 0.18%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   21,557,790 ( 0.18%)  std/src/hash/random.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32>
+   21,403,600 ( 0.18%)  core/src/slice/iter/macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   21,391,326 ( 0.18%)  core/src/hint.rs:<stacks_marf_next::node::Branch>::insert
+   21,333,392 ( 0.18%)  core/src/result.rs:<stacks_marf_next::codec::BranchView>::fill_with_end
+   18,943,577 ( 0.16%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::NodeView>::descend [marf-differential-upstream]
+   18,632,704 ( 0.16%)  ./malloc/./malloc/malloc.c:_int_free_merge_chunk [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   18,464,603 ( 0.15%)  ./malloc/./malloc/malloc.c:malloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   18,327,103 ( 0.15%)  core/src/intrinsics/mod.rs:stacks_marf_next::storage::resolve_in
+   17,437,168 ( 0.15%)  std/src/hash/random.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write [marf-differential-upstream]
+   17,029,396 ( 0.14%)  /rust/deps/hashbrown-0.17.1/src/raw.rs:stacks_marf_next::storage::resolve_in
+   17,021,627 ( 0.14%)  ./string/../sysdeps/x86_64/multiarch/memcmp-avx2-movbe.S:__memcmp_avx2_movbe [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   16,965,681 ( 0.14%)  /rust/deps/hashbrown-0.17.1/src/raw.rs:stacks_marf_next::storage::location_in
+   16,522,935 ( 0.14%)  core/src/ptr/non_null.rs:stacks_marf_next::codec::make_patch
+   16,046,820 ( 0.13%)  std/src/hash/random.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)>
+   15,801,182 ( 0.13%)  ./malloc/./malloc/malloc.c:unlink_chunk.isra.0 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   15,489,577 ( 0.13%)  core/src/cmp.rs:<stacks_marf_next::node::Branch>::insert
+   15,419,388 ( 0.13%)  core/src/ptr/mod.rs:stacks_marf_next::storage::resolve_in
+   15,289,501 ( 0.13%)  core/src/result.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::lookup
+   14,584,038 ( 0.12%)  core/src/num/uint_macros.rs:stacks_marf_next::storage::resolve_in
+   14,252,113 ( 0.12%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::resolve_in
+   13,984,412 ( 0.12%)  core/src/ptr/mod.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+   13,658,922 ( 0.11%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::marf::NodeView>::descend
+   13,362,432 ( 0.11%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth
+   13,275,072 ( 0.11%)  core/src/intrinsics/mod.rs:<core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
+   13,126,704 ( 0.11%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::descend_branch [marf-differential-upstream]
+   13,069,000 ( 0.11%)  core/src/hash/sip.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&stacks_common::types::chainstate::StacksBlockId>
+   12,947,302 ( 0.11%)  core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32> [marf-differential-upstream]
+   12,248,896 ( 0.10%)  core/src/result.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth
+   11,779,296 ( 0.10%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::location_in
+   11,640,109 ( 0.10%)  crates/stacks-marf-next/src/node.rs:stacks_marf_next::storage::resolve_in
+   11,498,689 ( 0.10%)  ./malloc/./malloc/malloc.c:malloc_consolidate [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   11,497,601 ( 0.10%)  ./malloc/./malloc/malloc.c:free [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   11,299,130 ( 0.09%)  core/src/slice/index.rs:stacks_marf_next::storage::descend_branch
+   11,115,093 ( 0.09%)  alloc/src/raw_vec/mod.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0}
+   11,115,093 ( 0.09%)  core/src/option.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0}
+   10,618,350 ( 0.09%)  core/src/intrinsics/mod.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+   10,197,496 ( 0.08%)  alloc/src/raw_vec/mod.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+   10,160,084 ( 0.08%)  /rust/deps/hashbrown-0.17.1/src/map.rs:marf_differential::ablate::make_set
+   10,100,269 ( 0.08%)  alloc/src/vec/mod.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+   10,018,205 ( 0.08%)  crates/stacks-marf-next/src/node.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+    9,966,356 ( 0.08%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile [marf-differential-upstream]
+    9,858,917 ( 0.08%)  core/src/result.rs:<stacks_marf_next::marf::NodeView>::descend
+    9,705,401 ( 0.08%)  alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVecInner>::finish_grow [marf-differential-upstream]
+    9,324,955 ( 0.08%)  core/src/ptr/mod.rs:<stacks_marf_next::node::Branch>::insert
+    9,279,539 ( 0.08%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::child_at [marf-differential-upstream]
+    8,929,020 ( 0.07%)  core/src/num/uint_macros.rs:<core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
+    8,848,625 ( 0.07%)  core/src/num/uint_macros.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+    8,810,472 ( 0.07%)  block-buffer-0.10.4/src/lib.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+    8,712,480 ( 0.07%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::Record>::branch [marf-differential-upstream]
+    8,561,440 ( 0.07%)  core/src/../../stdarch/crates/core_arch/src/x86/avx.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+    8,454,641 ( 0.07%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::marf::NodeView>::descend
+    8,358,221 ( 0.07%)  core/src/ptr/mod.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+    8,248,957 ( 0.07%)  core/src/option.rs:stacks_marf_next::storage::resolve_in
+    8,076,266 ( 0.07%)  stacks-common/src/types/chainstate.rs:<stacks_common::types::chainstate::TrieHash>::from_data [marf-differential-upstream]
+    8,026,732 ( 0.07%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::Record>::patch [marf-differential-upstream]
+    7,841,400 ( 0.07%)  core/src/intrinsics/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&stacks_common::types::chainstate::StacksBlockId>
+    7,839,812 ( 0.07%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_id [marf-differential-upstream]
+    7,834,068 ( 0.07%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_hash [marf-differential-upstream]
+    7,798,016 ( 0.06%)  core/src/../../stdarch/crates/core_arch/src/x86/avx2.rs:rand_chacha::guts::refill_wide::impl_avx2
+    7,269,464 ( 0.06%)  core/src/hash/sip.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&alloc::string::String>
+    7,235,348 ( 0.06%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2 [marf-differential-upstream]
+    6,855,244 ( 0.06%)  alloc/src/vec/into_iter.rs:marf_differential::ablate::key_sets
+    6,817,111 ( 0.06%)  ./malloc/./malloc/malloc.c:_int_free_maybe_consolidate [/usr/lib/x86_64-linux-gnu/libc.so.6]
+    6,765,557 ( 0.06%)  /rust/deps/hashbrown-0.17.1/src/control/tag.rs:stacks_marf_next::storage::resolve_in
+    6,730,152 ( 0.06%)  core/src/intrinsics/mod.rs:<stacks_marf_next::storage::Blobs>::slice
+    6,730,152 ( 0.06%)  core/src/option.rs:<stacks_marf_next::storage::Blobs>::slice
+    6,729,716 ( 0.06%)  core/src/result.rs:stacks_marf_next::storage::record_in
+    6,377,952 ( 0.05%)  core/src/fmt/mod.rs:<core::fmt::Formatter>::pad_integral [marf-differential-upstream]
+    6,207,775 ( 0.05%)  core/src/num/uint_macros.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&stacks_common::types::chainstate::StacksBlockId>
+    6,120,987 ( 0.05%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::flush
+    6,043,413 ( 0.05%)  core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:stacks_marf_next::storage::resolve_in
+    6,010,675 ( 0.05%)  crates/stacks-marf-next/src/hash.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+    5,820,192 ( 0.05%)  alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVec<stacks_marf_next::node::Ptr>>::grow_one [marf-differential-upstream]
+    5,697,504 ( 0.05%)  /rust/deps/hashbrown-0.17.1/src/raw.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_hash
+    5,486,211 ( 0.05%)  core/src/cmp.rs:stacks_marf_next::storage::resolve_in
+    5,404,816 ( 0.04%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::codec::put_ptr_compressed [marf-differential-upstream]
+    5,371,272 ( 0.04%)  core/src/hash/sip.rs:marf_differential::ablate::key_sets
+    5,348,880 ( 0.04%)  core/src/slice/iter/macros.rs:stacks_marf_next::storage::descend_branch
+    5,309,175 ( 0.04%)  core/src/cmp.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+    5,141,304 ( 0.04%)  core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:stacks_marf_next::storage::location_in
+    5,115,079 ( 0.04%)  core/src/ptr/mut_ptr.rs:stacks_marf_next::storage::location_in
+    5,053,164 ( 0.04%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::codec::encode_node_mapped [marf-differential-upstream]
+    5,050,493 ( 0.04%)  /rust/deps/hashbrown-0.17.1/src/control/tag.rs:stacks_marf_next::storage::location_in
+    5,047,614 ( 0.04%)  core/src/num/uint_macros.rs:<stacks_marf_next::storage::Blobs>::slice
+    4,985,316 ( 0.04%)  /rust/deps/hashbrown-0.17.1/src/map.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_hash
+    4,887,134 ( 0.04%)  core/src/slice/mod.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::insert_batch
+    4,772,339 ( 0.04%)  sha2-0.10.8/src/core_api.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+    4,765,676 ( 0.04%)  core/src/intrinsics/mod.rs:marf_differential::ablate::key_sets
+    4,715,328 ( 0.04%)  core/src/intrinsics/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&alloc::string::String>
+    4,683,062 ( 0.04%)  sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::compress512
+    4,616,760 ( 0.04%)  /rust/deps/hashbrown-0.17.1/src/control/bitmask.rs:stacks_marf_next::storage::resolve_in
+    4,471,296 ( 0.04%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value [marf-differential-upstream]
+    4,391,357 ( 0.04%)  core/src/fmt/mod.rs:alloc::fmt::format::format_inner
+    4,385,426 ( 0.04%)  alloc/src/vec/mod.rs:<stacks_marf_next::node::Branch>::insert
+    4,372,415 ( 0.04%)  crates/stacks-marf-next/src/node.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::insert_batch
+    4,357,847 ( 0.04%)  core/src/fmt/mod.rs:core::fmt::write [marf-differential-upstream]
+    4,298,656 ( 0.04%)  core/src/slice/index.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+    4,296,038 ( 0.04%)  core/src/slice/index.rs:<stacks_marf_next::marf::NodeView>::descend
+    4,164,903 ( 0.03%)  core/src/../../stdarch/crates/core_arch/src/x86/ssse3.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+    4,038,133 ( 0.03%)  digest-0.10.7/src/core_api/wrapper.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+    4,018,770 ( 0.03%)  core/src/cmp.rs:stacks_marf_next::storage::descend_branch
+    4,018,770 ( 0.03%)  core/src/hint.rs:stacks_marf_next::storage::descend_branch
+    3,917,034 ( 0.03%)  /rust/deps/hashbrown-0.17.1/src/control/tag.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_hash
+    3,912,384 ( 0.03%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+    3,902,111 ( 0.03%)  core/src/ptr/mod.rs:<core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
+    3,888,006 ( 0.03%)  core/src/result.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile
+    3,806,489 ( 0.03%)  core/src/num/uint_macros.rs:marf_differential::ablate::key_sets
+    3,746,448 ( 0.03%)  sha2-0.10.8/src/sha512.rs:sha2::sha512::compress512 [marf-differential-upstream]
+    3,661,096 ( 0.03%)  core/src/slice/cmp.rs:<stacks_marf_next::marf::NodeView>::descend
+    3,637,890 ( 0.03%)  alloc/src/string.rs:<alloc::string::String as core::fmt::Write>::write_str [marf-differential-upstream]
+    3,629,910 ( 0.03%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::flush
+    3,613,816 ( 0.03%)  /rust/deps/hashbrown-0.17.1/src/raw.rs:marf_differential::ablate::key_sets
