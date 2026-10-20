@@ -17,8 +17,6 @@
 
 use std::fs;
 
-use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
-use blockstack_lib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
 use blockstack_lib::clarity_vm::clarity::ClarityMarfStoreTransaction;
 use blockstack_lib::clarity_vm::database::binary_value_store;
 use blockstack_lib::clarity_vm::database::marf::MarfedKV;
@@ -27,6 +25,8 @@ use clarity::vm::database::{
 };
 use rusqlite::{Connection, params};
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_marf::marf::{MARF, MARFOpenOpts, MarfConnection};
+use stacks_marf::{ClarityMarfTrieId, MARFValue};
 use stacks_storage_migrate::{Config, migrate};
 use tempfile::tempdir;
 

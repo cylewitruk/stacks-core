@@ -18,8 +18,8 @@ use stacks_common::util::hash::{hex_bytes, to_hex};
 
 use super::binary_value_store::{self, EncodedRecord};
 use super::stable_value_store::StableValueStore;
-use crate::chainstate::stacks::index::inline_value::{InlineValue, InlineValueBytes};
-use crate::chainstate::stacks::index::{Error as IndexError, MARFValue, ValueResolver};
+use stacks_marf::inline_value::{InlineValue, InlineValueBytes};
+use stacks_marf::{Error as IndexError, MARFValue, ValueResolver};
 
 /// A checked record borrowing its immutable mapping.
 #[derive(Debug)]
@@ -369,7 +369,7 @@ mod tests {
     use clarity::vm::database::TypedValueData;
 
     use super::*;
-    use crate::chainstate::stacks::index::FileMapping;
+    use stacks_marf::FileMapping;
 
     /// Inline generic reads retain exact canonical spelling and the original commitment.
     #[test]

@@ -19,12 +19,12 @@ use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Component, Path, PathBuf};
 
-use blockstack_lib::chainstate::stacks::index::direct_hash_index::{self, DirectHashIndex};
-use blockstack_lib::chainstate::stacks::index::record::NodeRecordFormat;
 use blockstack_lib::clarity_vm::database::binary_value_store;
 use blockstack_lib::clarity_vm::database::value_extents::ValueBackend;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
+use stacks_marf::direct_hash_index::{self, DirectHashIndex};
+use stacks_marf::record::NodeRecordFormat;
 
 use crate::source::owned_legacy_files;
 use crate::{Config, Result, migrate};
@@ -324,10 +324,10 @@ pub fn prepare_chainstate_in_place(root: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts};
-    use blockstack_lib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
     use blockstack_lib::clarity_vm::database::marf::MarfedKV;
     use stacks_common::types::chainstate::StacksBlockId;
+    use stacks_marf::marf::{MARF, MARFOpenOpts};
+    use stacks_marf::{ClarityMarfTrieId, MARFValue};
 
     use super::*;
 

@@ -92,6 +92,8 @@ pub mod value_relocation;
 #[cfg(test)]
 pub mod test;
 
+// Core MARF types are also available at the crate root.
+pub use crate::marf::{MARFOpenOpts, MarfConnection, MarfTransaction, MARF};
 use crate::node::{
     clear_backptr, is_backptr, CursorError, ParkedNodeHandle, TrieCursor, TrieLeafRef, TrieNodeID,
     TrieNodePatch, TrieNodeRef, TrieNodeTransientMeta, TrieNodeType, TriePtr,

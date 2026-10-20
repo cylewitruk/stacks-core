@@ -17,13 +17,13 @@
 
 use std::thread;
 
-use blockstack_lib::chainstate::stacks::index::MARFValue;
-use blockstack_lib::chainstate::stacks::index::inline_value::InlineValue;
 use blockstack_lib::clarity_vm::database::binary_value_store::{self, ValueStorageFormat};
 use blockstack_lib::clarity_vm::database::value_extents::InlineValueRecord;
 use rusqlite::Row;
 use stable_value_format::{MAX_DESCRIPTOR_BYTES, MAX_RECORD_BYTES};
 use stacks_common::util::hash::hex_bytes;
+use stacks_marf::MARFValue;
+use stacks_marf::inline_value::InlineValue;
 
 use crate::Result;
 

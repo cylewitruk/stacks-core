@@ -28,9 +28,9 @@ use stacks_common::consts::{
 use stacks_common::types::chainstate::StacksBlockId;
 use stacks_common::types::StacksEpochId;
 
-use crate::chainstate::stacks::index::ClarityMarfTrieId as _;
 use crate::clarity_vm::clarity::{ClarityMarfStore, ClarityMarfStoreTransaction};
 use crate::clarity_vm::database::marf::MarfedKV;
+use stacks_marf::ClarityMarfTrieId as _;
 
 /// Exercise packed tuples, lists, buffers, optionals, and responses through VM consumers.
 #[test]

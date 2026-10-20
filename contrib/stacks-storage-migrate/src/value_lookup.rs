@@ -19,11 +19,11 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use blockstack_lib::chainstate::stacks::index::inline_value::InlineValue;
-use blockstack_lib::chainstate::stacks::index::{Error as MarfError, MARFValue, TrieLeaf};
 use blockstack_lib::clarity_vm::database::binary_value_store;
 use memmap2::Mmap;
 use rusqlite::Connection;
+use stacks_marf::inline_value::InlineValue;
+use stacks_marf::{Error as MarfError, MARFValue, TrieLeaf};
 
 use crate::Result;
 

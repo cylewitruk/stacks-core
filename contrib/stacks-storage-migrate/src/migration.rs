@@ -21,13 +21,13 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Instant;
 
-use blockstack_lib::chainstate::stacks::index::record::NodeRecordFormat;
-use blockstack_lib::chainstate::stacks::index::value_relocation::BlobRelocation;
-use blockstack_lib::chainstate::stacks::index::{Error as MarfError, direct_hash_index};
 use blockstack_lib::util_lib::db::sqlite_readonly_uri;
 use memmap2::Mmap;
 use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
+use stacks_marf::record::NodeRecordFormat;
+use stacks_marf::value_relocation::BlobRelocation;
+use stacks_marf::{Error as MarfError, direct_hash_index};
 
 use crate::ancestors::AncestorCache;
 use crate::clarity::ClarityValues;
@@ -465,10 +465,10 @@ fn sync_directory(path: &Path) -> Result<()> {
 mod reuse_tests {
     use std::collections::BTreeMap;
 
-    use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
-    use blockstack_lib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
     use clarity::vm::database::SqliteConnection;
     use stacks_common::types::chainstate::StacksBlockId;
+    use stacks_marf::marf::{MARF, MARFOpenOpts, MarfConnection};
+    use stacks_marf::{ClarityMarfTrieId, MARFValue};
 
     use super::*;
 

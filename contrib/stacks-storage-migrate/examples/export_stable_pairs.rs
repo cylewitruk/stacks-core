@@ -214,11 +214,11 @@ fn export(database: &Path, destination: &Path) -> Result<serde_json::Value> {
 
 #[cfg(test)]
 mod tests {
-    use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
-    use blockstack_lib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
     use clarity::vm::database::SqliteConnection;
     use rusqlite::params;
     use stacks_common::types::chainstate::StacksBlockId;
+    use stacks_marf::marf::{MARF, MARFOpenOpts, MarfConnection};
+    use stacks_marf::{ClarityMarfTrieId, MARFValue};
     use stacks_storage_migrate::{Config, migrate};
 
     use super::*;

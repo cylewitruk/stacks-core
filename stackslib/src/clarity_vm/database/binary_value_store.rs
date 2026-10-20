@@ -47,7 +47,7 @@ use self::schema::{
     AUDIT_DATA, FORMAT_TABLE, GET_GENERIC, GET_SHAPE_ID, GET_TYPED, INSERT_DATA, INSERT_SHAPE,
     RECORD_VERSION,
 };
-use crate::chainstate::stacks::index::MARFValue;
+use stacks_marf::MARFValue;
 
 /// Maximum number of descriptor-to-ID mappings retained by one writer cache.
 const SHAPE_CACHE_CAPACITY: usize = 65_536;

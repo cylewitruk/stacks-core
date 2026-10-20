@@ -22,21 +22,21 @@ use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
 
-use blockstack_lib::chainstate::stacks::index::direct_hash_index::DirectHashIndex;
-use blockstack_lib::chainstate::stacks::index::marf::{
-    BLOCK_HASH_TO_HEIGHT_MAPPING_KEY, BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF, MARFOpenOpts,
-    MarfConnection, OWN_BLOCK_HEIGHT_KEY,
-};
-use blockstack_lib::chainstate::stacks::index::node::{TrieNodeType, is_backptr, logical_node_id};
-use blockstack_lib::chainstate::stacks::index::record::{NodeRecordFormat, RecordContext};
-use blockstack_lib::chainstate::stacks::index::scratch::MarfReadState;
-use blockstack_lib::chainstate::stacks::index::storage::TrieFileStorage;
-use blockstack_lib::chainstate::stacks::index::{MARFValue, ReadTrieItemKind, bits};
 use blockstack_lib::clarity_vm::database::value_extents::{LockedValueBackend, ValueBackend};
 use blockstack_lib::util_lib::db::sqlite_readonly_uri;
 use memmap2::Mmap;
 use rusqlite::{Connection, OpenFlags};
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_marf::direct_hash_index::DirectHashIndex;
+use stacks_marf::marf::{
+    BLOCK_HASH_TO_HEIGHT_MAPPING_KEY, BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF, MARFOpenOpts,
+    MarfConnection, OWN_BLOCK_HEIGHT_KEY,
+};
+use stacks_marf::node::{TrieNodeType, is_backptr, logical_node_id};
+use stacks_marf::record::{NodeRecordFormat, RecordContext};
+use stacks_marf::scratch::MarfReadState;
+use stacks_marf::storage::TrieFileStorage;
+use stacks_marf::{MARFValue, ReadTrieItemKind, bits};
 use stacks_storage_migrate::Result;
 
 /// An offline SQL snapshot, optional external mapping and registered value owner.

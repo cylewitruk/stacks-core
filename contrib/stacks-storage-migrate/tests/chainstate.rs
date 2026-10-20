@@ -18,11 +18,11 @@
 use std::fs;
 use std::path::Path;
 
-use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
-use blockstack_lib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
 use clarity::vm::database::SqliteConnection;
 use rusqlite::{Connection, params};
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_marf::marf::{MARF, MARFOpenOpts, MarfConnection};
+use stacks_marf::{ClarityMarfTrieId, MARFValue};
 use stacks_storage_migrate::{migrate_chainstate, verify};
 use tempfile::tempdir;
 

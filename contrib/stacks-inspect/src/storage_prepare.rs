@@ -14,9 +14,9 @@ mod tests {
     use clarity::vm::database::SqliteConnection;
     use rusqlite::{Connection, params};
     use stacks_common::types::chainstate::StacksBlockId;
-    use stackslib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
-    use stackslib::chainstate::stacks::index::record::NodeRecordFormat;
-    use stackslib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
+    use stacks_marf::marf::{MARF, MARFOpenOpts, MarfConnection};
+    use stacks_marf::record::NodeRecordFormat;
+    use stacks_marf::{ClarityMarfTrieId, MARFValue};
 
     use super::*;
 

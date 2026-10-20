@@ -17,11 +17,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use blockstack_lib::chainstate::stacks::index::node::{
-    TrieNodeID, TrieNodeType, TriePtr, is_backptr,
-};
-use blockstack_lib::chainstate::stacks::index::record::NodeRecordFormat;
-use blockstack_lib::chainstate::stacks::index::{Error, MARFValue, TrieLeaf};
+use stacks_marf::node::{TrieNodeID, TrieNodeType, TriePtr, is_backptr};
+use stacks_marf::record::NodeRecordFormat;
+use stacks_marf::{Error, MARFValue, TrieLeaf};
 
 use crate::value_lookup::{Reference, ValueLookup};
 

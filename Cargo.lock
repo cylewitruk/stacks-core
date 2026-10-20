@@ -946,6 +946,7 @@ dependencies = [
  "serde_json",
  "slog",
  "stacks-common 4.0.5",
+ "stacks-marf",
  "stackslib 0.0.1",
 ]
 
@@ -3114,6 +3115,7 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "stacks-common 4.0.5",
+ "stacks-marf",
  "stackslib 0.0.1",
  "tempfile",
  "toml 0.5.11",
@@ -5310,6 +5312,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "stacks-common 4.0.5",
+ "stacks-marf",
  "stacks-profiler",
  "stackslib 0.0.1",
  "stx-genesis",
@@ -5418,6 +5421,7 @@ dependencies = [
  "serde_json",
  "slog",
  "stacks-common 4.0.5",
+ "stacks-marf",
  "stacks-storage-migrate",
  "stackslib 0.0.1",
  "tempfile",
@@ -5490,6 +5494,7 @@ dependencies = [
  "stacks-common 0.0.1",
  "stacks-common 4.0.5",
  "stacks-inspect",
+ "stacks-marf",
  "stacks-signer 0.0.1",
  "stacks-signer 4.0.5",
  "stackslib 0.0.1",
@@ -5608,6 +5613,7 @@ dependencies = [
  "sha2 0.10.9",
  "stable-value-format",
  "stacks-common 4.0.5",
+ "stacks-marf",
  "stackslib 0.0.1",
  "tempfile",
 ]

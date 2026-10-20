@@ -960,30 +960,55 @@ fn lookup_variable<'a>(
         exec_state,
         context.depth(),
     )?;
-    if let Some(value) = context.lookup_variable(name) {
-        let value = value.as_value_ref();
-        if exec_state.epoch().uses_pre_sanitized_variables() {
-            // If the epoch supports value refs, we can return a borrowed reference to the variable without cloning.
-            return Ok(value);
-        } else {
-            // Preserve the legacy clone charge while retaining immutable packed storage.
-            return value.into_static(exec_state);
+    let lookup_from_local_variable =
+        |exec_state: &mut ExecutionState| -> Result<_, VmExecutionError> {
+            if let Some(value) = context.lookup_variable(name) {
+                let value = value.as_value_ref();
+                if exec_state.epoch().uses_pre_sanitized_variables() {
+                    // If the epoch supports value refs, we can return a borrowed reference to the variable without cloning.
+                    return Ok(Some(value));
+                } else {
+                    // Preserve the legacy clone charge while retaining immutable packed storage.
+                    return value.into_static(exec_state).map(Some);
+                }
+            }
+            Ok(None)
+        };
+    let lookup_from_constant = |exec_state: &mut ExecutionState| -> Result<_, VmExecutionError> {
+        if let Some(value) = invoke_ctx.contract_context.lookup_variable(name) {
+            let value = ValueRef::Borrowed(value);
+            if exec_state.epoch().uses_pre_sanitized_variables() {
+                // Variables were sanitized at load time by canonicalize_types.
+                // Borrow directly.
+                return Ok(Some(value));
+            }
+            // Variables were not sanitized at load time, so we need to sanitize them
+            // now before returning and pay for the clone.
+            let value = value.clone_with_cost(exec_state)?;
+            let (value, _) =
+                Value::sanitize_value(exec_state.epoch(), &TypeSignature::type_of(&value)?, value)
+                    .ok_or(RuntimeCheckErrorKind::CouldNotDetermineType)?;
+            return Ok(Some(ValueRef::Owned(value)));
         }
-    }
-    if let Some(value) = invoke_ctx.contract_context.lookup_variable(name) {
-        let value = ValueRef::Borrowed(value);
-        if exec_state.epoch().uses_pre_sanitized_variables() {
-            // Variables were sanitized at load time by canonicalize_types.
-            // Borrow directly.
-            return Ok(value);
+        Ok(None)
+    };
+    // TODO: Once we've reached Epoch 4.1, this conditional can probably be removed.
+    // See doc comment of [`StacksEpochId::clarity_runtime_checks_global_constants_before_local_vars`].
+    if exec_state
+        .epoch()
+        .clarity_runtime_checks_global_constants_before_local_vars()
+    {
+        if let Some(v) = lookup_from_constant(exec_state)? {
+            return Ok(v);
+        } else if let Some(v) = lookup_from_local_variable(exec_state)? {
+            return Ok(v);
         }
-        // Variables were not sanitized at load time, so we need to sanitize them
-        // now before returning and pay for the clone.
-        let value = value.clone_with_cost(exec_state)?;
-        let (value, _) =
-            Value::sanitize_value(exec_state.epoch(), &TypeSignature::type_of(&value)?, value)
-                .ok_or(RuntimeCheckErrorKind::CouldNotDetermineType)?;
-        return Ok(ValueRef::Owned(value));
+    } else {
+        if let Some(v) = lookup_from_local_variable(exec_state)? {
+            return Ok(v);
+        } else if let Some(v) = lookup_from_constant(exec_state)? {
+            return Ok(v);
+        }
     }
     if let Some(callable_data) = context.lookup_callable_contract(name) {
         let value = if invoke_ctx.contract_context.get_clarity_version() < &ClarityVersion::Clarity2
@@ -2031,6 +2056,83 @@ mod test {
         };
         assert_eq!(packed.record_owner_count(), 1);
         assert!(!packed.is_materialized());
+    }
+
+    /// Name precedence follows the epoch without materializing packed local bindings.
+    #[test]
+    fn packed_local_lookup_preserves_epoch_precedence_and_borrowing() {
+        for epoch in [
+            StacksEpochId::Epoch2_05,
+            StacksEpochId::Epoch33,
+            StacksEpochId::Epoch40,
+            StacksEpochId::Epoch41,
+        ] {
+            for has_constant in [false, true] {
+                let name = ClarityName::from_literal("duplicate");
+                let value = Value::buff_from(vec![7; 4096]).unwrap();
+                let expected = TypeSignature::type_of(&value).unwrap();
+                let record = PackedValue::encode(PackedValueVersion::V1, &value).unwrap();
+                let packed =
+                    SharedPackedValue::copy_from(record.as_bytes(), &expected, &epoch).unwrap();
+                let mut context = LocalContext::new();
+                context
+                    .variables
+                    .insert(name.clone(), ValueCow::Packed(packed));
+                let mut contract_context = ContractContext::new(
+                    QualifiedContractIdentifier::transient(),
+                    ClarityVersion::default_for_epoch(epoch),
+                );
+                if has_constant {
+                    contract_context
+                        .variables
+                        .insert(name.clone(), Value::UInt(42));
+                }
+                let mut store = MemoryBackingStore::new();
+                let mut global_context = GlobalContext::new(
+                    false,
+                    CHAIN_ID_TESTNET,
+                    store.as_clarity_db(),
+                    LimitedCostTracker::new_free(),
+                    epoch,
+                );
+                let mut call_stack = CallStack::new();
+                let mut exec_state = ExecutionState {
+                    global_context: &mut global_context,
+                    call_stack: &mut call_stack,
+                };
+                let invoke_ctx = InvocationContext {
+                    contract_context: &contract_context,
+                    sender: None,
+                    caller: None,
+                    sponsor: None,
+                };
+                let result =
+                    super::lookup_variable(&name, &mut exec_state, &invoke_ctx, &context).unwrap();
+                let ValueCow::Packed(owner) = &context.variables[&name] else {
+                    unreachable!()
+                };
+                if has_constant && epoch.clarity_runtime_checks_global_constants_before_local_vars()
+                {
+                    assert_eq!(result.as_uint().unwrap(), Some(42));
+                    assert_eq!(owner.record_owner_count(), 1);
+                } else {
+                    assert_eq!(result.as_buffer_bytes().unwrap(), Some(&[7; 4096][..]));
+                    assert_eq!(
+                        result.requires_clone_cost(),
+                        epoch.uses_pre_sanitized_variables()
+                    );
+                    assert_eq!(
+                        owner.record_owner_count(),
+                        if epoch.uses_pre_sanitized_variables() {
+                            1
+                        } else {
+                            2
+                        }
+                    );
+                }
+                assert!(!owner.is_materialized());
+            }
+        }
     }
 
     #[test]

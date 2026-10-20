@@ -3,7 +3,7 @@ use std::env;
 use std::path::Path;
 use std::time::Instant;
 
-use blockstack_lib::chainstate::stacks::index::direct_hash_index;
+use stacks_marf::direct_hash_index;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = env::args()
         .nth(1)

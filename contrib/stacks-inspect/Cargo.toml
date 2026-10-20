@@ -7,6 +7,7 @@ edition = "2024"
 stackslib = { package = "stackslib", path = "../../stackslib", default-features = false }
 stacks-storage-migrate = { path = "../stacks-storage-migrate" }
 extent-ptrhash = { path = "../../crates/extent-ptrhash" }
+stacks-marf = { path = "../../stacks-marf" }
 clarity = { path = "../../clarity", default-features = false }
 clarity-cli = { path = "../clarity-cli", default-features = false }
 libstackerdb = { path = "../../libstackerdb", default-features = false }

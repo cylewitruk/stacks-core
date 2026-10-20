@@ -20,12 +20,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use std::{env, thread};
 
-use blockstack_lib::chainstate::stacks::index::MARFValue;
 use blockstack_lib::clarity_vm::database::value_extents::{StableMappedValueRecord, ValueBackend};
 use blockstack_lib::util_lib::db::sqlite_readonly_uri;
 use extent_ptrhash::stable::Base;
 use rusqlite::{Connection, OpenFlags};
 use stable_value_format::{FILE_HEADER_BYTES, VALUE_ROW_BYTES, ValueId};
+use stacks_marf::MARFValue;
 use stacks_storage_migrate::Result;
 
 /// Open an offline database without journal or recovery writes.
@@ -150,11 +150,11 @@ fn audit(path: &Path) -> Result<serde_json::Value> {
 mod tests {
     use std::fs;
 
-    use blockstack_lib::chainstate::stacks::index::ClarityMarfTrieId;
-    use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
     use clarity::vm::database::SqliteConnection;
     use rusqlite::params;
     use stacks_common::types::chainstate::StacksBlockId;
+    use stacks_marf::ClarityMarfTrieId;
+    use stacks_marf::marf::{MARF, MARFOpenOpts, MarfConnection};
     use stacks_storage_migrate::{Config, migrate};
 
     use super::*;

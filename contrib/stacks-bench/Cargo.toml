@@ -22,6 +22,7 @@ eager-values = ["stackslib/direct-value-eager"]
 direct-value-diagnostics = ["stackslib/direct-value-diagnostics", "clarity/direct-value-diagnostics"]
 
 [dependencies]
+stacks-marf = { path = "../../stacks-marf" }
 # Local dependencies
 clarity = { path = "../../clarity", features = ["rusqlite"] }
 stackslib = { path = "../../stackslib", features = ["profiler"] }

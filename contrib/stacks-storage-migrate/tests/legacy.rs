@@ -17,12 +17,12 @@
 
 use std::fs;
 
-use blockstack_lib::chainstate::stacks::index::marf::{MARF, MARFOpenOpts, MarfConnection};
-use blockstack_lib::chainstate::stacks::index::record::NodeRecordFormat;
-use blockstack_lib::chainstate::stacks::index::storage::TrieFileStorage;
-use blockstack_lib::chainstate::stacks::index::{ClarityMarfTrieId, MARFValue};
 use rusqlite::Connection;
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_marf::marf::{MARF, MARFOpenOpts, MarfConnection};
+use stacks_marf::record::NodeRecordFormat;
+use stacks_marf::storage::TrieFileStorage;
+use stacks_marf::{ClarityMarfTrieId, MARFValue};
 use stacks_storage_migrate::{Config, migrate};
 use tempfile::tempdir;
 
@@ -160,7 +160,7 @@ fn legacy_internal_and_external_forks() {
             db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
             drop(db);
             if external {
-                blockstack_lib::chainstate::stacks::index::direct_hash_index::build(&path).unwrap();
+                stacks_marf::direct_hash_index::build(&path).unwrap();
             }
             let original = fs::read(&path).unwrap();
             let config = Config {

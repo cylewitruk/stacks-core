@@ -41,7 +41,7 @@ use stacks_mmap::AccessPattern;
 
 use super::binary_value_store::{self, EncodedRecord};
 use super::value_extents::canonical_from_encoded_parts;
-use crate::chainstate::stacks::index::{FileMapping, MARFValue};
+use stacks_marf::{FileMapping, MARFValue};
 
 #[cfg(test)]
 thread_local! {

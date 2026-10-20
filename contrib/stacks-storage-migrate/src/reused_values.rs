@@ -20,13 +20,13 @@ use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
-use blockstack_lib::chainstate::stacks::index::MARFValue;
 use blockstack_lib::clarity_vm::database::binary_value_store::{self, ValueStorageFormat};
 use blockstack_lib::clarity_vm::database::value_extents::{StableMappedValueRecord, ValueBackend};
 use blockstack_lib::util_lib::db::sqlite_readonly_uri;
 use rusqlite::{Connection, OpenFlags};
 use stable_value_format::{FILE_HEADER_BYTES, VALUE_ROW_BYTES, ValueId};
 use stacks_common::util::hash::hex_bytes;
+use stacks_marf::MARFValue;
 
 use crate::Result;
 use crate::source::Source;

@@ -2,12 +2,12 @@
 use std::env;
 use std::path::Path;
 
-use blockstack_lib::chainstate::stacks::index::direct_hash_index::DirectHashIndex;
-use blockstack_lib::chainstate::stacks::index::marf::{
-    MARFOpenOpts, MarfConnection, BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF, OWN_BLOCK_HEIGHT_KEY,
-};
 use rusqlite::Connection;
 use stacks_common::types::chainstate::StacksBlockId;
+use stacks_marf::direct_hash_index::DirectHashIndex;
+use stacks_marf::marf::{
+    MARFOpenOpts, MarfConnection, BLOCK_HEIGHT_TO_HASH_MAPPING_KEY, MARF, OWN_BLOCK_HEIGHT_KEY,
+};
 
 /// Audit a built, offline experiment clone without changing logical trie contents.
 fn main() -> Result<(), Box<dyn std::error::Error>> {

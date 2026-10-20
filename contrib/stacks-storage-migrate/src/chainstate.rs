@@ -20,9 +20,9 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use blockstack_lib::chainstate::stacks::index::record::NodeRecordFormat;
 use blockstack_lib::util_lib::db::sqlite_readonly_uri;
 use rusqlite::{Connection, OpenFlags};
+use stacks_marf::record::NodeRecordFormat;
 
 use crate::source::{Source, owned_legacy_files};
 use crate::{Config, Result, migrate, space, verify};
