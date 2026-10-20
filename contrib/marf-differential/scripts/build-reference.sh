@@ -34,6 +34,7 @@ TREE=$PWD
 mkdir -p "$OUT"
 export MARF_BENCH_RUSTC="$(rustc -V)"
 export MARF_BENCH_PROVIDER="reference stacks-marf $REF_REV"
+export MARF_BENCH_TREE_REV="$(git rev-parse HEAD)$(git diff --quiet HEAD -- crates contrib || echo -dirty)"
 echo "tree rev $(git rev-parse HEAD) ($(git describe --always --dirty)); reference $REF_REV; $MARF_BENCH_RUSTC"
 
 # 1. worktree at the reference revision
