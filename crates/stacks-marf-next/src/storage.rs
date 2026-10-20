@@ -318,6 +318,8 @@ pub struct Store<T> {
     /// Whether the optimized reference's optional direct-hash sidecar has
     /// been checked for (and retired) on this store's first write.
     sidecar_retired: bool,
+    /// Capacity of `scratch.patched`; 0 disables lookup and retention.
+    patch_cache_capacity: usize,
 }
 
 #[derive(Default)]
@@ -473,6 +475,7 @@ fn location_in(
     if let Some(loc) = locations.get(&block_id) {
         return Ok(*loc);
     }
+    count!(location_sql);
     let (offset, len, unconfirmed): (i64, i64, i64) = conn
         .prepare_cached(
             "SELECT external_offset, external_length, unconfirmed FROM marf_data WHERE block_id = ?1",
@@ -569,6 +572,10 @@ fn record_in<'s>(
     block_id: u32,
     ptr: &Ptr,
 ) -> Result<Record<'s>, Error> {
+    count!(record_reads);
+    if matches!(loc, Location::Sqlite { .. }) {
+        count!(sqlite_record_reads);
+    }
     let bytes = trie_bytes(blobs, scratch, conn, loc, block_id, ptr.ptr, MAX_NODE_LEN)?;
     Record::parse(bytes, ptr.kind_id()).map_err(|e| match e {
         Error::CorruptionError(m) => Error::CorruptionError(format!(
@@ -587,6 +594,7 @@ pub fn open<T: MarfTrieId>(
     readonly: bool,
     unconfirmed: bool,
     force_migrate: bool,
+    patch_cache_capacity: usize,
 ) -> Result<(Connection, Store<T>), Error> {
     let db_path = db_path.as_ref();
     let in_memory = db_path == Path::new(":memory:");
@@ -658,6 +666,7 @@ pub fn open<T: MarfTrieId>(
         locations: HashMap::new(),
         scratch: Scratch::default(),
         sidecar_retired: false,
+        patch_cache_capacity,
     };
     Ok((conn, store))
 }
@@ -811,6 +820,7 @@ fn resolve_in<'s>(
     bytes: &'s mut BytesScratch,
     diffs: &mut Vec<Ptr>,
     patched: &'s mut HashMap<(u32, u64), Cached>,
+    capacity: usize,
     locations: &mut HashMap<u32, Location>,
     conn: &Connection,
     block_id: u32,
@@ -821,18 +831,26 @@ fn resolve_in<'s>(
     let mut block = block_id;
     let mut ptr = ptr.without_back();
     let key = (block_id, ptr.ptr);
-    if patched.len() >= PATCH_CACHE_CAPACITY {
-        patched.clear();
-    }
-    // (two lookups on a hit: a borrow returned from one branch of an `if`
-    // would hold `patched` for the rest of the function)
-    if patched.contains_key(&key) {
-        let c = &patched[&key];
-        return Ok(Resolved {
-            node: StoreNode::Patched(&c.node),
-            hash: c.hash,
-            depth: c.depth,
-        });
+    // capacity 0: no lookup, and nothing is retained beyond the one scratch
+    // slot a resolved chain is returned from
+    let cache = capacity > 0;
+    if cache {
+        count!(patch_cache_lookups);
+        if patched.len() >= capacity {
+            patched.clear();
+            count!(patch_cache_clears);
+        }
+        // (two lookups on a hit: a borrow returned from one branch of an `if`
+        // would hold `patched` for the rest of the function)
+        if patched.contains_key(&key) {
+            count!(patch_cache_hits);
+            let c = &patched[&key];
+            return Ok(Resolved {
+                node: StoreNode::Patched(&c.node),
+                hash: c.hash,
+                depth: c.depth,
+            });
+        }
     }
     bytes.key = None;
     diffs.clear();
@@ -873,6 +891,9 @@ fn resolve_in<'s>(
             depth: 0,
         });
     }
+    count!(patch_resolutions);
+    count!(patch_applications, depth as u32);
+    count!(owned_materializations);
     let view = rec
         .branch()
         .map_err(|_| corrupt!("patch base at {} in block {block} is not a branch", ptr.ptr))?;
@@ -884,8 +905,14 @@ fn resolve_in<'s>(
     }
     let depth = depth as u32;
     // an unconfirmed trie is rewritten in place, so its nodes go to a slot
-    // that the next such read overwrites instead of the cache proper
-    let key = if cacheable { key } else { UNCONFIRMED_SLOT };
+    // that the next such read overwrites instead of the cache proper; so
+    // does everything when the cache is disabled
+    let key = if cacheable && cache {
+        count!(patch_cache_misses);
+        key
+    } else {
+        UNCONFIRMED_SLOT
+    };
     patched.insert(
         key,
         Cached {
@@ -920,6 +947,7 @@ impl<T: MarfTrieId> Store<T> {
             locations: HashMap::new(),
             scratch: Scratch::default(),
             sidecar_retired: true,
+            patch_cache_capacity: self.patch_cache_capacity,
         }
     }
 
@@ -974,6 +1002,7 @@ impl<T: MarfTrieId> Store<T> {
         if let Some(id) = self.ids.get(bhh) {
             return Ok(*id);
         }
+        count!(block_id_sql);
         let row: Option<(u32, i64)> = conn
             .prepare_cached("SELECT block_id, unconfirmed FROM marf_data WHERE block_hash = ?1")?
             .query_row(params![bhh], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -1130,12 +1159,12 @@ impl<T: MarfTrieId> Store<T> {
     /// and point every confirmed `marf_data` row at it. `write(blobs, base)`
     /// produces the blob at file offset `base`, in as many positioned writes
     /// as it likes, and returns the blob's length; the file is synced once
-    /// afterwards. Returns `base`.
+    /// afterwards. Returns `(base, length)`.
     pub fn write_shared_blob_with(
         &mut self,
         conn: &Connection,
         write: impl FnOnce(&Blobs, u64) -> Result<u64, Error>,
-    ) -> Result<u64, Error> {
+    ) -> Result<(u64, u64), Error> {
         let blobs = self
             .blobs
             .as_ref()
@@ -1149,7 +1178,7 @@ impl<T: MarfTrieId> Store<T> {
         )?;
         self.locations.clear();
         self.scratch.patched.clear();
-        Ok(base)
+        Ok((base, len))
     }
 
     /// Write the squash side tables.
@@ -1216,6 +1245,7 @@ impl<T: MarfTrieId> Store<T> {
             &mut self.scratch.bytes,
             &mut self.scratch.diffs,
             &mut self.scratch.patched,
+            self.patch_cache_capacity,
             &mut self.locations,
             conn,
             block_id,
@@ -1231,6 +1261,7 @@ impl<T: MarfTrieId> Store<T> {
             &mut self.scratch.bytes,
             &mut self.scratch.diffs,
             &mut self.scratch.patched,
+            self.patch_cache_capacity,
             &mut self.locations,
             conn,
             block_id,
@@ -1262,6 +1293,7 @@ impl<T: MarfTrieId> Store<T> {
         ptr: &Ptr,
     ) -> Result<(Node, TrieHash, u32), Error> {
         let r = self.node(conn, block_id, ptr)?;
+        count!(owned_materializations);
         Ok((r.node.to_node()?, r.hash, r.depth))
     }
 

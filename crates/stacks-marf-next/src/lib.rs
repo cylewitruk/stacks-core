@@ -52,6 +52,19 @@ use stacks_common::types::chainstate::{
     BurnchainHeaderHash, SortitionId, StacksBlockId, TrieHash, TRIEHASH_ENCODED_SIZE,
 };
 
+/// Bump a [`stats::Counters`] field on the current thread; a no-op unless
+/// the `counters` feature is on.
+macro_rules! count {
+    ($field:ident) => {
+        #[cfg(feature = "counters")]
+        $crate::stats::update(|c| c.$field += 1);
+    };
+    ($field:ident, $n:expr) => {
+        #[cfg(feature = "counters")]
+        $crate::stats::update(|c| c.$field += u64::from($n));
+    };
+}
+
 pub mod codec;
 pub mod compat;
 pub mod hash;
@@ -59,6 +72,7 @@ pub mod marf;
 pub mod node;
 pub mod proofs;
 pub mod pruning;
+pub mod stats;
 pub mod storage;
 pub mod trie;
 

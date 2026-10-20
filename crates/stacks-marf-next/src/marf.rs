@@ -48,6 +48,11 @@ pub struct MARFOpenOpts {
     pub force_db_migrate: bool,
     /// compress the MARF
     pub compress: bool,
+    /// Entries of the per-store cache of resolved patch chains
+    /// (`(block_id, offset)` -> `Branch`); 0 disables lookup and retention.
+    /// Production value: [`storage::PATCH_CACHE_CAPACITY`]. An experimental
+    /// control for benchmarks; consumers leave it at the default.
+    pub patch_cache_capacity: usize,
 }
 
 impl MARFOpenOpts {
@@ -57,6 +62,7 @@ impl MARFOpenOpts {
             hash_calculation_mode: TrieHashCalculationMode::Deferred,
             external_blobs: false,
             force_db_migrate: false,
+            patch_cache_capacity: storage::PATCH_CACHE_CAPACITY,
             compress: false,
         }
     }
@@ -69,12 +75,19 @@ impl MARFOpenOpts {
             hash_calculation_mode,
             external_blobs,
             force_db_migrate: false,
+            patch_cache_capacity: storage::PATCH_CACHE_CAPACITY,
             compress: false,
         }
     }
 
     pub fn with_compression(mut self, compression: bool) -> Self {
         self.compress = compression;
+        self
+    }
+
+    /// Benchmark control: size of the resolved-patch cache (0 disables it).
+    pub fn with_patch_cache_capacity(mut self, capacity: usize) -> Self {
+        self.patch_cache_capacity = capacity;
         self
     }
 }
@@ -136,6 +149,7 @@ impl<T: MarfTrieId> TrieFileStorage<T> {
             readonly,
             unconfirmed,
             opts.force_db_migrate,
+            opts.patch_cache_capacity,
         )?;
         Ok(TrieFileStorage { db, store })
     }
@@ -491,7 +505,9 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     /// [`View::read`] that also reports the patch-chain depth of the record
     /// (0 for a plain record or an arena node).
     fn read_with_depth(&mut self, site: Site, ptr: &Ptr) -> Result<(Site, NodeView<'_>, u32), Error> {
+        count!(node_visits);
         if ptr.is_back() {
+            count!(backptr_follows);
             let r = self.inner.store.node(self.db, ptr.back_block, ptr)?;
             return Ok((Site::Block(ptr.back_block), NodeView::Store(r.node), r.depth));
         }
