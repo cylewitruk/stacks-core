@@ -25,7 +25,8 @@ members, then these patches apply:
     `read_bench::Counters` fields `patch_cache_probes` (every probe of the
     resolved-patch cache, made before the record is read),
     `patch_cache_probe_miss_plain` (probes whose record then turned out to
-    be a plain node), `patch_resolutions` (chains actually resolved in
+    be a plain node, whether the record came from the mapped blob or from
+    the SQLite path), `patch_resolutions` (chains actually resolved in
     `read_patched_persisted_node`, cache enabled or not),
     `owned_materializations` (resolved nodes and root-cache fills),
     `result_cache_hits` / `result_cache_misses` /
@@ -43,7 +44,11 @@ members, then these patches apply:
     probe can never hit (only resolved chains are admitted), so the change
     preserves results; it removes the failed probes on plain records.
     External-blob storage only (the SQLite-stored path is unchanged and its
-    cache is then not consulted); never a production setting.
+    cache is then not consulted, so a chain resolved on that path is
+    inserted without a probe and is not counted as an admission); never a
+    production setting. The harness's counter sanity tests assert
+    `probes == hits + plain misses + admissions` for the reference as well
+    as the rewrite.
 
 The script builds `marf-differential-reference` (timing),
 `marf-differential-reference-counters` (counters), runs the harness's

@@ -1,17 +1,23 @@
 --- a/contrib/marf-differential/Cargo.toml
 +++ b/contrib/marf-differential/Cargo.toml
-@@ -24,7 +24,7 @@
+@@ -24,12 +24,12 @@
  alloc-count = []
  # Read-path operation counters in the implementations (separate build from
  # timing runs).
 -counters = ["stacks-marf-next/counters"]
 +counters = ["stacks-marf-next/counters", "stacks-marf/marf-read-bench-counters"]
+ # Diagnostic control for the reference overlay (reference/README.md): the
+ # reference probes its patch cache only after a borrowed read says the record
+ # is a patch. A no-op against upstream; the overlay patch wires it to the
+ # reference's feature.
+-reference-lateprobe = []
++reference-lateprobe = ["stacks-marf/marf-diag-late-probe"]
  
  [[bin]]
  name = "marf-differential"
 --- a/contrib/marf-differential/src/alloc.rs
 +++ b/contrib/marf-differential/src/alloc.rs
-@@ -182,26 +182,61 @@
+@@ -241,31 +241,86 @@
  
  pub struct Baseline(stacks_marf::MARF<StacksBlockId>);
  
@@ -39,47 +45,73 @@
      format!(
 -        "upstream stacks-marf: external={} compress={} (no mmap, no caches; requested patch_cache={:?} result_cache={:?} not applicable)",
 -        opts.external, opts.compress, opts.patch_cache_capacity, opts.result_cache_capacity
-+        "reference stacks-marf (29ef093d): external={} compress={} mmap={} root_node_cache={} resolved_patch_cache={} result_cache={}",
-+        o.external_blobs, o.compress, o.mmap, o.root_node_cache, o.resolved_patch_cache_capacity, o.result_cache_capacity
++        "reference stacks-marf (29ef093d): external={} compress={} mmap={} root_node_cache={} resolved_patch_cache={} result_cache={}{}",
++        o.external_blobs,
++        o.compress,
++        o.mmap,
++        o.root_node_cache,
++        o.resolved_patch_cache_capacity,
++        o.result_cache_capacity,
++        if cfg!(feature = "reference-lateprobe") {
++            " [diagnostic: late patch-cache probe]"
++        } else {
++            ""
++        }
      )
  }
  
 -/// Upstream has no read counters.
 +/// The reference's `read_bench` counters (its `marf-read-bench-counters`
-+/// feature, switched on by this harness's `counters` feature), plus the
-+/// result-cache counters the overlay adds.
++/// feature, switched on by this harness's `counters` feature) plus the
++/// counters the overlay adds (probes, plain-record misses, actual
++/// resolutions and materializations, result cache, occupancy). Not
++/// measured by the reference: cache clears (it evicts one entry at a time),
++/// location and block-id SQL lookups.
 +#[cfg(not(feature = "counters"))]
- fn baseline_counters() -> Counters {
+ fn baseline_counters(_occupancy: Option<u64>) -> Counters {
      Counters::default()
  }
  
+-/// Upstream has no patch cache.
 +#[cfg(feature = "counters")]
-+fn baseline_counters() -> Counters {
++fn baseline_counters(occupancy: Option<u64>) -> Counters {
 +    let c = stacks_marf::read_bench::take();
 +    Counters {
 +        available: true,
-+        node_visits: c.cursor_steps,
-+        backptr_follows: c.backpointer_follows,
-+        record_reads: c.resolved_item_reads + c.mmap_node_returns,
-+        patch_cache_lookups: c.resolved_patch_cache_hits + c.resolved_patch_cache_misses,
-+        patch_cache_hits: c.resolved_patch_cache_hits,
-+        patch_cache_misses: c.resolved_patch_cache_misses,
-+        patch_cache_clears: 0,
-+        patch_resolutions: c.resolved_patch_cache_misses,
-+        patch_applications: c.patch_records,
-+        owned_materializations: c.resolved_patch_cache_misses,
-+        location_sql: 0,
-+        block_id_sql: 0,
-+        result_cache_hits: c.result_cache_hits,
-+        result_cache_misses: c.result_cache_misses,
-+        result_cache_invalidations: c.result_cache_invalidations,
++        node_visits: Some(c.cursor_steps),
++        backptr_follows: Some(c.backpointer_follows),
++        record_reads: Some(c.resolved_item_reads + c.mmap_node_returns),
++        patch_cache_probes: Some(c.patch_cache_probes),
++        patch_cache_hits: Some(c.resolved_patch_cache_hits),
++        patch_cache_probe_miss_plain: Some(c.patch_cache_probe_miss_plain),
++        patch_cache_admissions: Some(c.resolved_patch_cache_misses),
++        patch_cache_clears: None,
++        patch_resolutions: Some(c.patch_resolutions),
++        patch_applications: Some(c.patch_records),
++        owned_materializations: Some(c.owned_materializations),
++        location_sql: None,
++        block_id_sql: None,
++        result_cache_hits: Some(c.result_cache_hits),
++        result_cache_misses: Some(c.result_cache_misses),
++        result_cache_invalidations: Some(c.result_cache_invalidations),
++        cache_occupancy: occupancy,
 +    }
++}
++
++#[cfg(not(feature = "counters"))]
+ fn baseline_occupancy(_m: &mut stacks_marf::MARF<StacksBlockId>) -> Option<u64> {
+     None
+ }
+ 
++#[cfg(feature = "counters")]
++fn baseline_occupancy(m: &mut stacks_marf::MARF<StacksBlockId>) -> Option<u64> {
++    Some(m.patch_cache_len() as u64)
 +}
 +
  impl Direct for Baseline {
      const NAME: &'static str = "base";
      fn open(path: &Path, opts: &Opts) -> Self {
-@@ -241,6 +276,7 @@
+@@ -308,6 +363,7 @@
          self.0.get(tip, key).unwrap().map(|v| v.0)
      }
      fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {
