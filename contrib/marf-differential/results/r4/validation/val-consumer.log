@@ -1,0 +1,159 @@
+   Compiling num-traits v0.2.18
+   Compiling regex-syntax v0.8.9
+   Compiling time v0.3.41
+   Compiling secp256k1 v0.24.3
+   Compiling aho-corasick v1.1.2
+   Compiling slog-term v2.9.0
+   Compiling chrono v0.4.41
+   Compiling ripemd v0.1.3
+   Compiling stacks-common v4.0.5 (/home/user/stacks-core/stacks-common)
+   Compiling regex-automata v0.4.14
+   Compiling psm v0.1.21
+   Compiling regex v1.12.3
+   Compiling stacker v0.1.15
+   Compiling variant_count v1.2.0
+   Compiling tinyvec_macros v0.1.1
+   Compiling tinyvec v1.6.0
+   Compiling serde_stacker v0.1.11
+   Compiling clarity-types v0.0.1 (/home/user/stacks-core/clarity-types)
+   Compiling integer-sqrt v0.1.5
+   Compiling generic-array v0.14.7
+   Compiling unicode-normalization v0.1.22
+   Compiling cfg-if v0.1.10
+   Compiling percent-encoding v2.3.1
+   Compiling unicode-bidi v0.3.15
+   Compiling clarity v0.0.1 (/home/user/stacks-core/clarity)
+   Compiling stacks-codec v0.1.0 (/home/user/stacks-core/stacks-codec)
+   Compiling idna v0.5.0
+   Compiling form_urlencoded v1.2.1
+   Compiling net2 v0.2.39
+   Compiling iovec v0.1.4
+   Compiling log v0.4.29
+   Compiling utf8parse v0.2.1
+   Compiling anstyle-parse v0.2.3
+   Compiling mio v0.6.23
+   Compiling stacks-marf-next v4.0.5 (/home/user/stacks-core/crates/stacks-marf-next)
+   Compiling pox-locking v2.4.0 (/home/user/stacks-core/pox-locking)
+   Compiling libstackerdb v0.0.1 (/home/user/stacks-core/libstackerdb)
+   Compiling url v2.5.0
+   Compiling stacks-transactions v0.1.0 (/home/user/stacks-core/crates/stacks-transactions)
+   Compiling toml v0.5.11
+   Compiling anstyle v1.0.13
+   Compiling anstyle-query v1.0.2
+   Compiling crc32fast v1.4.0
+   Compiling colorchoice v1.0.0
+   Compiling siphasher v0.3.11
+   Compiling anstream v0.6.11
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling proc-macro-error-attr v1.0.4
+   Compiling clap_lex v0.7.6
+   Compiling heck v0.5.0
+   Compiling rle-decode-fast v1.0.3
+   Compiling strsim v0.11.1
+   Compiling serde_core v1.0.228
+   Compiling clap_derive v4.5.49
+   Compiling clap_builder v4.5.53
+   Compiling libflate_lz77 v1.2.0
+   Compiling stackslib v0.0.1 (/home/user/stacks-core/stackslib)
+   Compiling digest v0.10.7
+   Compiling proc-macro-error v1.0.4
+   Compiling serde v1.0.228
+   Compiling adler32 v1.2.0
+   Compiling memchr v2.8.0
+   Compiling libflate v1.4.0
+   Compiling sha2 v0.10.8
+   Compiling clap v4.5.53
+   Compiling stx-genesis v0.1.0 (/home/user/stacks-core/stx-genesis)
+   Compiling rand_xorshift v0.3.0
+   Compiling rlimit v0.10.2
+   Compiling unarray v0.1.4
+   Compiling base64 v0.13.1
+   Compiling ron v0.7.1
+   Compiling proptest v1.6.0
+   Compiling extend v0.1.2
+   Compiling console v0.15.8
+   Compiling similar v2.6.0
+   Compiling linked-hash-map v0.5.6
+   Compiling insta v1.41.1
+   Compiling assert-json-diff v1.1.0
+   Compiling pinny v0.0.2 (https://github.com/stx-labs/pinny-rs.git?rev=0e888bce54c822f050befaadc07709a7abbf6838#0e888bce)
+   Compiling clarity-cli v0.1.0 (/home/user/stacks-core/contrib/clarity-cli)
+   Compiling madhouse v0.2.1 (https://github.com/stacks-network/madhouse-rs.git?rev=f83f8ea649182c40b9dbd1b90f8de86261b91fe7#f83f8ea6)
+   Compiling mutants v0.0.3
+   Compiling marf-squash v0.1.0 (/home/user/stacks-core/contrib/marf-squash)
+    Finished `test` profile [optimized + debuginfo] target(s) in 10m 03s
+────────────
+ Nextest run ID 44c75da1-ba40-4774-abf4-483675e3facb with nextest profile: default
+    Starting 68 tests across 4 binaries (2203 tests skipped)
+        PASS [   0.140s] ( 1/68) clarity-cli test::test_check_clarity3_contract_fails_with_clarity2_flag
+        PASS [   0.143s] ( 2/68) clarity-cli test::test_check_clarity3_contract_fails_with_epoch21_flag
+        PASS [   0.158s] ( 3/68) clarity-cli test::test_check_clarity3_contract_passes_with_clarity3_flag
+        PASS [   0.163s] ( 4/68) clarity-cli test::test_init_mainnet
+        PASS [   0.359s] ( 5/68) clarity-cli test::test_assets
+        PASS [   0.235s] ( 6/68) clarity-cli test::test_eval_clarity3_contract_fails_with_clarity2_flag
+        PASS [   0.243s] ( 7/68) clarity-cli test::test_eval_clarity3_contract_passes_with_clarity3_flag
+        PASS [   0.140s] ( 8/68) clarity-cli test::test_init_testnet
+        PASS [   0.010s] ( 9/68) clarity-cli test::test_read_file_returns_its_contents
+        PASS [   0.009s] (10/68) clarity-cli test::test_read_missing_file_is_an_error
+        PASS [   0.167s] (11/68) clarity-cli test::test_launch_clarity3_contract_fails_with_clarity2_flag
+        PASS [   0.159s] (12/68) clarity-cli test::test_launch_clarity3_contract_passes_with_clarity3_flag
+        PASS [   0.009s] (13/68) clarity-cli::bin/clarity-cli tests::test_execute_missing_required_args
+        PASS [   0.012s] (14/68) clarity-cli::bin/clarity-cli tests::test_execute_variadic_args
+        PASS [   0.009s] (15/68) clarity-cli::bin/clarity-cli tests::test_launch_missing_required_args
+        PASS [   0.207s] (16/68) clarity-cli test::test_initial_alloc
+        PASS [   0.012s] (17/68) clarity-cli::bin/clarity-cli tests::test_no_command_rejected
+        PASS [   0.012s] (18/68) clarity-cli::bin/clarity-cli tests::test_unknown_command_rejected
+        PASS [   0.009s] (19/68) clarity-cli::bin/clarity-cli tests::verify_cli_structure
+        PASS [   0.012s] (20/68) marf-squash::bin/marf-squash checksums::tests::sha256_file_matches_known_vector
+        PASS [   0.009s] (21/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_2
+        PASS [   0.011s] (22/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_1
+        PASS [   0.011s] (23/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_3
+        PASS [   0.009s] (24/68) marf-squash::bin/marf-squash commands::tests::from_args_selection::case_4
+        PASS [   0.010s] (25/68) marf-squash::bin/marf-squash commands::tests::known_networks
+        PASS [   0.009s] (26/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_1
+        PASS [   0.011s] (27/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_2
+        PASS [   0.011s] (28/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_3
+        PASS [   0.010s] (29/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_4
+        PASS [   0.009s] (30/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_6
+        PASS [   0.011s] (31/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_5
+        PASS [   0.010s] (32/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_7
+        PASS [   0.008s] (33/68) marf-squash::bin/marf-squash commands::tests::network_subdir_cases::case_8
+        PASS [   0.011s] (34/68) marf-squash::bin/marf-squash commands::tests::output_lands_under_network_subdir
+        PASS [   0.008s] (35/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_1
+        PASS [   0.009s] (36/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_2
+        PASS [   0.008s] (37/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_4
+        PASS [   0.012s] (38/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_3
+        PASS [   0.009s] (39/68) marf-squash::bin/marf-squash layout::tests::target_out_paths_uses_layout_consts::case_5
+        PASS [   0.011s] (40/68) marf-squash::bin/marf-squash tests::test_compute_checksums_ignores_sqlite_sidecars
+        PASS [   0.015s] (41/68) marf-squash::bin/marf-squash tests::test_compute_checksums_clean_dir
+        PASS [   0.013s] (42/68) marf-squash::bin/marf-squash tests::test_compute_checksums_rejects_stale_block_file
+        PASS [   0.009s] (43/68) marf-squash::bin/marf-squash tests::test_manifest_rejects_extra_file_in_outdir
+        PASS [   0.010s] (44/68) marf-squash::bin/marf-squash tests::test_parse_squash_args::case_1
+        PASS [   0.012s] (45/68) marf-squash::bin/marf-squash tests::test_manifest_rejects_symlinks
+        PASS [   0.008s] (46/68) marf-squash::bin/marf-squash tests::test_parse_squash_args::case_2
+        PASS [   0.062s] (47/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_malformed_metadata_key_is_corruption
+        PASS [   0.067s] (48/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_copy_clarity_side_tables_with_double_colon_metadata_keys
+        PASS [   0.068s] (49/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_metadata_exclusions
+        PASS [   0.039s] (50/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_no_unclassified_clarity_source_tables
+        PASS [   0.062s] (51/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_mismatched_clarity_db_causes_data_read_failure
+        PASS [   0.059s] (52/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_check_schema_passes
+        PASS [   0.061s] (53/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_data_reads_work
+        PASS [   0.060s] (54/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_metadata_reads_work
+        PASS [   0.076s] (55/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_squashed_clarity_marf_extend_hash_equality
+        PASS [   0.038s] (56/68) stackslib chainstate::stacks::db::snapshot::tests::clarity::test_unclassified_source_table_is_rejected
+        PASS [   0.071s] (57/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_canonical_block_missing_from_src_is_corruption
+        PASS [   0.082s] (58/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_copy_excludes_fork_rows
+        PASS [   0.091s] (59/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_copy_index_side_tables_round_trip
+        PASS [   0.015s] (60/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_index_copy_specs_well_formed
+        PASS [   0.067s] (61/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_empty_canonical_set_is_corruption
+        PASS [   0.066s] (62/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_epoch2_tip_above_nakamoto_block_is_corruption
+        PASS [   0.039s] (63/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_no_unclassified_source_tables
+        PASS [   0.085s] (64/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_signer_stats_copied_through_tip_reward_cycle
+        PASS [   0.076s] (65/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_src_without_nakamoto_blocks_is_corruption
+        PASS [   0.093s] (66/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_staging_blocks_populated_for_canonical
+        PASS [   0.643s] (67/68) clarity-cli test::test_samples
+        PASS [   0.049s] (68/68) stackslib chainstate::stacks::db::snapshot::tests::index::test_unclassified_source_table_is_rejected
+────────────
+     Summary [   1.135s] 68 tests run: 68 passed, 2203 skipped
+VAL-CONSUMER EXIT 0

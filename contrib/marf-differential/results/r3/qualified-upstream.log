@@ -1,0 +1,28 @@
+== oracle = upstream ad5c5778; external compressed; REPEAT=3
+storage: external blobs, compressed; 20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, 5000 reads/phase
+phase                                                     ops | base alloc/op    base B/op base us/op | next alloc/op    next B/op next us/op
+insert                                                  40000 |        38.72        65047      13.40 |         0.87         1316       1.79
+seal                                                       20 |      3348.05      1222773   14134.88 |        17.00        18478   13756.61
+commit                                                     20 |      2201.50      3711091   10982.24 |       531.50       617039    4481.64
+warm_get                                                 5000 |        44.25        94029    1145.12 |         0.02            1       1.45
+miss_get                                                 5000 |        40.41        92568    1195.42 |         0.00            0       1.04
+patched_get                                              5000 |        41.56        53161     126.21 |         0.00            0       1.67
+get@bulk hops=0 patch=3-4 spread(n=2989,~3.5 nodes)      5978 |        42.19        92700    1241.48 |         0.00            0       1.17
+get@bulk hops=0 patch=3-4 hot64                          5000 |        41.67        92483    1289.09 |         0.00            0       0.97
+get@bulk hops=1 patch=3-4 spread(n=13056,~3.4 nodes)    10000 |        43.63        93983    1217.41 |         0.00            0       1.55
+get@bulk hops=1 patch=3-4 hot64                          5000 |        43.37        93969    1210.56 |         0.00            0       0.97
+get@bulk hops=2 patch=3-4 spread(n=954,~4.0 nodes)       4770 |        55.95        96843    1286.01 |         0.00            0       1.19
+get@bulk hops=2 patch=3-4 hot64                          5000 |        56.39        97054    1296.80 |         0.00            0       0.95
+get@patched hops=1 patch=1-2 spread(n=1488,~3.4 nodes)     4464 |        31.82        47365     101.74 |         0.00            0       1.21
+get@patched hops=1 patch=1-2 hot64                       5000 |        31.53        47408     100.66 |         0.00            0       1.10
+get@patched hops=1 patch=3-4 spread(n=1291,~3.4 nodes)     3873 |        41.65        49849     136.95 |         0.00            0       1.03
+get@patched hops=1 patch=3-4 hot64                       5000 |        41.47        49780     138.72 |         0.00            0       0.88
+get@patched hops=2 patch=1-2 spread(n=5479,~3.4 nodes)    10000 |        34.69        52630     104.85 |         0.00            0       2.15
+get@patched hops=2 patch=1-2 hot64                       5000 |        35.22        52644     108.03 |         0.00            0       1.50
+get@patched hops=2 patch=3-4 spread(n=5856,~3.4 nodes)    10000 |        47.76        56070     141.39 |         0.00            0       1.33
+get@patched hops=2 patch=3-4 hot64                       5000 |        47.89        55996     146.84 |         0.00            0       0.87
+get@patched hops=3+ patch=1-2 spread(n=395,~4.0 nodes)     4740 |        44.77        53579     103.39 |         0.00            0       1.59
+get@patched hops=3+ patch=1-2 hot64                      5000 |        44.76        53443     117.47 |         0.00            0       1.57
+get@patched hops=3+ patch=3-4 spread(n=471,~4.0 nodes)     4710 |        58.27        57035     143.66 |         0.00            0       0.93
+get@patched hops=3+ patch=3-4 hot64                      5000 |        57.53        56969     154.43 |         0.00            0       0.94
+proof                                                     500 |      2988.79      4071917   23073.74 |       102.24       435968     309.30

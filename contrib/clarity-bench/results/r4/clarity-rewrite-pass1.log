@@ -1,0 +1,16 @@
+clarity-bench: stacks-marf package of this workspace: external_blobs=true compress=true (rewrite: mmap always, patch cache 4096; upstream: no caches) | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 5 | 20000 keys, 10 timed blocks per workload
+populate (40 blocks, 20000 keys, untimed setup): median 1465.6 ms
+
+workload                   blocks     txs |        exec ms        seal ms      commit ms       total ms |  first block exec ms
+read-heavy                      9     270 | 358.3 (306.3-396.8)            3.5           11.1          372.6 |     51.9 (32.1-57.9)
+write-heavy                     9     189 | 521.2 (486.5-608.0)          134.7          379.2         1039.5 |     52.4 (48.2-94.3)
+mixed                           9     270 | 291.9 (235.0-307.3)           26.9           18.9          336.5 |     31.4 (28.6-43.8)
+inherited-after-history         4     120 | 136.7 (132.5-142.9)            1.4            5.4          144.3 |     31.7 (31.7-41.9)
+abort                           4     160 | 25.9 (22.7-33.7)            1.6            4.2           31.2 |       6.8 (6.1-17.0)
+
+equivalence (must match across implementations):
+  read-heavy                 cost runtime=3281100000 read_count=15900 read_length=1009800 write_count=0 write_length=0 blocks=10 last_root=f8ccaa4bc5ddc69fdda0b4f4927a79031249f6b1acc39228d3de42ac751f0880
+  write-heavy                cost runtime=3669430000 read_count=30640 read_length=861860 write_count=10010 write_length=500180 blocks=10 last_root=1e777387254fb038a2993ec13c1460de863c86f590cdf3998760e29b4c85c608
+  mixed                      cost runtime=2171900000 read_count=16200 read_length=603400 write_count=5100 write_length=251800 blocks=10 last_root=a5fdcceaf24ecd7b62211965bb06d33e4ca584e70703ad7f6529545bf6d4aee2
+  inherited-after-history    cost runtime=1640550000 read_count=7950 read_length=504900 write_count=0 write_length=0 blocks=5 last_root=d52dfdc7ede4ca3e347f5090d5bb5184f73916fce02355c8a3cb184ea686b6a4
+  abort                      cost runtime=283300000 read_count=800 read_length=178200 write_count=100 write_length=5000 blocks=5 last_root=420724d1fa4e0da710e7cc57637d5fa460329e7c26d93478e8b271b847186f1d

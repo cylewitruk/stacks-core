@@ -1,0 +1,26 @@
+clarity-bench: stacks-marf package of this workspace: external_blobs=true compress=true (rewrite: mmap always, patch cache 4096; upstream: no caches) | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 5 | 20000 keys, 10 timed blocks per workload
+INFO [1792517175.477162] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpo7wDrw/marf.sqlite.blobs
+INFO [1792517175.477276] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792517182.980649] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpnHH3mH/marf.sqlite.blobs
+INFO [1792517182.980731] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792517190.527344] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpqX1d4A/marf.sqlite.blobs
+INFO [1792517190.527408] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792517199.076275] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpWBOxdm/marf.sqlite.blobs
+INFO [1792517199.076349] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792517207.237212] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpFoCKV6/marf.sqlite.blobs
+INFO [1792517207.237253] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+populate (40 blocks, 20000 keys, untimed setup): median 2790.6 ms
+
+workload                   blocks     txs |        exec ms        seal ms      commit ms       total ms |  first block exec ms
+read-heavy                      9     270 | 1083.0 (912.2-1122.5)            5.4           14.4         1103.2 |   109.5 (98.8-164.2)
+write-heavy                     9     189 | 1123.9 (1014.2-1207.7)          169.9          455.0         1794.9 |     82.4 (73.7-91.1)
+mixed                           9     270 | 797.2 (746.8-1132.1)           34.7           30.0          860.4 |   112.3 (84.9-252.0)
+inherited-after-history         4     120 | 444.2 (424.6-720.9)            2.7            5.5          452.2 |  143.3 (111.8-172.9)
+abort                           4     160 | 107.8 (91.0-111.0)            2.5            5.5          118.0 |     24.3 (23.0-35.9)
+
+equivalence (must match across implementations):
+  read-heavy                 cost runtime=3281100000 read_count=15900 read_length=1009800 write_count=0 write_length=0 blocks=10 last_root=f8ccaa4bc5ddc69fdda0b4f4927a79031249f6b1acc39228d3de42ac751f0880
+  write-heavy                cost runtime=3669430000 read_count=30640 read_length=861860 write_count=10010 write_length=500180 blocks=10 last_root=1e777387254fb038a2993ec13c1460de863c86f590cdf3998760e29b4c85c608
+  mixed                      cost runtime=2171900000 read_count=16200 read_length=603400 write_count=5100 write_length=251800 blocks=10 last_root=a5fdcceaf24ecd7b62211965bb06d33e4ca584e70703ad7f6529545bf6d4aee2
+  inherited-after-history    cost runtime=1640550000 read_count=7950 read_length=504900 write_count=0 write_length=0 blocks=5 last_root=d52dfdc7ede4ca3e347f5090d5bb5184f73916fce02355c8a3cb184ea686b6a4
+  abort                      cost runtime=283300000 read_count=800 read_length=178200 write_count=100 write_length=5000 blocks=5 last_root=420724d1fa4e0da710e7cc57637d5fa460329e7c26d93478e8b271b847186f1d
