@@ -21,6 +21,43 @@ pub mod trie_sql {
     use super::*;
 
     pub use crate::storage::PruneInfo as SqlPruneInfo;
+    /// The original's name for [`SqlPruneInfo`].
+    pub type SqlSquashInfo = SqlPruneInfo;
+
+    /// The original's name for [`read_prune_info`].
+    pub fn read_squash_info(conn: &Connection) -> Result<Option<SqlSquashInfo>, Error> {
+        read_prune_info(conn)
+    }
+
+    /// Test helper: record a pruned block at an explicit height.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test_insert_squashed_block<T: MarfTrieId>(
+        conn: &Connection,
+        height: u32,
+        block_hash: &T,
+        marf_root_hash: &TrieHash,
+    ) -> Result<(), Error> {
+        conn.execute(
+            "INSERT INTO marf_squashed_blocks (height, block_hash, marf_root_hash) VALUES (?1, ?2, ?3)",
+            rusqlite::params![height, block_hash.as_bytes(), marf_root_hash.as_bytes()],
+        )?;
+        Ok(())
+    }
+
+    /// Test helper: record a pruned block at the next height.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn test_append_squashed_block<T: MarfTrieId>(
+        conn: &Connection,
+        block_hash: &T,
+        marf_root_hash: &TrieHash,
+    ) -> Result<(), Error> {
+        conn.execute(
+            "INSERT INTO marf_squashed_blocks (height, block_hash, marf_root_hash) \
+             VALUES ((SELECT COALESCE(MAX(height) + 1, 0) FROM marf_squashed_blocks), ?1, ?2)",
+            rusqlite::params![block_hash.as_bytes(), marf_root_hash.as_bytes()],
+        )?;
+        Ok(())
+    }
 
     pub fn get_latest_confirmed_block_hash<T: MarfTrieId>(conn: &Connection) -> Result<T, Error> {
         Ok(conn.query_row(

@@ -154,8 +154,8 @@ pub fn read_squash_metadata<T: MarfTrieId + std::fmt::Display>(
     ReadSquashMetadata {
         tip,
         archival_root_hash: format!("0x{}", info.archival_marf_root_hash),
-        squash_root_node_hash: format!("0x{}", info.squash_root_node_hash),
-        squash_height: info.squash_height,
+        squash_root_node_hash: format!("0x{}", info.prune_root_node_hash),
+        squash_height: info.prune_height,
     }
 }
 

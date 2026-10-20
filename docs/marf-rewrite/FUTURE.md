@@ -1,12 +1,14 @@
 # MARF rewrite: format-breaking optimizations and where they plug in
 
-The rewrite preserves the legacy persisted format (`COMPAT.md` §1). The
-optimized reference at the base (`29ef093d`) adds a new record format, a
-Clarity value store, a direct block-hash index and ancestry records, all
-produced by offline tooling or, for new Clarity MARFs, at creation. This
-note records what each one is, what the rewrite already has in place for
-it, and the boundary it would cross. None of the format-changing items is
-implemented; items marked *done* are the format-preserving ones that landed.
+The rewrite preserves upstream's persisted format (`COMPAT.md` §1). The
+optimization reference (`29ef093d`, see `OPTIMIZATIONS.md` for the full
+classified inventory) adds a new record format, a Clarity value store, a
+direct block-hash index and ancestry records, all produced by offline
+tooling or, for new Clarity MARFs, at creation. This note records what each
+one is, what the rewrite already has in place for it, and the boundary it
+would cross. None of the format-changing items is implemented, and none is
+a prerequisite for this milestone; items marked *done* are the
+format-preserving ones that landed.
 
 ## Boundaries in the rewrite
 
@@ -27,7 +29,7 @@ live.
 
 ## 1. Record format 6 (type-first, packed branches)
 
-Reference: `record.rs` (`NodeRecordFormat::{Legacy, Optimized}`),
+Reference (at `optimized-ref`): `record.rs` (`NodeRecordFormat::{Legacy, Optimized}`),
 `packed_branch.rs`, `canonical_branch.rs`, `blob_layout.rs` (header tag
 `MRF\x06`), `raw_leaf.rs`, `inline_value.rs`; selected by
 `marf_record_format.version = 6` with `schema_version = 4`.
@@ -47,8 +49,10 @@ per-record length and bytes change. `storage::open` reads the marker and
 defined over logical nodes.
 
 Boundary to respect: a format-6 trie's root slot is reserved at a fixed
-size by the reference's writer (`root_reserved_size`); the rewrite's layout
-step must reproduce it for the reference to read rewrite-written tries.
+size by the reference's writer (`packed_root_reservation`); the rewrite's
+layout step must reproduce it for the reference to read rewrite-written
+tries. Upstream itself never produces format 6, so this only matters if the
+rewrite is asked to interoperate with reference-written databases.
 
 ## 2. Clarity stable-ID value store
 

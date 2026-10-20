@@ -23,6 +23,7 @@ use clarity::vm::database::{ClarityBackingStore, MetadataRow, SqliteConnection};
 use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 use stacks_common::util::hash::Sha512Trunc256Sum;
 use stacks_marf::marf::{MARFOpenOpts, MARF};
+use stacks_marf::pruning::Prune;
 use stacks_marf::storage::TrieHashCalculationMode;
 use stacks_marf::{ClarityMarfTrieId as _, Error, MARFValue};
 use tempfile::tempdir;
@@ -128,7 +129,7 @@ fn squash_clarity_marf(
     let dst_db = dst_dir.join("marf.sqlite");
 
     let open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
-    MARF::<StacksBlockId>::squash_to_path(
+    MARF::<StacksBlockId>::prune_to_path(
         src_db.to_str().unwrap(),
         dst_db.to_str().unwrap(),
         open_opts,
@@ -332,7 +333,7 @@ fn test_malformed_metadata_key_is_corruption() {
     let dst_db = squashed_dir.join("marf.sqlite");
 
     let open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
-    MARF::<StacksBlockId>::squash_to_path(
+    MARF::<StacksBlockId>::prune_to_path(
         src_db.to_str().unwrap(),
         dst_db.to_str().unwrap(),
         open_opts,
@@ -421,7 +422,7 @@ fn test_mismatched_clarity_db_causes_data_read_failure() {
     let dst_db = squashed_dir.join("marf.sqlite");
 
     let open_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
-    MARF::<StacksBlockId>::squash_to_path(
+    MARF::<StacksBlockId>::prune_to_path(
         src_db.to_str().unwrap(),
         dst_db.to_str().unwrap(),
         open_opts,
