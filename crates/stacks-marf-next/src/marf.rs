@@ -295,6 +295,22 @@ impl<'a> NodeView<'a> {
     }
 }
 
+/// Shape of one lookup's walk (see [`View::lookup_profile`]).
+#[cfg(any(test, feature = "testing"))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WalkProfile {
+    /// Records read, root and leaf included.
+    pub nodes: u32,
+    /// Back-pointers followed (each one moves the walk to an older block).
+    pub backptr_hops: u32,
+    /// Records stored as patch chains.
+    pub patched_nodes: u32,
+    /// Deepest patch chain met (0 if none).
+    pub max_patch_depth: u32,
+    /// Whether the key is present.
+    pub found: bool,
+}
+
 /// Which table and name a flushed trie is stored under.
 enum FlushTarget<'t, T> {
     Confirmed(&'t T),
@@ -468,9 +484,16 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     /// Read the node at `ptr` in `site`, following a back-pointer if `ptr` is
     /// one. The view borrows the arena or storage; nothing is materialized.
     fn read(&mut self, site: Site, ptr: &Ptr) -> Result<(Site, NodeView<'_>), Error> {
+        let (site, node, _) = self.read_with_depth(site, ptr)?;
+        Ok((site, node))
+    }
+
+    /// [`View::read`] that also reports the patch-chain depth of the record
+    /// (0 for a plain record or an arena node).
+    fn read_with_depth(&mut self, site: Site, ptr: &Ptr) -> Result<(Site, NodeView<'_>, u32), Error> {
         if ptr.is_back() {
             let r = self.inner.store.node(self.db, ptr.back_block, ptr)?;
-            return Ok((Site::Block(ptr.back_block), NodeView::Store(r.node)));
+            return Ok((Site::Block(ptr.back_block), NodeView::Store(r.node), r.depth));
         }
         match site {
             Site::Mem => {
@@ -481,11 +504,52 @@ impl<'a, T: MarfTrieId> View<'a, T> {
                     .as_ref()
                     .expect("Mem site implies a trie")
                     .trie;
-                Ok((site, NodeView::Mem(trie.node(idx)?)))
+                Ok((site, NodeView::Mem(trie.node(idx)?), 0))
             }
             Site::Block(id) => {
                 let r = self.inner.store.node(self.db, id, ptr)?;
-                Ok((site, NodeView::Store(r.node)))
+                Ok((site, NodeView::Store(r.node), r.depth))
+            }
+        }
+    }
+
+    /// The shape of the walk a lookup of `path` at `tip` performs: how many
+    /// records it reads, how many back-pointers it follows (block changes),
+    /// how many of the records are stored as patch chains and the deepest
+    /// chain. The shape is a property of the stored trie, which every
+    /// compatible implementation shares, so it qualifies benchmark keys.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn lookup_profile(&mut self, tip: &T, path: &TrieHash) -> Result<WalkProfile, Error> {
+        let mut profile = WalkProfile::default();
+        let mut site = self.site(tip)?;
+        let mut ptr = root_ptr(site);
+        let key = path.as_bytes();
+        let mut depth = 0usize;
+        loop {
+            if ptr.is_back() {
+                profile.backptr_hops += 1;
+            }
+            let (next_site, node, patch_depth) = self.read_with_depth(site, &ptr)?;
+            site = next_site;
+            profile.nodes += 1;
+            if patch_depth > 0 {
+                profile.patched_nodes += 1;
+                profile.max_patch_depth = profile.max_patch_depth.max(patch_depth);
+            }
+            match node.descend(key, depth)? {
+                Descent::Mismatch => return Ok(profile),
+                Descent::Leaf { .. } => {
+                    profile.found = true;
+                    return Ok(profile);
+                }
+                Descent::Child { child: None, .. } => return Ok(profile),
+                Descent::Child {
+                    child: Some(p),
+                    consumed,
+                } => {
+                    ptr = p;
+                    depth += consumed;
+                }
             }
         }
     }
@@ -1335,6 +1399,12 @@ impl<T: MarfTrieId> MARF<T> {
     /// Target the MARF at a given block (for `check_ancestor_block_hash`).
     pub fn open_block(&mut self, block_hash: &T) -> Result<(), Error> {
         self.view().open_block(block_hash)
+    }
+
+    /// See [`View::lookup_profile`].
+    #[cfg(any(test, feature = "testing"))]
+    pub fn lookup_profile(&mut self, tip: &T, key: &str) -> Result<WalkProfile, Error> {
+        self.view().lookup_profile(tip, &TrieHash::from_key(key))
     }
 
     /// The MARF root hash of `block_hash` (also available through `MarfConnection`).

@@ -64,6 +64,8 @@ pub mod trie;
 
 pub use crate::compat::{file, trie_sql, MarfDataEntry};
 pub use crate::marf::{MARFOpenOpts, MarfConnection, MarfTransaction, MARF};
+#[cfg(any(test, feature = "testing"))]
+pub use crate::marf::WalkProfile;
 pub use crate::proofs::{
     ProofTrieNode, ProofTriePtr, TrieLeaf, TrieMerkleProof, TrieMerkleProofType,
 };

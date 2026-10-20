@@ -183,7 +183,7 @@ impl Default for Config {
 
 #[derive(Clone, Debug, Default)]
 pub struct Phase {
-    pub name: &'static str,
+    pub name: String,
     pub ops: u64,
     pub m: Measure,
 }
@@ -243,17 +243,17 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         parent = child;
     }
     phases.push(Phase {
-        name: "insert",
+        name: "insert".into(),
         ops: (cfg.blocks * cfg.inserts) as u64,
         m: insert,
     });
     phases.push(Phase {
-        name: "seal",
+        name: "seal".into(),
         ops: cfg.blocks as u64,
         m: seal,
     });
     phases.push(Phase {
-        name: "commit",
+        name: "commit".into(),
         ops: cfg.blocks as u64,
         m: commit,
     });
@@ -271,7 +271,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         }
     });
     phases.push(Phase {
-        name: "warm_get",
+        name: "warm_get".into(),
         ops: cfg.reads as u64,
         m,
     });
@@ -287,14 +287,16 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         }
     });
     phases.push(Phase {
-        name: "miss_get",
+        name: "miss_get".into(),
         ops: cfg.reads as u64,
         m,
     });
 
     // patch chains: rewrite a few of the first block's keys in each of
     // several small blocks, then look the first block's keys up at the tip
+    let bulk_tip = tip.clone();
     let first_block_keys = &all_keys[..cfg.inserts];
+    let mut last_patch_keys: Vec<String> = vec![];
     for p in 0..cfg.patch_blocks {
         let child = bid(1000 + p as u32);
         marf.begin(&parent, &child);
@@ -310,6 +312,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
             .collect();
         marf.insert_batch(&keys, &values);
         marf.commit();
+        last_patch_keys = keys;
         tip = child.clone();
         parent = child;
     }
@@ -325,10 +328,105 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         }
     });
     phases.push(Phase {
-        name: "patched_get",
+        name: "patched_get".into(),
         ops: cfg.reads as u64,
         m,
     });
+
+    // qualified lookups: bucket keys by the shape of their walk (back-pointer
+    // hops, patch chains), measured with the rewrite's profiler on the same
+    // files (the stored trie is identical for every implementation), then
+    // time each bucket with two access patterns. Two tips: the bulk tip
+    // (large blocks, so its root is a full node) and the final tip (small
+    // blocks on top, so the root and its hot children are patch chains).
+    {
+        use stacks_marf_next::marf::TrieHashCalculationMode as Mode;
+        let opts = stacks_marf_next::MARFOpenOpts::new(Mode::Deferred, cfg.external)
+            .with_compression(cfg.compress);
+        let storage = stacks_marf_next::marf::TrieFileStorage::<StacksBlockId>::open_readonly(
+            dir.join("marf.sqlite"),
+            opts,
+        )
+        .expect("open profiler");
+        let mut profiler = stacks_marf_next::MARF::from_storage(storage);
+        let sample = (cfg.reads * 3).min(all_keys.len());
+        let tips: [(&str, &StacksBlockId, Vec<&String>); 2] = [
+            (
+                "bulk",
+                &bulk_tip,
+                (0..sample)
+                    .map(|_| &all_keys[rng.gen_range(0..all_keys.len())])
+                    .chain(all_keys[all_keys.len() - cfg.inserts..].iter().take(sample / 4))
+                    .collect(),
+            ),
+            (
+                "patched",
+                &tip,
+                (0..sample)
+                    .map(|_| &all_keys[rng.gen_range(0..all_keys.len())])
+                    .chain(last_patch_keys.iter())
+                    .collect(),
+            ),
+        ];
+        for (tip_label, at, candidates) in &tips {
+            let mut buckets: std::collections::BTreeMap<(u32, u32), Vec<&String>> = Default::default();
+            let mut nodes_sum: std::collections::BTreeMap<(u32, u32), u64> = Default::default();
+            for k in candidates {
+                let p = profiler.lookup_profile(at, k).expect("profile");
+                assert!(p.found);
+                let hops = p.backptr_hops.min(3);
+                let patch = match p.max_patch_depth {
+                    0 => 0,
+                    1 | 2 => 1,
+                    _ => 2,
+                };
+                buckets.entry((hops, patch)).or_default().push(k);
+                *nodes_sum.entry((hops, patch)).or_default() += u64::from(p.nodes);
+            }
+            for ((hops, patch), keys) in &buckets {
+                if keys.len() < 40 {
+                    continue;
+                }
+                let avg_nodes = *nodes_sum.get(&(*hops, *patch)).unwrap() as f64 / keys.len() as f64;
+                let hops_label = if *hops == 3 { "3+".to_string() } else { hops.to_string() };
+                let patch_label = ["none", "1-2", "3-4"][*patch as usize];
+                let label = format!("get@{tip_label} hops={hops_label} patch={patch_label}");
+                // spread: every key of the bucket once per pass, several passes
+                let n = keys.len().min(cfg.reads);
+                let passes = (cfg.reads / n).clamp(2, 50);
+                for k in &keys[..n] {
+                    assert!(marf.get(at, k));
+                }
+                let (_, m) = measure(|| {
+                    for _ in 0..passes {
+                        for k in &keys[..n] {
+                            assert!(marf.get(at, k));
+                        }
+                    }
+                });
+                phases.push(Phase {
+                    name: format!("{label} spread(n={},~{avg_nodes:.1} nodes)", keys.len()),
+                    ops: (passes * n) as u64,
+                    m,
+                });
+                // hot: 64 keys cycled
+                let hot = &keys[..64.min(keys.len())];
+                for k in hot {
+                    assert!(marf.get(at, k));
+                }
+                let (_, m) = measure(|| {
+                    for i in 0..cfg.reads {
+                        assert!(marf.get(at, hot[i % hot.len()]));
+                    }
+                });
+                phases.push(Phase {
+                    name: format!("{label} hot64"),
+                    ops: cfg.reads as u64,
+                    m,
+                });
+            }
+        }
+    }
 
     // proofs
     let proofs = cfg.reads / 10;
@@ -344,7 +442,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         }
     });
     phases.push(Phase {
-        name: "proof",
+        name: "proof".into(),
         ops: proofs as u64,
         m,
     });
@@ -388,18 +486,11 @@ pub fn run(which: Impl, cfg: &Config) -> Vec<Phase> {
     best
 }
 
-/// Print a side-by-side table for both implementations.
+/// Print a side-by-side table for both implementations (or one, with
+/// `ONLY=baseline|rewrite`).
 pub fn report(cfg: &Config) {
-    // ONLY=baseline|rewrite restricts the run (for profiling one implementation)
-    let only = std::env::var("ONLY").ok().and_then(|s| Impl::parse(&s));
     let base = run(Impl::Baseline, cfg);
-    if only == Some(Impl::Baseline) {
-        return;
-    }
     let next = run(Impl::Rewrite, cfg);
-    if only == Some(Impl::Rewrite) {
-        return;
-    }
     println!(
         "storage: {} blobs, {}; {} blocks x {} inserts, {} patch blocks x {} rewrites, {} reads/phase",
         if cfg.external { "external" } else { "sqlite" },
@@ -410,22 +501,37 @@ pub fn report(cfg: &Config) {
         cfg.patch_inserts,
         cfg.reads
     );
-    println!(
-        "{:<12} {:>8} | {:>12} {:>12} {:>10} | {:>12} {:>12} {:>10}",
-        "phase", "ops", "base alloc/op", "base B/op", "base us/op", "next alloc/op", "next B/op", "next us/op"
-    );
-    for (b, n) in base.iter().zip(&next) {
-        assert_eq!(b.name, n.name);
-        println!(
-            "{:<12} {:>8} | {:>12.2} {:>12.0} {:>10.2} | {:>12.2} {:>12.0} {:>10.2}",
-            b.name,
-            b.ops,
-            b.allocs_per_op(),
-            b.bytes_per_op(),
-            b.micros_per_op(),
-            n.allocs_per_op(),
-            n.bytes_per_op(),
-            n.micros_per_op()
-        );
+    let cols = |label: &str| {
+        format!(
+            "{:>12} {:>12} {:>10}",
+            format!("{label} alloc/op"),
+            format!("{label} B/op"),
+            format!("{label} us/op")
+        )
+    };
+    let mut header = format!("{:<52} {:>8}", "phase", "ops");
+    if !base.is_empty() {
+        header.push_str(&format!(" | {}", cols("base")));
+    }
+    if !next.is_empty() {
+        header.push_str(&format!(" | {}", cols("next")));
+    }
+    println!("{header}");
+    let rows = base.len().max(next.len());
+    for i in 0..rows {
+        let p = base.get(i).or(next.get(i)).expect("row");
+        if let (Some(b), Some(n)) = (base.get(i), next.get(i)) {
+            assert_eq!(b.name, n.name, "phase order differs between implementations");
+        }
+        let mut line = format!("{:<52} {:>8}", p.name, p.ops);
+        for ph in [base.get(i), next.get(i)].into_iter().flatten() {
+            line.push_str(&format!(
+                " | {:>12.2} {:>12.0} {:>10.2}",
+                ph.allocs_per_op(),
+                ph.bytes_per_op(),
+                ph.micros_per_op()
+            ));
+        }
+        println!("{line}");
     }
 }
