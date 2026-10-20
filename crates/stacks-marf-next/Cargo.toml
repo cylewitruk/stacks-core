@@ -36,3 +36,6 @@ default = []
 testing = ["stacks-common/testing"]
 # Accepted for parity with `stacks-marf`; SQLite profiling lives in stacks-common.
 profile-sqlite = ["stacks-common/profile-sqlite"]
+# Per-thread operation counters (`stats`) for benchmark experiments; every
+# hook compiles to nothing without it.
+counters = []
