@@ -60,8 +60,9 @@ on one implementation and the suffix on the other over the same directory,
 and assert every fixture contributes at least one split. Coverage per
 direction: every `Prune` boundary plus a quarter of the `Close` boundaries
 of each fixture, evenly spaced: 48 of the 132 eligible boundaries.
-`MARF_DIFF_ALL_HANDOFFS=1` splits at all 132 (about four times the
-runtime).
+`MARF_DIFF_ALL_HANDOFFS=1` splits at all 132 (about eight minutes per
+direction); run on this tip after the staged-pruning change, both directions
+passed with no divergences.
 
 Fixtures (`contrib/marf-differential/fixtures/*.json`, recorded from
 upstream's `stacks-marf` at `ad5c5778` with `marf-differential record-all`;
