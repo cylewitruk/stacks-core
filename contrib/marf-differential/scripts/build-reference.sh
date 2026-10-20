@@ -12,7 +12,7 @@
 #      differences, production options, counters) and reference/reference.patch
 #      (feature-gated counters and the late-probe diagnostic in the reference
 #      crate); see reference/README.md;
-#   4. three binaries built into target/bench-bin/:
+#   4. four binaries built into target/bench-bin/:
 #        marf-differential-reference            timing, no instrumentation
 #        marf-differential-reference-counters   read counters (the reference's
 #                                               marf-read-bench-counters feature)
@@ -20,6 +20,7 @@
 #                                               probes its patch cache only after a
 #                                               borrowed read says the record is a
 #                                               patch (reference/README.md); timing
+#        marf-differential-reference-lateprobe-counters  the same with counters
 #   5. target/bench-bin/MANIFEST.reference: tree revision, worktree revision,
 #      overlay patch hashes, toolchain, and the sha256 of each binary.
 #
@@ -79,6 +80,8 @@ if [ "${RUN_TESTS:-1}" = 1 ]; then
 fi
 (cd "$WORKTREE" && cargo build --release -p marf-differential --features reference-lateprobe)
 cp "$WORKTREE/target/release/marf-differential" "$OUT/marf-differential-reference-lateprobe"
+(cd "$WORKTREE" && cargo build --release -p marf-differential --features reference-lateprobe,counters)
+cp "$WORKTREE/target/release/marf-differential" "$OUT/marf-differential-reference-lateprobe-counters"
 
 # 5. manifest
 {
@@ -89,7 +92,7 @@ cp "$WORKTREE/target/release/marf-differential" "$OUT/marf-differential-referenc
   for p in harness reference; do
     echo "overlay $p.patch sha256 $(sha256sum "$TREE/contrib/marf-differential/reference/$p.patch" | cut -d' ' -f1)"
   done
-  for b in reference reference-counters reference-lateprobe; do
+  for b in reference reference-counters reference-lateprobe reference-lateprobe-counters; do
     echo "binary marf-differential-$b sha256 $(sha256sum "$OUT/marf-differential-$b" | cut -d' ' -f1)"
   done
 } > "$OUT/MANIFEST.reference"
