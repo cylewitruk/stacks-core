@@ -1,15 +1,20 @@
 # MARF rewrite: status
 
 Branch: `claude/awesome-brown-xj309n`.
-Base: `29ef093da5dd58c1fa484624d94a9d972356c629` (tag `optimized-ref`): the
-original MARF ("v1") lives in `stacks-marf/` with its optimized storage
-work; it is the oracle and is untouched.
+Compatibility baseline: upstream `stacks-network/stacks-core` `main` at
+`ad5c57786bb51b58d4bdb4992ad534f762d8cf03`; `stacks-marf/` at that commit is
+the behavioural and storage oracle and is unchanged in this tree.
+Optimization reference: `29ef093da5dd58c1fa484624d94a9d972356c629` (tag
+`optimized-ref`, merge-base = the pinned upstream commit); used for ideas
+and benchmarked against separately, not a compatibility requirement.
 Rewrite: `crates/stacks-marf-next/` (crate `stacks-marf-next`).
 
 Documents: `ANALYSIS.md` (behavioural contract and accidental complexity of
-the original), `COMPAT.md` (what is read/written, and how the optimized
-reference's formats are handled), `DECISIONS.md` (architecture log),
-`FUTURE.md` (format-breaking optimizations and where they plug in).
+the original), `COMPAT.md` (what is read/written; the reference's storage
+additions and their boundaries), `OPTIMIZATIONS.md` (every reference
+optimization classified implemented / applicable / deferred),
+`DECISIONS.md` (architecture log), `FUTURE.md` (format-changing
+optimizations and where they plug in).
 
 ## Where things live
 
@@ -30,14 +35,14 @@ Production lines = non-blank lines that are not `//` comments, with trailing
 modules (counted with a 10-line Python script applying these rules; re-run with
 the same rules to compare).
 
-| | Original at the base (`stacks-marf/src`) | Rewrite (`crates/stacks-marf-next/src`) |
+| | Upstream `stacks-marf/src` at `ad5c5778` | Rewrite (`crates/stacks-marf-next/src`) |
 |---|---|---|
-| Production lines | 18,490 | 5,627 |
-| Modules | 26 | 10 |
+| Production lines | 11,482 | 5,724 |
+| Modules | 14 | 10 |
 | Node representations | `TrieNode4/16/48/256`, `TrieLeaf`, `TrieNodeType`, packed/canonical/mapped variants | `Node::{Leaf, Branch}` plus borrowed `Record`/`BranchView`/`LeafView`/`PatchView` |
 | Storage handle types | `TrieFileStorage`, `TrieStorageConnection`, `TrieStorageTransaction`, `ReopenedTrieStorageConnection`, `TrieRAM`, `TrieFile`, … | `MARF`, `MarfTransaction`, `View`, `ReopenedMarf`, `TrieFileStorage` (shim) |
 
-The differential harness is another 2,618 lines (`contrib/marf-differential/src`).
+The differential harness is another 2,617 lines (`contrib/marf-differential/src`).
 
 ## Tests and how to run them
 
@@ -54,9 +59,10 @@ hand-off tests split every fixture after each `Close` and `Prune`, run the
 prefix on one implementation and the suffix on the other over the same
 directory, and assert every fixture contributes at least one split.
 
-Fixtures (`contrib/marf-differential/fixtures/*.json`, recorded from the
-original with `marf-differential record-all`; provenance: crate
-`stacks-marf` at `29ef093d`), 22 in all. Suffixes name the storage variant
+Fixtures (`contrib/marf-differential/fixtures/*.json`, recorded from
+upstream's `stacks-marf` at `ad5c5778` with `marf-differential record-all`;
+see `fixtures/PROVENANCE.md`; the same sequences recorded from the optimized
+reference produce byte-identical files), 22 in all. Suffixes name the storage variant
 (`ext`/`sql` blobs, `comp`/`plain`, `_imm` = immediate hashing):
 `small_*` (one seed, four variants), `dense_*`, `forks_ext_comp`,
 `wide_ext_comp` (6,000 inserts per block), `patch_chain_ext_comp` (patch
@@ -112,78 +118,126 @@ Reads never materialize nodes:
 
 `marf-differential alloc <external|sqlite> <compressed|plain>` installs a
 counting global allocator and drives both crates through their public APIs
-(no DSL, no observation encoding). 20 blocks x 2,000 fresh keys, then 8
-blocks rewriting 50 keys each (patch chains), 5,000 reads per read phase,
-500 proofs. `REPEAT=3`: allocation counts from the first run, times the
-best of three, `--release`, this container. "orig" is `stacks-marf` at the
-base, "next" the rewrite.
+(no DSL, no observation encoding). Workload: 20 blocks x 2,000 fresh keys,
+then 8 blocks rewriting 50 keys each (so lookups at the tip go through patch
+chains), 5,000 reads per read phase, 500 proofs. `REPEAT=3`: allocation
+counts from the first run (deterministic), times the best of three,
+`--release`, this container. "next" is the rewrite in every table.
 
-External blobs, compressed (the production configuration):
+Two oracles, measured separately with their own binaries:
 
-| phase | ops | orig alloc/op | orig B/op | orig µs/op | next alloc/op | next B/op | next µs/op |
+* **upstream** = `stacks-marf` at `ad5c5778`, `MARFOpenOpts::new(Deferred,
+  external).with_compression(c)` (upstream has no mmap or cache options).
+  Branch `marf-v3-upstream`.
+* **reference** = `stacks-marf` at `29ef093d` with its production options
+  (`Config::get_marf_opts`: `with_mmap(true)`, `root_node_cache = false`,
+  `resolved_patch_cache_capacity = 64`, default 2,048-entry result cache).
+  Built in a worktree of the reference branch with the identical rewrite and
+  harness sources copied in. These runs overlapped with a large test build
+  on the same machine, so their absolute times carry more noise than the
+  upstream runs; ratios within a row are still indicative.
+
+**External blobs, compressed (the node's production storage):**
+
+| phase | ops | upstream alloc/op | upstream µs/op | reference alloc/op | reference µs/op | next alloc/op | next µs/op |
 |---|---|---|---|---|---|---|---|
-| insert | 40,000 | 8.08 | 9,201 | 6.79 | 0.87 | 1,316 | 1.95 |
-| seal (hashing) | 20 | 26.8 | 5,915 | 14,479 | 17.0 | 18,478 | 14,685 |
-| commit (serialize + write) | 20 | 1,311.6 | 2,345,337 | 6,259 | 531.5 | 617,039 | 4,353 |
-| warm_get | 5,000 | 4.34 | 4,402 | 13.27 | 0.02 | 1 | 1.53 |
-| miss_get | 5,000 | 4.08 | 4,316 | 10.42 | 0.00 | 0 | 0.99 |
-| patched_get | 5,000 | 3.87 | 3,602 | 13.68 | 0.00 | 0 | 1.46 |
-| proof | 500 | 316.1 | 717,196 | 1,381 | 103.5 | 433,860 | 383 |
+| insert | 40,000 | 38.7 | 12.4 | 8.1 | 7.6 | 0.87 | 1.7 |
+| seal (hashing) | 20 | 3,348 | 13,489 | 28.4 | 16,304 | 17.0 | 13,077 |
+| commit (serialize + write) | 20 | 2,201 | 10,860 | 1,493 | 9,671 | 531.5 | 3,913 |
+| warm_get | 5,000 | 44.3 | 1,224 | 5.0 | 8.4 | 0.02 | 1.6 |
+| miss_get | 5,000 | 40.4 | 1,256 | 3.8 | 6.3 | 0.00 | 0.9 |
+| patched_get | 5,000 | 41.6 | 143 | 4.8 | 7.2 | 0.00 | 1.5 |
+| proof | 500 | 3,030 | 24,616 | 340 | 627 | 103.5 | 383 |
 
-SQLite-internal blobs, plain:
+**External blobs, plain:**
 
-| phase | ops | orig alloc/op | orig B/op | orig µs/op | next alloc/op | next B/op | next µs/op |
+| phase | ops | upstream alloc/op | upstream µs/op | reference alloc/op | reference µs/op | next alloc/op | next µs/op |
 |---|---|---|---|---|---|---|---|
-| insert | 40,000 | 7.71 | 8,865 | 10.14 | 0.70 | 998 | 6.09 |
-| seal | 20 | 25.9 | 5,722 | 11,523 | 16.9 | 18,471 | 12,716 |
-| commit | 20 | 30.6 | 2,728,051 | 8,974 | 25.5 | 1,010,918 | 7,979 |
-| warm_get | 5,000 | 0 | 0 | 55.9 | 0 | 0 | 64.8 |
-| miss_get | 5,000 | 0 | 0 | 32.9 | 0 | 0 | 43.7 |
-| patched_get | 5,000 | 0 | 0 | 22.4 | 0 | 0 | 32.0 |
-| proof | 500 | 214.0 | 610,270 | 6,994 | 126.3 | 454,372 | 6,825 |
+| insert | 40,000 | 19.0 | 7.9 | 7.7 | 6.1 | 0.70 | 1.5 |
+| seal | 20 | 2,729 | 13,459 | 27.6 | 14,024 | 16.9 | 12,191 |
+| commit | 20 | 33.4 | 5,531 | 34.9 | 7,757 | 25.5 | 4,323 |
+| warm_get | 5,000 | 16.0 | 16.8 | 5.5 | 4.5 | 0.00 | 3.7 |
+| miss_get | 5,000 | 13.1 | 12.5 | 4.5 | 3.5 | 0.00 | 3.3 |
+| patched_get | 5,000 | 17.9 | 18.9 | 5.5 | 4.4 | 0.00 | 3.6 |
+| proof | 500 | 1,798 | 2,456 | 427 | 432 | 126.3 | 442 |
 
-Reading the numbers: the original's warm lookups are served by its
-per-trie lookup-result cache (2,048 entries) and still allocate; the
-rewrite's lookups walk the trie each time and allocate nothing (the 0.02 is
-patch-cache fills). Seal allocates more bytes in the rewrite because the two
-hash buffers (17 KiB) are created per seal; seal time is dominated by
-SHA-512/256 in both (70% of the rewrite's seal in callgrind). Over
-SQLite-internal storage each node is a `blob_open` + read in both
-implementations and the rewrite is 15-40% slower per lookup; a whole-trie
-cache was tried and thrashes (lookups cross up to 20 tries), so this stays
-as is for the legacy internal-blob configuration. Proofs allocate in both
-(owned proof nodes are the wire format).
+**SQLite-internal blobs, plain:**
+
+| phase | ops | upstream alloc/op | upstream µs/op | reference alloc/op | reference µs/op | next alloc/op | next µs/op |
+|---|---|---|---|---|---|---|---|
+| insert | 40,000 | 19.0 | 12.8 | 7.7 | 11.9 | 0.70 | 7.0 |
+| seal | 20 | 2,729 | 13,457 | 25.9 | 13,527 | 16.9 | 12,354 |
+| commit | 20 | 30.4 | 9,557 | 30.6 | 10,262 | 25.5 | 8,599 |
+| warm_get | 5,000 | 16.0 | 60.5 | 0 | 67.6 | 0.00 | 63.6 |
+| miss_get | 5,000 | 13.1 | 42.8 | 0 | 36.1 | 0.00 | 39.9 |
+| patched_get | 5,000 | 17.9 | 31.7 | 0 | 24.5 | 0.00 | 23.8 |
+| proof | 500 | 1,798 | 7,128 | 210 | 6,893 | 126.3 | 7,460 |
+
+Reading the numbers:
+
+* Against upstream on the production configuration (compressed external
+  blobs) the rewrite's lookups are two to three orders of magnitude faster:
+  upstream re-resolves patch chains on every read and allocates throughout;
+  the rewrite's reads are borrowed and its resolved patches are cached.
+* Against the reference, which already has mmap reads, a result cache and a
+  patch cache, the rewrite's compressed lookups are about 4 to 5x faster
+  with zero allocations; on the plain encoding the two are within noise of
+  each other (the reference's result cache serves repeated keys; the
+  rewrite walks the trie each time). Commit is faster in all three
+  configurations; seal is SHA-512/256 bound in all three (70% of the
+  rewrite's seal in callgrind).
+* SQLite-internal storage: all three pay one `blob_open` per node; after the
+  read-size fix the rewrite is within a few percent of upstream and faster on
+  patched lookups. Proofs are slower on this configuration (more node
+  reads per proof than the originals' probe-style reads).
+* Seal allocates more bytes in the rewrite because its two hash buffers
+  (17 KiB) are created per seal; proofs allocate in all implementations
+  (owned proof nodes are the wire format).
+
+## Consumer integration
+
+The five consumer crates (`stackslib`, `stacks-node`, `contrib/clarity-cli`,
+`contrib/stacks-inspect`, `contrib/marf-squash`) depend on the rewrite via
+`stacks-marf = { package = "stacks-marf-next" }` (ADR-22). `cargo check
+--workspace --all-targets` is clean with the call-site changes listed in
+`COMPAT.md` §2. Test suites run against the rewrite (nextest filter: Clarity
+VM tests and database, chainstate snapshot, chainstate db and tests,
+sortition db, `util_lib::db`, every test mentioning `marf`, `squash` or
+`unconfirmed`, Nakamoto node tests, plus the `marf-squash` and
+`clarity-cli` crates):
+
+CONSUMER_RESULTS
 
 ## Known differences and limitations
 
-* Format 6 / stable-ID databases are refused (`COMPAT.md` §2.1-2.2); a
-  published direct-hash sidecar is marked invalid on the rewrite's first
-  write (§2.3).
+* Format-6 / stable-ID databases of the optimization reference are refused
+  at open; a reference-published direct-hash sidecar is marked invalid on
+  the rewrite's first write (`COMPAT.md` §3). Upstream produces neither.
 * `TrieHashCalculationMode::Immediate` is accepted but hashing is always
   deferred; the root hash of an unsealed, uncommitted trie reads as zero.
 * Reads name their block; there is no "current block" cursor. A read issued
-  right after a failed `commit_to` or after `commit_mined` succeeds where the
-  original returns `NotFoundError` (its cursor still names the abandoned
+  right after a failed `commit_to` or after `commit_mined` succeeds where
+  upstream returns `NotFoundError` (its cursor still names the abandoned
   trie). Consumers `open_block` a tip first; fixtures mirror that.
-* No lookup-result cache (ADR-17).
+* No lookup-result cache (ADR-17); no root-node cache (`OPTIMIZATIONS.md`
+  A7/A8 for the format-neutral options).
 * `prune_to_path` keeps collected nodes in memory (ADR-10).
 * The blobs map assumes the file is only appended to while open; truncating
-  it from outside the process would fault the mapping (the original's mmap
-  path has the same assumption).
+  it from outside the process would fault the mapping (the reference's mmap
+  path has the same assumption; upstream reads with `pread`).
 * Schema-1 export migration is implemented but untested against a real
   schema-1 database.
-* Not integrated into Stacks consumers yet (see below).
 
 ## Next steps
 
-1. Integration behind a feature or a workspace switch: point
-   `stackslib`, `stacks-node` and `contrib` at `stacks-marf-next` while the
-   original stays as the oracle; resolve the three decisions in
-   `COMPAT.md` §3 (legacy-only Clarity MARF creation first); run the
-   chainstate, Clarity, sortition and node test suites.
-2. Performance qualification on a representative (mainnet-shaped) database
-   with separated measurements: lookups, inserts, seal, commit, proofs,
-   open; peak memory. Extend `alloc` with a replay-from-database mode.
-3. Format 6 reader/writer and value resolver (`FUTURE.md` §1-2) once the
-   legacy integration is green.
+1. Run the full `stackslib` and `stacks-node` test suites (not only the
+   MARF-related filter above) against the rewrite, and a testnet or mainnet
+   follower sync as the end-to-end check.
+2. Performance qualification on a mainnet-shaped database with separated
+   measurements (lookups, inserts, seal, commit, proofs, open; peak memory);
+   extend `alloc` with a replay-from-database mode.
+3. Format-neutral items from `OPTIMIZATIONS.md` worth measuring first:
+   per-building-trie lookup-result cache (A8), covering block-hash index
+   (A11), profiler spans (E3).
 4. Harden pruning for very large tries (disk-backed node list).
+5. Format-changing items stay deferred (`FUTURE.md`).
