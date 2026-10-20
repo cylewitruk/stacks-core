@@ -1,0 +1,23 @@
+   Compiling stacks-marf-next v4.0.5 (/home/user/stacks-core/crates/stacks-marf-next)
+   Compiling marf-differential v0.1.0 (/home/user/stacks-core/contrib/marf-differential)
+    Finished `test` profile [optimized + debuginfo] target(s) in 28.68s
+────────────
+ Nextest run ID 4b4e690e-e9ad-417f-9c39-97d483f6cfd7 with nextest profile: default
+    Starting 2 tests across 4 binaries (4 tests skipped)
+        SLOW [> 60.000s] (───) marf-differential::fixtures baseline_then_rewrite_handoff
+        SLOW [> 60.000s] (───) marf-differential::fixtures rewrite_then_baseline_handoff
+        SLOW [>120.000s] (───) marf-differential::fixtures rewrite_then_baseline_handoff
+        SLOW [>120.000s] (───) marf-differential::fixtures baseline_then_rewrite_handoff
+        SLOW [>180.000s] (───) marf-differential::fixtures baseline_then_rewrite_handoff
+        SLOW [>180.000s] (───) marf-differential::fixtures rewrite_then_baseline_handoff
+        SLOW [>240.000s] (───) marf-differential::fixtures rewrite_then_baseline_handoff
+        SLOW [>240.000s] (───) marf-differential::fixtures baseline_then_rewrite_handoff
+        SLOW [>300.000s] (───) marf-differential::fixtures baseline_then_rewrite_handoff
+        SLOW [>300.000s] (───) marf-differential::fixtures rewrite_then_baseline_handoff
+        SLOW [>360.000s] (───) marf-differential::fixtures baseline_then_rewrite_handoff
+        SLOW [>360.000s] (───) marf-differential::fixtures rewrite_then_baseline_handoff
+        PASS [ 418.939s] (1/2) marf-differential::fixtures baseline_then_rewrite_handoff
+        SLOW [>420.000s] (───) marf-differential::fixtures rewrite_then_baseline_handoff
+        PASS [ 450.850s] (2/2) marf-differential::fixtures rewrite_then_baseline_handoff
+────────────
+     Summary [ 450.851s] 2 tests run: 2 passed (2 slow), 4 skipped
