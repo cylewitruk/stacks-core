@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use marf_differential::gen::{generate, standard_fixtures, GenConfig};
 use marf_differential::{fixtures_dir, load_fixture, record, replay, save_fixture, Impl};
 
+#[cfg(feature = "alloc-count")]
 #[global_allocator]
 static ALLOC: marf_differential::alloc::Counting = marf_differential::alloc::Counting;
 
@@ -117,6 +118,40 @@ fn main() {
             let inserts: usize = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(2000);
             let lookups: usize = args.get(4).map(|s| s.parse().unwrap()).unwrap_or(20000);
             marf_differential::bench::run(which, blocks, inserts, lookups);
+        }
+        Some("ablate") => {
+            // ablate <baseline|rewrite> <std|big> [reads] [plain]; env CAPS, REPEAT, PASSES
+            let which = Impl::parse(args.get(1).expect("impl")).expect("baseline|rewrite");
+            let w = marf_differential::ablate::Workload::parse(args.get(2).map(String::as_str).unwrap_or("std"))
+                .expect("std|big");
+            let reads: usize = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(5000);
+            let plain = args.get(4).is_some_and(|s| s == "plain");
+            marf_differential::ablate::run(which, &w, reads, plain);
+        }
+        Some("construct") => {
+            // construct <baseline|rewrite> [result-cache <n|off>] [blocks] [inserts] [reads]; env REPEAT
+            let which = Impl::parse(args.get(1).expect("impl")).expect("baseline|rewrite");
+            let mut cfg = marf_differential::construct::Config::default();
+            let mut rest = args[2..].iter();
+            let mut positional = vec![];
+            while let Some(a) = rest.next() {
+                if a == "result-cache" {
+                    let v = rest.next().expect("result-cache value");
+                    cfg.result_cache = Some(if v == "off" { 0 } else { v.parse().unwrap() });
+                } else {
+                    positional.push(a.clone());
+                }
+            }
+            if let Some(b) = positional.first() {
+                cfg.blocks = b.parse().unwrap();
+            }
+            if let Some(n) = positional.get(1) {
+                cfg.inserts = n.parse().unwrap();
+            }
+            if let Some(r) = positional.get(2) {
+                cfg.reads = r.parse().unwrap();
+            }
+            marf_differential::construct::run(which, &cfg);
         }
         Some("alloc") => {
             // alloc [external|sqlite] [compressed|plain] [blocks] [inserts] [reads]

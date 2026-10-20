@@ -93,16 +93,88 @@ pub fn measure<R>(f: impl FnOnce() -> R) -> (R, Measure) {
     (r, m)
 }
 
-/// The handful of operations the measurement needs, over either implementation.
+/// Cache settings an experiment asks for. `None` leaves an implementation's
+/// production default in place; the effective settings are reported by
+/// [`Direct::describe`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Opts {
+    pub external: bool,
+    pub compress: bool,
+    /// Resolved-patch cache entries (rewrite: `patch_cache_capacity`,
+    /// reference: `resolved_patch_cache_capacity`; upstream has none).
+    pub patch_cache_capacity: Option<usize>,
+    /// Lookup-result cache entries (reference only: serves the active
+    /// mutable trie; neither upstream nor the rewrite has one).
+    pub result_cache_capacity: Option<usize>,
+}
+
+/// Read-path counters normalized across implementations (zero where an
+/// implementation has no such thing; `available` is false when the build
+/// has no counters at all).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counters {
+    pub available: bool,
+    pub node_visits: u64,
+    pub backptr_follows: u64,
+    pub record_reads: u64,
+    pub patch_cache_lookups: u64,
+    pub patch_cache_hits: u64,
+    pub patch_cache_misses: u64,
+    pub patch_cache_clears: u64,
+    pub patch_resolutions: u64,
+    pub patch_applications: u64,
+    pub owned_materializations: u64,
+    pub location_sql: u64,
+    pub block_id_sql: u64,
+    pub result_cache_hits: u64,
+    pub result_cache_misses: u64,
+    pub result_cache_invalidations: u64,
+}
+
+impl Counters {
+    pub fn fields(&self) -> Vec<(&'static str, u64)> {
+        vec![
+            ("node_visits", self.node_visits),
+            ("backptr_follows", self.backptr_follows),
+            ("record_reads", self.record_reads),
+            ("patch_cache_lookups", self.patch_cache_lookups),
+            ("patch_cache_hits", self.patch_cache_hits),
+            ("patch_cache_misses", self.patch_cache_misses),
+            ("patch_cache_clears", self.patch_cache_clears),
+            ("patch_resolutions", self.patch_resolutions),
+            ("patch_applications", self.patch_applications),
+            ("owned_materializations", self.owned_materializations),
+            ("location_sql", self.location_sql),
+            ("block_id_sql", self.block_id_sql),
+            ("result_cache_hits", self.result_cache_hits),
+            ("result_cache_misses", self.result_cache_misses),
+            ("result_cache_invalidations", self.result_cache_invalidations),
+        ]
+    }
+}
+
+/// The operations the experiments need, over either implementation. Every
+/// method calls the implementation's public API.
 pub trait Direct {
-    fn open(path: &Path, external: bool, compress: bool) -> Self;
+    const NAME: &'static str;
+    fn open(path: &Path, opts: &Opts) -> Self;
+    /// The effective storage and cache settings, for the log.
+    fn describe(&self, opts: &Opts) -> String;
     fn begin(&mut self, parent: &StacksBlockId, child: &StacksBlockId);
     fn insert_batch(&mut self, keys: &[String], values: &[[u8; 40]]);
     fn seal(&mut self);
     fn commit(&mut self);
+    /// Abandon the block being built.
+    fn drop_current(&mut self);
     /// Returns whether the key was present.
     fn get(&mut self, tip: &StacksBlockId, key: &str) -> bool;
+    /// The value stored for `key` at `tip`, if any.
+    fn get_value(&mut self, tip: &StacksBlockId, key: &str) -> Option<[u8; 40]>;
     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool;
+    /// The MARF root hash at `tip` (`None` if the block is unknown).
+    fn root_hash(&mut self, tip: &StacksBlockId) -> Option<[u8; 32]>;
+    /// Take the implementation's read-path counters since the last take.
+    fn counters(&mut self) -> Counters;
     /// Squash `src` at `height` on `tip`'s fork into `dst`; returns the number
     /// of nodes collected.
     fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64;
@@ -110,12 +182,35 @@ pub trait Direct {
 
 pub struct Baseline(stacks_marf::MARF<StacksBlockId>);
 
+/// Upstream's open options for `opts`. (The reference overlay replaces this
+/// to set its mmap, root-cache, patch-cache and result-cache options.)
+fn baseline_open_opts(opts: &Opts) -> stacks_marf::MARFOpenOpts {
+    use stacks_marf::storage::TrieHashCalculationMode;
+    stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
+        .with_compression(opts.compress)
+}
+
+fn baseline_describe(opts: &Opts) -> String {
+    format!(
+        "upstream stacks-marf: external={} compress={} (no mmap, no caches; requested patch_cache={:?} result_cache={:?} not applicable)",
+        opts.external, opts.compress, opts.patch_cache_capacity, opts.result_cache_capacity
+    )
+}
+
+/// Upstream has no read counters.
+fn baseline_counters() -> Counters {
+    Counters::default()
+}
+
 impl Direct for Baseline {
-    fn open(path: &Path, external: bool, compress: bool) -> Self {
-        use stacks_marf::storage::TrieHashCalculationMode;
-        let opts = stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, external)
-            .with_compression(compress);
-        Baseline(stacks_marf::MARF::from_path(path.to_str().unwrap(), opts).unwrap())
+    const NAME: &'static str = "base";
+    fn open(path: &Path, opts: &Opts) -> Self {
+        Baseline(
+            stacks_marf::MARF::from_path(path.to_str().unwrap(), baseline_open_opts(opts)).unwrap(),
+        )
+    }
+    fn describe(&self, opts: &Opts) -> String {
+        baseline_describe(opts)
     }
     fn begin(&mut self, parent: &StacksBlockId, child: &StacksBlockId) {
         self.0.begin(parent, child).unwrap();
@@ -134,12 +229,25 @@ impl Direct for Baseline {
     fn commit(&mut self) {
         self.0.commit().unwrap();
     }
+    fn drop_current(&mut self) {
+        self.0.drop_current();
+    }
     fn get(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         use stacks_marf::marf::MarfConnection;
         self.0.get(tip, key).unwrap().is_some()
     }
+    fn get_value(&mut self, tip: &StacksBlockId, key: &str) -> Option<[u8; 40]> {
+        use stacks_marf::marf::MarfConnection;
+        self.0.get(tip, key).unwrap().map(|v| v.0)
+    }
     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         self.0.get_with_proof(tip, key).unwrap().is_some()
+    }
+    fn root_hash(&mut self, tip: &StacksBlockId) -> Option<[u8; 32]> {
+        self.0.get_root_hash_at(tip).ok().map(|h| h.0)
+    }
+    fn counters(&mut self) -> Counters {
+        baseline_counters()
     }
     fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64 {
         use stacks_marf::storage::TrieHashCalculationMode;
@@ -160,11 +268,29 @@ impl Direct for Baseline {
 pub struct Rewrite(stacks_marf_next::MARF<StacksBlockId>);
 
 impl Direct for Rewrite {
-    fn open(path: &Path, external: bool, compress: bool) -> Self {
+    const NAME: &'static str = "next";
+    fn open(path: &Path, opts: &Opts) -> Self {
         use stacks_marf_next::marf::TrieHashCalculationMode;
-        let opts = stacks_marf_next::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, external)
-            .with_compression(compress);
-        Rewrite(stacks_marf_next::MARF::from_path(path, opts).unwrap())
+        let mut o = stacks_marf_next::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
+            .with_compression(opts.compress);
+        if let Some(c) = opts.patch_cache_capacity {
+            o = o.with_patch_cache_capacity(c);
+        }
+        Rewrite(stacks_marf_next::MARF::from_path(path, o).unwrap())
+    }
+    fn describe(&self, opts: &Opts) -> String {
+        format!(
+            "rewrite stacks-marf-next: external={} compress={} mmap=always patch_cache={} result_cache=none{}",
+            opts.external,
+            opts.compress,
+            opts.patch_cache_capacity
+                .unwrap_or(stacks_marf_next::storage::PATCH_CACHE_CAPACITY),
+            if opts.result_cache_capacity.is_some() {
+                " (requested result_cache not applicable)"
+            } else {
+                ""
+            }
+        )
     }
     fn begin(&mut self, parent: &StacksBlockId, child: &StacksBlockId) {
         self.0.begin(parent, child).unwrap();
@@ -180,13 +306,44 @@ impl Direct for Rewrite {
     fn commit(&mut self) {
         self.0.commit().unwrap();
     }
+    fn drop_current(&mut self) {
+        self.0.drop_current();
+    }
     fn get(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         use stacks_marf_next::MarfConnection;
         self.0.get(tip, key).unwrap().is_some()
     }
+    fn get_value(&mut self, tip: &StacksBlockId, key: &str) -> Option<[u8; 40]> {
+        use stacks_marf_next::MarfConnection;
+        self.0.get(tip, key).unwrap().map(|v| v.0)
+    }
     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {
         use stacks_marf_next::MarfConnection;
         self.0.get_with_proof(tip, key).unwrap().is_some()
+    }
+    fn root_hash(&mut self, tip: &StacksBlockId) -> Option<[u8; 32]> {
+        self.0.get_root_hash_at(tip).ok().map(|h| h.0)
+    }
+    fn counters(&mut self) -> Counters {
+        let c = stacks_marf_next::stats::take();
+        Counters {
+            available: stacks_marf_next::stats::ENABLED,
+            node_visits: c.node_visits,
+            backptr_follows: c.backptr_follows,
+            record_reads: c.record_reads,
+            patch_cache_lookups: c.patch_cache_lookups,
+            patch_cache_hits: c.patch_cache_hits,
+            patch_cache_misses: c.patch_cache_misses,
+            patch_cache_clears: c.patch_cache_clears,
+            patch_resolutions: c.patch_resolutions,
+            patch_applications: c.patch_applications,
+            owned_materializations: c.owned_materializations,
+            location_sql: c.location_sql,
+            block_id_sql: c.block_id_sql,
+            result_cache_hits: 0,
+            result_cache_misses: 0,
+            result_cache_invalidations: 0,
+        }
     }
     fn prune(src: &Path, dst: &Path, tip: &StacksBlockId, height: u32, external: bool) -> u64 {
         use stacks_marf_next::marf::TrieHashCalculationMode;
@@ -198,6 +355,79 @@ impl Direct for Rewrite {
         .unwrap()
         .node_count
     }
+}
+
+/// Whether this build counts allocations.
+pub const ALLOC_COUNTING: bool = cfg!(feature = "alloc-count");
+
+/// Timing samples of one measurement across repetitions.
+#[derive(Clone, Debug, Default)]
+pub struct Samples(pub Vec<Duration>);
+
+impl Samples {
+    pub fn push(&mut self, d: Duration) {
+        self.0.push(d);
+    }
+    pub fn median(&self) -> Duration {
+        if self.0.is_empty() {
+            return Duration::ZERO;
+        }
+        let mut v = self.0.clone();
+        v.sort();
+        let n = v.len();
+        if n % 2 == 1 {
+            v[n / 2]
+        } else {
+            (v[n / 2 - 1] + v[n / 2]) / 2
+        }
+    }
+    pub fn min(&self) -> Duration {
+        self.0.iter().copied().min().unwrap_or(Duration::ZERO)
+    }
+    pub fn max(&self) -> Duration {
+        self.0.iter().copied().max().unwrap_or(Duration::ZERO)
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// `REPEAT` from the environment (default 5, minimum 1).
+pub fn repeat() -> usize {
+    std::env::var("REPEAT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5)
+        .max(1)
+}
+
+/// One line describing the build and machine, for every log.
+pub fn environment() -> String {
+    let cpu = std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("model name"))
+                .map(|l| l.split(':').nth(1).unwrap_or("").trim().to_string())
+        })
+        .unwrap_or_else(|| "unknown cpu".into());
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(0);
+    let kernel = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    format!(
+        "env: {cpu} x{cores}, linux {kernel}, rustc {}, profile {}, alloc-count={}, counters={}, repeat={}",
+        option_env!("MARF_BENCH_RUSTC").unwrap_or("see build log"),
+        if cfg!(debug_assertions) { "debug" } else { "release" },
+        ALLOC_COUNTING,
+        cfg!(feature = "counters"),
+        repeat()
+    )
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -233,7 +463,10 @@ impl Default for Config {
 pub struct Phase {
     pub name: String,
     pub ops: u64,
+    /// Allocation counts and peak from the first repetition; `elapsed` is
+    /// the median of all repetitions once [`run`] has merged them.
     pub m: Measure,
+    pub samples: Samples,
 }
 
 impl Phase {
@@ -259,7 +492,14 @@ fn bid(n: u32) -> StacksBlockId {
 pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
     let mut rng = ChaCha20Rng::seed_from_u64(11);
     let mut phases = vec![];
-    let mut marf = M::open(&dir.join("marf.sqlite"), cfg.external, cfg.compress);
+    let opts = Opts {
+        external: cfg.external,
+        compress: cfg.compress,
+        patch_cache_capacity: None,
+        result_cache_capacity: None,
+    };
+    let mut marf = M::open(&dir.join("marf.sqlite"), &opts);
+    eprintln!("[alloc] {}", marf.describe(&opts));
 
     let mut all_keys: Vec<String> = vec![];
     let mut insert = Measure::default();
@@ -294,16 +534,19 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         name: "insert".into(),
         ops: (cfg.blocks * cfg.inserts) as u64,
         m: insert,
+        samples: Samples::default(),
     });
     phases.push(Phase {
         name: "seal".into(),
         ops: cfg.blocks as u64,
         m: seal,
+        samples: Samples::default(),
     });
     phases.push(Phase {
         name: "commit".into(),
         ops: cfg.blocks as u64,
         m: commit,
+        samples: Samples::default(),
     });
 
     // warm lookups at the bulk tip
@@ -322,6 +565,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         name: "warm_get".into(),
         ops: cfg.reads as u64,
         m,
+        samples: Samples::default(),
     });
 
     // misses
@@ -338,6 +582,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         name: "miss_get".into(),
         ops: cfg.reads as u64,
         m,
+        samples: Samples::default(),
     });
 
     // patch chains: rewrite a few of the first block's keys in each of
@@ -379,19 +624,24 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         name: "patched_get".into(),
         ops: cfg.reads as u64,
         m,
+        samples: Samples::default(),
     });
 
     // qualified lookups: bucket every key by the shape of its walk
     // (back-pointer hops, patch chains), measured with the rewrite's profiler
     // on the same files (the stored trie is identical for every
-    // implementation), then time each bucket with three access patterns:
-    //   hot64     64 distinct keys cycled (everything hits a result cache)
-    //   fit       up to 1,024 distinct keys cycled: fits any result cache of
-    //             2,048 entries or more (the reference's), so it also
-    //             measures hits, with less locality than hot64
-    //   overflow  every distinct key of the bucket cycled, only for buckets
-    //             of at least 4,096 keys (twice the reference's result
-    //             cache): an LRU result cache misses on every access
+    // implementation), then time each bucket under three working-set sizes:
+    //   hot64     64 distinct keys cycled
+    //   fit       up to 1,024 distinct keys cycled
+    //   overflow  every distinct key of the bucket, whole passes, only for
+    //             buckets of at least 4,096 keys
+    // These are locality variations of committed reads. No lookup-result
+    // cache takes part: the reference's result cache serves only the active
+    // mutable trie (`cached_result` in its storage.rs), and these reads
+    // happen after commit; upstream and the rewrite have none. What the
+    // working-set size changes is page-cache and patch-cache locality, and
+    // which patched nodes recur (see the `ablate` experiment for the
+    // patch-cache matrix with counters).
     // Each bucket holds distinct keys and the label gives the number timed.
     // Two tips: the bulk tip (large blocks, so its root is a full node) and
     // the final tip (small blocks on top, so the root and its hot children
@@ -452,6 +702,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
                         name,
                         ops: cfg.reads as u64,
                         m,
+                        samples: Samples::default(),
                     });
                 };
                 cycle(&keys[..64], format!("{label} hot64"));
@@ -474,6 +725,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
                         name: format!("{label} overflow(n={})", keys.len()),
                         ops: (passes * keys.len()) as u64,
                         m,
+                        samples: Samples::default(),
                     });
                 }
             }
@@ -497,6 +749,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         name: "proof".into(),
         ops: proofs as u64,
         m,
+        samples: Samples::default(),
     });
 
     // prune: squash the whole chain at the final tip into a new database.
@@ -517,6 +770,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         name: "prune".into(),
         ops: nodes,
         m,
+        samples: Samples::default(),
     });
     phases
 }
@@ -539,31 +793,59 @@ pub fn run_once(which: Impl, cfg: &Config) -> Vec<Phase> {
     }
 }
 
-/// Run `REPEAT` times (default 1): allocation counts come from the first
-/// run (they are deterministic), times are the best of all runs.
-pub fn run(which: Impl, cfg: &Config) -> Vec<Phase> {
-    if std::env::var("ONLY").ok().and_then(|s| Impl::parse(&s)).is_some_and(|o| o != which) {
-        return vec![];
+/// Merge one repetition's phases into the accumulated ones: allocation
+/// counts and peaks from the first repetition (they are deterministic),
+/// every repetition's time kept as a sample, `elapsed` = median.
+fn merge(acc: &mut Vec<Phase>, run: Vec<Phase>) {
+    if acc.is_empty() {
+        *acc = run
+            .into_iter()
+            .map(|mut p| {
+                p.samples.push(p.m.elapsed);
+                p
+            })
+            .collect();
+        return;
     }
-    let repeat: usize = std::env::var("REPEAT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1)
-        .max(1);
-    let mut best = run_once(which, cfg);
-    for _ in 1..repeat {
-        for (b, p) in best.iter_mut().zip(run_once(which, cfg)) {
-            b.m.elapsed = b.m.elapsed.min(p.m.elapsed);
+    for (a, p) in acc.iter_mut().zip(run) {
+        assert_eq!(a.name, p.name);
+        a.samples.push(p.m.elapsed);
+        a.m.elapsed = a.samples.median();
+    }
+}
+
+/// Run `REPEAT` times (default 5), alternating the implementation order
+/// between repetitions when both are measured; times are reported as
+/// medians with the min-max spread.
+pub fn run_both(cfg: &Config) -> (Vec<Phase>, Vec<Phase>) {
+    let only = std::env::var("ONLY").ok().and_then(|s| Impl::parse(&s));
+    let mut base = vec![];
+    let mut next = vec![];
+    for r in 0..repeat() {
+        let order = if r % 2 == 0 {
+            [Impl::Baseline, Impl::Rewrite]
+        } else {
+            [Impl::Rewrite, Impl::Baseline]
+        };
+        for which in order {
+            if only.is_some_and(|o| o != which) {
+                continue;
+            }
+            let run = run_once(which, cfg);
+            match which {
+                Impl::Baseline => merge(&mut base, run),
+                Impl::Rewrite => merge(&mut next, run),
+            }
         }
     }
-    best
+    (base, next)
 }
 
 /// Print a side-by-side table for both implementations (or one, with
 /// `ONLY=baseline|rewrite`).
 pub fn report(cfg: &Config) {
-    let base = run(Impl::Baseline, cfg);
-    let next = run(Impl::Rewrite, cfg);
+    println!("{}", environment());
+    let (base, next) = run_both(cfg);
     println!(
         "storage: {} blobs, {}; {} blocks x {} inserts, {} patch blocks x {} rewrites, {} reads/phase",
         if cfg.external { "external" } else { "sqlite" },
@@ -576,10 +858,11 @@ pub fn report(cfg: &Config) {
     );
     let cols = |label: &str| {
         format!(
-            "{:>12} {:>12} {:>10} {:>11}",
+            "{:>12} {:>12} {:>10} {:>17} {:>11}",
             format!("{label} alloc/op"),
             format!("{label} B/op"),
             format!("{label} us/op"),
+            format!("{label} min-max"),
             format!("{label} peakKB")
         )
     };
@@ -599,11 +882,13 @@ pub fn report(cfg: &Config) {
         }
         let mut line = format!("{:<60} {:>8}", p.name, p.ops);
         for ph in [base.get(i), next.get(i)].into_iter().flatten() {
+            let per_op = |d: Duration| d.as_secs_f64() * 1e6 / ph.ops.max(1) as f64;
             line.push_str(&format!(
-                " | {:>12.2} {:>12.0} {:>10.2} {:>11}",
+                " | {:>12.2} {:>12.0} {:>10.2} {:>17} {:>11}",
                 ph.allocs_per_op(),
                 ph.bytes_per_op(),
                 ph.micros_per_op(),
+                format!("{:.2}-{:.2}", per_op(ph.samples.min()), per_op(ph.samples.max())),
                 ph.m.peak / 1024
             ));
         }

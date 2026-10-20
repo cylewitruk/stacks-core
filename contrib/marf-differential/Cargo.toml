@@ -17,6 +17,15 @@ rand = { workspace = true }
 rand_chacha = { workspace = true }
 tempfile = "3"
 
+[features]
+default = []
+# Install the counting global allocator (allocations, bytes, peak live heap).
+# Off for timing runs: it adds work to every allocation.
+alloc-count = []
+# Read-path operation counters in the implementations (separate build from
+# timing runs).
+counters = ["stacks-marf-next/counters"]
+
 [[bin]]
 name = "marf-differential"
 path = "src/bin/main.rs"

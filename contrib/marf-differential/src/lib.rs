@@ -4,10 +4,12 @@
 //! [`Observation`] per op. Fixtures recorded from the baseline are replayed
 //! against the rewrite; the two observation lists must be identical.
 
+pub mod ablate;
 pub mod adapter;
 pub mod baseline;
 pub mod alloc;
 pub mod bench;
+pub mod construct;
 pub mod gen;
 pub mod inspect;
 pub mod ops;
