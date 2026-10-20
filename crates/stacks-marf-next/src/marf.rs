@@ -79,7 +79,27 @@ impl MARFOpenOpts {
     }
 }
 
-/// No-op outside test builds; see the original for the test override.
+#[cfg(any(test, feature = "testing"))]
+thread_local! {
+    static TEST_MARF_COMPRESSION_FLAG: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Test hook: force MARF compression on or off for MARFs opened on this
+/// thread through [`test_override_marf_compression`].
+#[cfg(any(test, feature = "testing"))]
+pub fn fault_injection_marf_compression(enabled: bool) {
+    TEST_MARF_COMPRESSION_FLAG.set(Some(enabled));
+}
+
+/// Apply test-specific overrides to the MARF compression configuration.
+#[cfg(any(test, feature = "testing"))]
+pub fn test_override_marf_compression(marf_opts: &mut MARFOpenOpts) {
+    if let Some(enabled) = TEST_MARF_COMPRESSION_FLAG.get() {
+        marf_opts.compress = enabled;
+    }
+}
+
+#[cfg(not(any(test, feature = "testing")))]
 pub fn test_override_marf_compression(_marf_opts: &mut MARFOpenOpts) {}
 
 /// The trie being built for one block.
@@ -513,6 +533,11 @@ impl<'a, T: MarfTrieId> View<'a, T> {
 
     pub fn get_by_key(&mut self, tip: &T, key: &str) -> Result<Option<MARFValue>, Error> {
         self.get_by_path(tip, &TrieHash::from_key(key))
+    }
+
+    /// The original's name for [`View::get_root_hash_at`].
+    pub fn read_block_root_hash(&mut self, bhh: &T) -> Result<TrieHash, Error> {
+        self.get_root_hash_at(bhh)
     }
 
     pub fn get_root_hash_at(&mut self, tip: &T) -> Result<TrieHash, Error> {
@@ -1310,6 +1335,11 @@ impl<T: MarfTrieId> MARF<T> {
     /// Target the MARF at a given block (for `check_ancestor_block_hash`).
     pub fn open_block(&mut self, block_hash: &T) -> Result<(), Error> {
         self.view().open_block(block_hash)
+    }
+
+    /// The MARF root hash of `block_hash` (also available through `MarfConnection`).
+    pub fn get_root_hash_at(&mut self, block_hash: &T) -> Result<TrieHash, Error> {
+        self.view().get_root_hash_at(block_hash)
     }
 
     pub fn get_bhh_at_height(&mut self, block_hash: &T, height: u32) -> Result<Option<T>, Error> {

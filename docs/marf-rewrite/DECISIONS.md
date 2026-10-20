@@ -199,3 +199,31 @@ the SQL tables rather than trusting a sidecar the rewrite did not extend.
 Both are deliberate: reading format 6 is a planned feature (`FUTURE.md`
 §1-2), and silently serving a stale accelerator is the one failure that
 could look like a consensus bug.
+
+## ADR-21: Upstream main is the compatibility baseline; the optimized branch is a reference
+
+The rewrite is based on upstream `stacks-network/stacks-core` `main` at
+`ad5c5778` (the merge-base of the optimized fork). Upstream's `stacks-marf`
+is the oracle for behaviour and storage and is left untouched; fixtures are
+recorded from it. The optimized fork (`29ef093d`) is used for optimization
+ideas (`OPTIMIZATIONS.md`) and benchmarked against separately. Consequence:
+the compatibility contract (`COMPAT.md`) covers exactly what upstream
+persists; format 6, the stable-ID store and the direct-hash sidecar are
+reference-only and stay out of scope for this milestone. The fixtures
+recorded from upstream are byte-identical to the ones recorded earlier from
+the optimized reference, which was recorded as a cross-check.
+
+## ADR-22: Integration by dependency rename, upstream crate kept in the workspace
+
+Consumers (`stackslib`, `stacks-node`, `contrib/clarity-cli`,
+`contrib/stacks-inspect`, `contrib/marf-squash`) are switched with
+`stacks-marf = { package = "stacks-marf-next", path = ... }`, so every
+`stacks_marf::` import resolves to the rewrite without touching import
+paths; `profile-sqlite` exists on the rewrite for feature parity. The
+upstream crate stays a workspace member because `contrib/marf-differential`
+depends on both. Call-site changes were kept to the API decisions already
+made (`get_db_path` returns `&Path`, `Prune::prune_to_path`, `PruneInfo`
+field names) plus test helpers re-exposed under their upstream names
+(`trie_sql::{read_squash_info, test_insert_squashed_block,
+test_append_squashed_block}`, `fault_injection_marf_compression`,
+`View::read_block_root_hash`, `MARF::get_root_hash_at`).

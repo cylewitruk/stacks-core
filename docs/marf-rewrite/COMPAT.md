@@ -1,119 +1,97 @@
 # MARF rewrite: compatibility contract
 
-Base: `29ef093da5dd58c1fa484624d94a9d972356c629` (tag `optimized-ref`), where
-`stacks-marf/` holds the original MARF with the optimized storage work
-("MARF v1"). The rewrite is `crates/stacks-marf-next/`. This document states
-exactly which persisted artifacts the rewrite reads and writes today, how it
-behaves when it meets each of the optimized reference's artifacts, and what
-the integration into Stacks must decide because of that.
+Compatibility baseline: upstream `stacks-network/stacks-core` `main` at
+`ad5c57786bb51b58d4bdb4992ad534f762d8cf03`. The crate `stacks-marf/` at that
+commit is the authoritative behavioural and storage oracle; it is unchanged
+in this tree. The rewrite is `crates/stacks-marf-next/`.
 
-## 1. What the rewrite implements: the legacy format, bidirectionally
+Optimization reference: `29ef093da5dd58c1fa484624d94a9d972356c629` (tag
+`optimized-ref`). It is consulted for performance ideas (`OPTIMIZATIONS.md`)
+and is **not** a compatibility requirement; its storage additions are
+described in §3 only so that their boundaries are explicit.
 
-A database written by either implementation in the **legacy** format is
-read and extended by the other with no migration. "Legacy" means everything
-`stacks-marf` at the base produces when its `NodeRecordFormat` is `Legacy`,
-which is every MARF a node at the base operates on except a freshly created
-Clarity MARF (see §2.1).
+## 1. Contract: the upstream format, bidirectionally, without conversion
+
+A database written by upstream `stacks-marf` is read and extended by the
+rewrite, and vice versa, with no migration step, for every artifact upstream
+persists:
 
 | Artifact | Contract |
 |---|---|
-| `marf.sqlite` schema | Versions 1 to 3 are opened and migrated to 3 exactly as the reference does (`schema_version`, `migrated_version`, `marf_data`, `mined_blocks`, `block_extension_locks`, `marf_squash_info`, `marf_squashed_blocks`). Column and table names are unchanged, including `squash_*` names behind the `pruning` API. |
-| `marf.sqlite.blobs` | Append-only; tries are located by `marf_data.external_offset/external_length`; the schema-2 internal-to-external export is implemented. |
+| `marf.sqlite` schema | Versions 1 to 3 are opened and migrated to 3 exactly as upstream does (`schema_version`, `migrated_version`, `marf_data`, `mined_blocks`, `block_extension_locks`, `marf_squash_info`, `marf_squashed_blocks`). Table and column names are unchanged; the `pruning` API maps onto the `squash_*` columns. |
+| `marf.sqlite.blobs` | Append-only; tries located by `marf_data.external_offset/external_length`; the schema-2 internal-to-external export is implemented. |
 | Trie blob | 32-byte parent hash, 4 zero reserved bytes, root record at offset 36, remaining records in pre-order. |
-| Records | `hash(32) || body`; all legacy encodings: plain, compressed dense, compressed sparse, wide (u64) offsets, inline back-block annotations, `Node48` index arrays, patch records (id 6) with `MAX_PATCH_DEPTH = 4`. |
-| Patch semantics | Patches are generated for copied-forward nodes against the node as resolved at its origin (base pointer = the record or the outermost patch there), and resolved with the reference's `apply_node*` rules. |
-| Consensus | Node hashes, MARF root hashes (ancestor skip-list), block-height mapping keys, proof wire format and proof verification are byte-identical. Verified by 22 recorded fixtures and both hand-off directions (`contrib/marf-differential`). |
-| Pruning ("squash") | `Prune::prune_to_path` writes the same side tables and shared blob layout; a pruned database is read by the reference and vice versa (fixtures `prune_*`). |
+| Records | `hash(32) || body`; every upstream encoding: plain, compressed dense, compressed sparse, wide (u64) offsets, inline back-block annotations, `Node48` index arrays, patch records (id 6) with `MAX_PATCH_DEPTH = 4`. |
+| Patch semantics | Patches are generated for copied-forward nodes against the node as resolved at its origin and resolved with upstream's `apply_node*` rules. |
+| Consensus | Node hashes, MARF root hashes (ancestor skip-list), block-height mapping keys, proof wire format and proof verification are byte-identical. |
+| Squash / prune | `Prune::prune_to_path` writes the same side tables and shared-blob layout as `MARF::squash_to_path`; squashed databases are read by either implementation. |
 
-The guarantee is checked, not assumed: every fixture is recorded from the
-reference and replayed against the rewrite, and every fixture is split at
-each `Close`/`Prune` with the prefix run by one implementation and the suffix
-by the other, over the same files.
+How this is checked: 22 operation sequences are recorded from upstream's
+crate (`contrib/marf-differential/fixtures`, see `PROVENANCE.md`) and
+replayed against the rewrite comparing every observation (values, root
+hashes, heights, blocks at height, fork checks, error kinds, serialized
+proofs and their verification). Each fixture is also split at every
+`Close`/`Prune` and run with the prefix on one implementation and the suffix
+on the other over the same directory, in both directions. Command and
+results: `STATUS.md`.
 
-## 2. The optimized reference's artifacts and what the rewrite does with them
+## 2. API surface for consumers
 
-The base introduces four persisted things beyond the legacy format. None
-changes consensus (roots, proofs); all are storage-level.
+`stacks-marf-next` exposes the names upstream consumers import
+(`MARF`, `MarfTransaction`, `MarfConnection`, `MARFOpenOpts`,
+`TrieFileStorage`, `TrieHashCalculationMode`, `TrieMerkleProof`,
+`MARFValue`, `MarfTrieId`, `ClarityMarfTrieId`, `Error`, `trie_sql::*`,
+`file::TrieFile`, `test_override_marf_compression`,
+`fault_injection_marf_compression`). Differences a consumer sees when the
+dependency is pointed at the rewrite (`stacks-marf = { package =
+"stacks-marf-next", path = ... }`):
 
-### 2.1 Record format 6 ("type-first", `MRF\x06`)
+* Paths are `impl AsRef<Path>`; `MARF::get_db_path` returns `&Path` rather
+  than `&str` (one call site in `stackslib` converts).
+* Squashing is `pruning::Prune::prune_to_path` returning `PruneStats`;
+  `PruneInfo` fields are `prune_root_node_hash` / `prune_height`
+  (`trie_sql::read_squash_info` and `SqlSquashInfo` remain as aliases).
+  Error variants are `HistoricalReadInPrunedRange` and
+  `UnsupportedOnPrunedMarf`.
+* `Error` has no `BackptrNotFoundError`, `BadSeekValue`,
+  `BlockHashMapCorruptionError`, `NotDirectoryError`, `PartialWriteError`,
+  `CursorError`, `RequestedIdentifierForExtensionTrie` variants; the
+  situations that raised them are reported as `CorruptionError` or
+  `NotFoundError`. No consumer matches on the removed variants.
+* `TrieHashCalculationMode::Immediate` is accepted and treated as
+  `Deferred` (identical hashes); the root hash of an unsealed trie reads
+  as zero.
+* Reads name their block; `open_block` only sets the tip that
+  `check_ancestor_block_hash` uses.
 
-* Marker: `marf_record_format(singleton=1, version=6)` and `schema_version = 4`
-  (`SQL_MARF_TYPE_FIRST_SCHEMA_VERSION`); each trie's reserved header bytes
-  carry `MRF\x06`. Records put the node marker first, pack pointer columns,
-  omit `Node256` occupancy bitmaps where cheaper, compact raw leaves, and
-  store Clarity values either inline or as a 4-byte stable ID (§2.2).
-* Producers at the base: `stacks-storage-migrate` (offline conversion of a
-  whole MARF or chainstate), and **`MarfedKV::setup_db` for a brand-new
-  Clarity MARF** (`enable_stable_value_ids` runs when the store is empty).
-  The chainstate index MARF and the sortition MARF stay legacy.
-* Rewrite behaviour: **refused at open** with a `CorruptionError` naming the
-  schema and this document. Nothing is read or written, so a format-6
-  database cannot be damaged by the rewrite. Reading format 6 is required
-  work before the rewrite can replace `stacks-marf` under a node that keeps
-  that initialization path; see §3 and `FUTURE.md` §1.
+The integration commit on this branch switches `stackslib`, `stacks-node`,
+`contrib/clarity-cli`, `contrib/stacks-inspect` and `contrib/marf-squash`
+to the rewrite with those adaptations; the upstream crate stays in the
+workspace, used by `contrib/marf-differential` as the oracle.
 
-### 2.2 Clarity stable-ID value store
+## 3. The optimization reference's storage additions (not in scope)
 
-* Artifacts: directory `marf.sqlite.stable-<16-byte-hex>` next to the
-  database (partitions, directory, descriptors, PtrHash index), SQL table
-  `clarity_stable_format`, and the `canonical_clarity_initialization` pending
-  marker. Leaves in such a trie carry stable IDs; the 40-byte commitment is
-  reconstructed by a `ValueResolver` that `stackslib` installs on the MARF.
-* Rewrite behaviour: the value store only exists inside format-6 databases,
-  so it is covered by the refusal in §2.1. The rewrite's leaf is the raw
-  40-byte value; the `MARFValue` hashing and proof code already treat it as
-  opaque, which is where a resolver would plug in (`FUTURE.md` §2).
+These exist only on the reference branch; upstream neither writes nor reads
+them, so a rewrite that is compatible with upstream is complete without
+them. They are listed to fix the boundary.
 
-### 2.3 Direct block-hash index (`<db>.hashes-<token>`)
+* **Record format 6** (`marf_record_format.version = 6`, `schema_version =
+  4`, header tag `MRF\x06`): packed branches, compact leaves, inline or
+  stable-ID Clarity values. The rewrite refuses such a database at open with
+  a `CorruptionError` naming the schema. Boundary: `codec::Record::parse`,
+  `storage::open`/`migrate` (`FUTURE.md` §1).
+* **Clarity stable-ID value store** (`marf.sqlite.stable-<hex>` directory,
+  `clarity_stable_format`, resolver installed by `MarfedKV`): lives inside
+  format-6 databases; same refusal. Boundary: `codec::LeafView::value`
+  (`FUTURE.md` §2).
+* **Direct block-hash sidecar** (`<db>.hashes-<token>`,
+  `marf_direct_hash_index`): never read by the rewrite; marked `valid = 0`
+  before the rewrite's first write to a database that carries one, so the
+  reference falls back to the SQL tables rather than trusting a stale file.
+  Boundary: `Store::{block_id, block_hash}` (`FUTURE.md` §4).
+* **Open options** `mmap`, `root_node_cache`, `resolved_patch_cache_capacity`,
+  `result_cache_capacity`: no persisted footprint; the rewrite always maps
+  the blobs file and always keeps a bounded resolved-patch cache.
 
-* Artifacts: sidecar file named by a 16-byte token, described by
-  `marf_direct_hash_index(singleton, token, max_id, valid)`; each slot holds
-  a block hash and a 16-byte ancestry extension (height, parent id, skip id).
-  Published by `stacks-storage-migrate`; the node extends it as it commits
-  when the table exists, and falls back to the SQL tables for any id the
-  sidecar does not cover or when `valid = 0`.
-* Rewrite behaviour: the sidecar is **never read** (block ids and ancestry
-  come from `marf_data` and the trie's height keys, as in the legacy path)
-  and **never extended**. Before its first write to a database that has the
-  table, the rewrite sets `valid = 0`, so a reference binary that later opens
-  the database ignores the now-stale file instead of trusting it. Reading
-  such a database without writing leaves the publication untouched. The
-  sidecar is an accelerator with the SQL tables as the source of truth, so
-  this costs performance in the reference, never correctness.
-
-### 2.4 Caches and memory mapping (no persisted footprint)
-
-The reference's `MARFOpenOpts` gained `mmap`, `root_node_cache`,
-`resolved_patch_cache_capacity` and `result_cache_capacity`. The rewrite's
-`MARFOpenOpts` keeps the four original fields; the rewrite always maps the
-blobs file, always keeps a bounded resolved-patch cache (4,096 locations),
-and deliberately has no lookup-result cache (see `DECISIONS.md` ADR-17). A
-consumer that sets the reference's extra fields needs a shim at integration
-time; none of them affects what is on disk.
-
-## 3. What integration must decide
-
-1. **Clarity MARF creation path.** At the base a fresh Clarity MARF is
-   initialized in format 6 with a stable-ID store. Replacing `stacks-marf`
-   with the rewrite as-is would make `MarfedKV::setup_db` fail on a fresh
-   chainstate. Either (a) the integration keeps new Clarity MARFs legacy
-   (skip `enable_stable_value_ids`; existing legacy chainstates are
-   unaffected), or (b) format 6 and the value resolver are implemented in
-   the rewrite first. Legacy-only integration is the smaller step and keeps
-   the reference as a drop-in oracle for every consumer test.
-2. **Migrated databases.** A chainstate converted by `stacks-storage-migrate`
-   is format 6 throughout and is out of scope until (b).
-3. **Open options.** `with_mmap`, `root_node_cache`,
-   `resolved_patch_cache_capacity`, `result_cache_capacity` have no
-   equivalents; the config layer (`Config::get_marf_opts`) needs the
-   corresponding fields dropped or accepted and ignored.
-4. **Direct hash sidecar.** Databases with a published sidecar lose it on the
-   rewrite's first write (§2.3). Acceptable for the integration branch; a
-   maintained sidecar is `FUTURE.md` §4.
-
-## 4. Out of scope on purpose
-
-* The retired experimental formats (`marf_record_format` versions 1 to 5 and
-  41) are refused by the reference too.
-* `stacks-storage-migrate` and `stacks-inspect validate-block` pipelines
-  are tooling over the reference's codec; they are not ported.
+Nothing in this milestone introduces format 6, stable-ID storage or a
+changed Clarity initialization path.

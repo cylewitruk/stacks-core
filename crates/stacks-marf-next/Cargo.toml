@@ -34,3 +34,5 @@ tempfile = "3"
 default = []
 # Expose the MARF's test-only helpers to other crates' test suites.
 testing = ["stacks-common/testing"]
+# Accepted for parity with `stacks-marf`; SQLite profiling lives in stacks-common.
+profile-sqlite = ["stacks-common/profile-sqlite"]

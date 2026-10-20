@@ -523,7 +523,10 @@ impl ReadOnlyMarfStore<'_> {
     /// Get the DB path on disk.
     /// If the DB is in RAM, this will be ":memory:"
     pub fn get_db_path(&self) -> &str {
-        self.marf.get_db_path()
+        self.marf
+            .get_db_path()
+            .to_str()
+            .expect("MARF database path is valid UTF-8")
     }
 
     /// Get a reference to the chain tip
