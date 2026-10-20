@@ -208,6 +208,18 @@ sortition db, `util_lib::db`, every test mentioning `marf`, `squash` or
 
 CONSUMER_RESULTS
 
+Three tests of that filter stalled in the parallel run and were re-run
+serially: `accounting::test_coinbase_pay_to_alt_principal_v210`,
+`accounting::test_coinbase_pay_to_contract_v210` and
+`block_construction::test_contract_call_across_clarity_versions`. A stack
+trace of the stalled processes (zero CPU for over an hour) showed them in
+`NetworkState::bind_address`, which retries a `TcpListener::bind` with
+doubling backoff for as long as the address is in use; these tests use
+hard-coded ports (two block-construction tests share 2032/2033, and the two
+coinbase tests call the same helper with one port pair), so running them in
+parallel can leave them sleeping indefinitely. This is test-harness
+behaviour independent of the MARF. SERIAL_RESULTS
+
 ## Known differences and limitations
 
 * Format-6 / stable-ID databases of the optimization reference are refused
