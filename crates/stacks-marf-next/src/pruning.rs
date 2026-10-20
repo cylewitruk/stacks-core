@@ -15,8 +15,9 @@
 //! Memory: the collected nodes are staged in a temporary file beside the
 //! destination ([`Staged`]), and the output blob is streamed into the blobs
 //! file; what stays in memory is per-node bookkeeping (a file offset, a
-//! hash, a blob offset: 48 bytes a node, plus the dedup index while
-//! collecting), never the decoded trie or the serialized blob. The original
+//! hash, a blob offset: 48 bytes a node in arrays, plus the dedup index
+//! while collecting and two 1 MiB buffers; about 95 bytes a node measured
+//! at peak), never the decoded trie or the serialized blob. The original
 //! does the same (`squash::node_store`, `squash::stream`).
 
 use std::collections::hash_map::Entry;

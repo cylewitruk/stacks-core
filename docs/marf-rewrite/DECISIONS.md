@@ -104,9 +104,12 @@ the output (`squash/stream.rs`). `Prune::prune_to_path` now does the same:
   as upstream does, and the header is written with it. Any slack between the
   root and the first descendant is unused bytes, which readers never see
   (they follow offsets); upstream's squash blobs have the same slack.
-* In memory per node: a stage offset, a hash and a blob offset (48 bytes),
-  plus the dedup index while collecting. The temp file is about the size of
-  the output blob and is removed on drop.
+* In memory per node: a stage offset, a hash and a blob offset (48 bytes in
+  arrays), plus the dedup index while collecting and two 1 MiB buffers.
+  Measured peak heap during a prune (`marf-differential alloc`, `prune`
+  phase): about 95 bytes a node, against about 330 for the in-memory version
+  and about 125 for upstream; see `STATUS.md`. The temp file is about the
+  size of the output blob and is removed on drop.
 
 The in-memory `Trie::from_nodes`/`seal`/`serialize` path remains for
 ordinary commits, where a trie is one block's worth of nodes.
