@@ -6,6 +6,7 @@ members = [
     "stacks-marf",
     "crates/stacks-marf-next",
     "contrib/marf-differential",
+    "contrib/clarity-bench",
     "stacks-codec",
     "crates/stacks-transactions",
     "pox-locking",
