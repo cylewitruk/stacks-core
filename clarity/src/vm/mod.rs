@@ -207,6 +207,7 @@ fn lookup_variable<'a>(
     if let Some(value) = variables::lookup_reserved_variable(name, exec_state, invoke_ctx)? {
         return Ok(ValueRef::Owned(value));
     };
+    let _span = crate::profiler::profile!("lookup_variable", name.to_string());
     runtime_cost(
         ClarityCostFunction::LookupVariableDepth,
         exec_state,
@@ -254,6 +255,8 @@ pub fn lookup_function(
     exec_state: &mut ExecutionState,
     invoke_ctx: &InvocationContext,
 ) -> Result<CallableType, VmExecutionError> {
+    let _span = crate::profiler::profile!("lookup_function", name.to_string());
+
     runtime_cost(ClarityCostFunction::LookupFunction, exec_state, 0)?;
 
     if let Some(result) = functions::lookup_reserved_functions(
@@ -315,12 +318,20 @@ fn dispatch_args(
 ) -> Result<Value, VmExecutionError> {
     exec_state.call_stack.insert(&identifier, track_recursion);
     let mut resp = match function {
-        CallableType::NativeFunction(_, function, cost_function) => {
+        CallableType::NativeFunction(rust_name, function, cost_function, clarity_name) => {
+            let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
             runtime_cost(cost_function.clone(), exec_state, args.len())
                 .map_err(VmExecutionError::from)
                 .and_then(|_| function.apply(args, exec_state, invoke_ctx))
         }
-        CallableType::NativeFunction205(_, function, cost_function, cost_input_handle) => {
+        CallableType::NativeFunction205(
+            rust_name,
+            function,
+            cost_function,
+            cost_input_handle,
+            clarity_name,
+        ) => {
+            let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
             let cost_input = if exec_state.epoch() >= &StacksEpochId::Epoch2_05 {
                 cost_input_handle(args.as_slice())?
             } else {
@@ -330,7 +341,14 @@ fn dispatch_args(
                 .map_err(VmExecutionError::from)
                 .and_then(|_| function.apply(args, exec_state, invoke_ctx))
         }
-        CallableType::UserFunction(function) => function.apply(&args, exec_state, invoke_ctx),
+        CallableType::UserFunction(function) => {
+            let _span = crate::profiler::begin_user_fn_span(
+                function.name(),
+                &function.define_type,
+                function.get_identifier().to_string(),
+            );
+            function.apply(&args, exec_state, invoke_ctx)
+        }
         _ => return Err(VmInternalError::Expect("Should be unreachable.".into()).into()),
     };
     add_stack_trace(&mut resp, exec_state);
@@ -358,7 +376,8 @@ pub fn apply(
 ) -> Result<Value, VmExecutionError> {
     let (identifier, track_recursion) = check_call_preconditions(function, exec_state)?;
 
-    if let CallableType::SpecialFunction(_, function) = function {
+    if let CallableType::SpecialFunction(rust_name, function, clarity_name) = function {
+        let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
         exec_state.call_stack.insert(&identifier, track_recursion);
         let mut resp = function(args, exec_state, invoke_ctx, context);
         add_stack_trace(&mut resp, exec_state);
@@ -438,7 +457,8 @@ pub fn apply_evaluated(
     // into atom_value expressions so the special function dispatch works correctly.
     // This path is hit when built-in operators like >=, <=, <, >, and, or are used as
     // step functions in fold/map/filter. Note: In this case it works like `apply`.
-    if let CallableType::SpecialFunction(_, function) = function {
+    if let CallableType::SpecialFunction(rust_name, function, clarity_name) = function {
+        let _span = crate::profiler::begin_builtin_span(clarity_name, rust_name);
         let sym_args: Vec<SymbolicExpression> = args
             .into_iter()
             .map(SymbolicExpression::atom_value)

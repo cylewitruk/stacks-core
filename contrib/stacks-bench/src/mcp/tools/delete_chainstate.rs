@@ -1,0 +1,55 @@
+//! `delete_chainstate` tool – deletes a chainstate and all associated data.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use stacks_bench::db::app::CheckpointMode;
+
+use crate::mcp::server::StacksBenchServer;
+
+/// Parameters for the `delete_chainstate` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct DeleteChainstateParams {
+    /// ID of the chainstate to delete.
+    pub chainstate_id: i32,
+}
+
+#[derive(Serialize, schemars::JsonSchema)]
+pub(crate) struct DeleteChainstateResult {
+    deleted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+crate::wire::wire_payload!(DeleteChainstateResult, "chainstate_delete", 1);
+
+impl StacksBenchServer {
+    pub async fn exec_delete_chainstate(
+        &self,
+        params: &DeleteChainstateParams,
+    ) -> anyhow::Result<String> {
+        let started = std::time::Instant::now();
+        let mut db = self.app_db.clone();
+        let result = match db.delete_chainstate(params.chainstate_id).await {
+            Ok(()) => {
+                // Post-delete cleanup: checkpoint + vacuum to reclaim space.
+                let _ = db.checkpoint(CheckpointMode::Truncate).await;
+                let _ = db.vacuum().await;
+                DeleteChainstateResult {
+                    deleted: true,
+                    message: None,
+                }
+            }
+            Err(e) => {
+                let msg = format!("{e:#}");
+                if msg.contains("not found") {
+                    DeleteChainstateResult {
+                        deleted: false,
+                        message: Some(msg),
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+        super::tool_envelope(&result, started.elapsed().as_secs_f64())
+    }
+}

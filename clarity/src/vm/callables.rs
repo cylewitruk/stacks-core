@@ -46,7 +46,13 @@ pub enum CallableType {
     /// Clarity name (used for identifier construction and diagnostics), the
     /// [`NativeHandle`] dispatches on arity, and the [`ClarityCostFunction`]
     /// is charged with the argument count as its input size.
-    NativeFunction(&'static str, NativeHandle, ClarityCostFunction),
+    NativeFunction(
+        &'static str,
+        NativeHandle,
+        ClarityCostFunction,
+        /// Clarity-facing name for profiler spans.
+        &'static str,
+    ),
     /// A built-in function whose runtime-cost input size is computed from
     /// the actual argument values rather than just their count. Introduced
     /// in epoch 2.05: when the current epoch is >= 2.05, the trailing
@@ -58,6 +64,8 @@ pub enum CallableType {
         NativeHandle,
         ClarityCostFunction,
         &'static dyn Fn(&[Value]) -> Result<u64, VmExecutionError>,
+        /// Clarity-facing name for profiler spans.
+        &'static str,
     ),
     /// A built-in form that needs control over how (or whether) its
     /// arguments are evaluated — e.g. `if`, `let`, `match`, `contract-call?`.
@@ -72,6 +80,8 @@ pub enum CallableType {
             &InvocationContext,
             &LocalContext,
         ) -> Result<Value, VmExecutionError>,
+        /// Clarity-facing name for profiler spans.
+        &'static str,
     ),
 }
 
@@ -152,6 +162,11 @@ pub fn cost_input_sized_vararg(args: &[Value]) -> Result<u64, VmExecutionError> 
 }
 
 impl DefinedFunction {
+    /// Returns the Clarity function name for profiler spans.
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
     pub fn new(
         arguments: Vec<(ClarityName, TypeSignature)>,
         body: SymbolicExpression,
@@ -359,6 +374,7 @@ impl DefinedFunction {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn check_trait_expectations(
         &self,
         epoch: &StacksEpochId,
@@ -432,6 +448,7 @@ impl DefinedFunction {
         &self.arg_types
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn canonicalize_types(&mut self, epoch: &StacksEpochId) {
         for i in 0..self.arguments.len() {
             self.arg_types[i] = self.arg_types[i].canonicalize(epoch);
@@ -448,9 +465,9 @@ impl CallableType {
     pub fn get_identifier(&self) -> FunctionIdentifier {
         match self {
             CallableType::UserFunction(f) => f.get_identifier(),
-            CallableType::NativeFunction(s, _, _) => FunctionIdentifier::new_native_function(s),
-            CallableType::SpecialFunction(s, _) => FunctionIdentifier::new_native_function(s),
-            CallableType::NativeFunction205(s, _, _, _) => {
+            CallableType::NativeFunction(s, _, _, _) => FunctionIdentifier::new_native_function(s),
+            CallableType::SpecialFunction(s, _, _) => FunctionIdentifier::new_native_function(s),
+            CallableType::NativeFunction205(s, _, _, _, _) => {
                 FunctionIdentifier::new_native_function(s)
             }
         }

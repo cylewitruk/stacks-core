@@ -412,6 +412,7 @@ impl ClarityInstance {
     }
 
     /// Returns the Stacks epoch of the burn block that elected `stacks_block`
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_epoch_of(
         stacks_block: &StacksBlockId,
         header_db: &dyn HeadersDB,
@@ -433,6 +434,7 @@ impl ClarityInstance {
             .unwrap_or_else(|| panic!("Failed to get Stacks epoch for height = {}", burn_height))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn begin_block<'a, 'b>(
         &'a mut self,
         current: &StacksBlockId,
@@ -818,6 +820,7 @@ impl ClarityInstance {
 
     /// Evaluate program read-only at `at_block`. This will be evaluated in the Stacks epoch that
     ///  was active *during* the evaluation of `at_block`
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn eval_read_only(
         &mut self,
         at_block: &StacksBlockId,
@@ -919,6 +922,7 @@ impl ClarityConnection for ClarityReadOnlyConnection<'_> {
 }
 
 impl PreCommitClarityBlock<'_> {
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit(self) {
         debug!("Committing Clarity block connection"; "index_block" => %self.commit_to);
         self.datastore
@@ -931,6 +935,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     /// Rolls back all changes in the current block by
     /// (1) dropping all writes from the current MARF tip,
     /// (2) rolling back side-storage
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn rollback_block(self) {
         // this is a "lower-level" rollback than the roll backs performed in
         //   ClarityDatabase or AnalysisDatabase -- this is done at the backing store level.
@@ -941,6 +946,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     /// Rolls back all unconfirmed state in the current block by
     /// (1) dropping all writes from the current MARF tip,
     /// (2) rolling back side-storage
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn rollback_unconfirmed(self) {
         // this is a "lower-level" rollback than the roll backs performed in
         //   ClarityDatabase or AnalysisDatabase -- this is done at the backing store level.
@@ -954,6 +960,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     /// (1) committing the current MARF tip to storage,
     /// (2) committing side-storage.
     #[cfg(test)]
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_block(self) -> LimitedCostTracker {
         debug!("Commit Clarity datastore");
         self.datastore.test_commit();
@@ -995,6 +1002,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     /// block hash than the one opened (i.e. since the caller
     /// may not have known the "real" block hash at the
     /// time of opening).
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_to_block(self, final_bhh: &StacksBlockId) -> LimitedCostTracker {
         debug!("Commit Clarity datastore to {}", final_bhh);
         self.datastore
@@ -1010,6 +1018,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     ///    before this saves, it updates the metadata headers in
     ///    the sidestore so that they don't get stepped on after
     ///    a miner re-executes a constructed block.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_mined_block(
         self,
         bhh: &StacksBlockId,
@@ -1025,6 +1034,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     /// (2) committing side-storage
     /// Unconfirmed data has globally-unique block hashes that are cryptographically derived from a
     /// confirmed block hash, so they're exceedingly unlikely to conflict with existing blocks.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_unconfirmed(self) -> LimitedCostTracker {
         debug!("Save unconfirmed Clarity datastore");
         self.datastore.commit_unconfirmed();
@@ -1033,6 +1043,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     }
 
     /// Get the boot code account
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get_boot_code_account(&mut self) -> Result<StacksAccount, ClarityError> {
         let boot_code_address = boot_code_addr(self.mainnet);
         let boot_code_nonce = self.with_clarity_db_readonly(|db| {
@@ -1115,6 +1126,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         Ok(receipt)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_2_05(&mut self) -> Result<StacksTransactionReceipt, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1199,6 +1211,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_2_1(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1387,6 +1400,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_2_2(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1414,6 +1428,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_2_3(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1443,6 +1458,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_2_4(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1574,6 +1590,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_2_5(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1817,6 +1834,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_3_0(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1843,6 +1861,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_3_1(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1869,6 +1888,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_3_2(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -1975,6 +1995,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_3_3(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -2064,6 +2085,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_3_4(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -2090,6 +2112,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn initialize_epoch_4_0(&mut self) -> Result<Vec<StacksTransactionReceipt>, ClarityError> {
         // use the `using!` statement to ensure that the old cost_tracker is placed
         //  back in all branches after initialization
@@ -2202,6 +2225,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     /// This will unconditionally commit the edit log from the
     /// transaction to the block, so any changes that should be
     /// rolled back must be rolled back by `todo`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn as_free_transaction<F, R>(&mut self, todo: F) -> R
     where
         F: FnOnce(&mut ClarityTransactionConnection) -> R,
@@ -2224,6 +2248,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
     /// This will unconditionally commit the edit log from the
     /// transaction to the block, so any changes that should be
     /// rolled back must be rolled back by `todo`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn as_transaction<F, R>(&mut self, todo: F) -> R
     where
         F: FnOnce(&mut ClarityTransactionConnection) -> R,
@@ -2235,6 +2260,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
         r
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn seal(&mut self) -> TrieHash {
         self.datastore.seal_trie()
     }
@@ -2251,6 +2277,7 @@ impl<'a, 'b> ClarityBlockConnection<'a, 'b> {
 
 impl ClarityConnection for ClarityTransactionConnection<'_, '_> {
     /// Do something with ownership of the underlying DB that involves only reading.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn with_clarity_db_readonly_owned<F, R>(&mut self, to_do: F) -> R
     where
         F: FnOnce(ClarityDatabase) -> (R, ClarityDatabase),
@@ -2271,6 +2298,7 @@ impl ClarityConnection for ClarityTransactionConnection<'_, '_> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn with_analysis_db_readonly<F, R>(&mut self, to_do: F) -> R
     where
         F: FnOnce(&mut AnalysisDatabase) -> R,
@@ -2310,6 +2338,7 @@ impl Drop for ClarityTransactionConnection<'_, '_> {
 }
 
 impl TransactionConnection for ClarityTransactionConnection<'_, '_> {
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn with_abort_callback<F, A, R, E>(
         &mut self,
         to_do: F,
@@ -2374,6 +2403,7 @@ impl TransactionConnection for ClarityTransactionConnection<'_, '_> {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn with_analysis_db<F, R>(&mut self, to_do: F) -> R
     where
         F: FnOnce(&mut AnalysisDatabase, LimitedCostTracker) -> (LimitedCostTracker, R),
@@ -2391,6 +2421,7 @@ impl TransactionConnection for ClarityTransactionConnection<'_, '_> {
 
 impl ClarityTransactionConnection<'_, '_> {
     /// Do something to the underlying DB that involves writing.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn with_clarity_db<F, R>(&mut self, to_do: F) -> Result<R, ClarityError>
     where
         F: FnOnce(&mut ClarityDatabase) -> Result<R, ClarityError>,
@@ -2493,6 +2524,7 @@ impl ClarityTransactionConnection<'_, '_> {
     /// the transaction connection. If the transaction connection is a
     /// free transaction, then these costs will be free, but
     /// otherwise, the cost tracker will be invoked like normal.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn eval_method_read_only(
         &mut self,
         contract: &QualifiedContractIdentifier,

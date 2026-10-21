@@ -529,6 +529,7 @@ impl Value {
     /// If `sanitize` argument is set to true and `expected_type` is supplied,
     ///  this method will remove any extraneous tuple fields which may have been
     ///  allowed by `least_super_type`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn deserialize_read_count<R: Read>(
         r: &mut R,
         expected_type: Option<&TypeSignature>,
@@ -1035,6 +1036,7 @@ impl Value {
         ))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn serialize_write<W: Write>(&self, w: &mut W) -> Result<(), SerializationError> {
         use super::CharType::*;
         use super::PrincipalData::*;
