@@ -513,7 +513,7 @@ pub fn run(which: Impl, w: &Workload, reads: usize, plain: bool) {
 /// a separate, never-inlined function so an instruction profiler can
 /// collect inside it alone (`callgrind --toggle-collect`, `scripts/profile.sh`).
 #[inline(never)]
-pub fn timed_cold_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
+fn timed_cold_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
     let (_, m) = measure(|| {
         for (i, k) in set.keys.iter().enumerate() {
             out[i] = marf.get_value(&set.tip, k);
@@ -525,7 +525,7 @@ pub fn timed_cold_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<
 /// One warm pass of a cell; same body as the cold pass, separate symbol so
 /// cold and warm instruction profiles do not mix.
 #[inline(never)]
-pub fn timed_warm_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
+fn timed_warm_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
     let (_, m) = measure(|| {
         for (i, k) in set.keys.iter().enumerate() {
             out[i] = marf.get_value(&set.tip, k);
