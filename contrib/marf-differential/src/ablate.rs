@@ -509,13 +509,34 @@ pub fn run(which: Impl, w: &Workload, reads: usize, plain: bool) {
 
 /// Read every key of `set` once into `out`, timed; returns the time and the
 /// counters of the pass.
-fn pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, Counters, u64) {
-    let _ = marf.counters();
+/// The cold (first) pass of a cell: the timed loop and nothing else. Kept as
+/// a separate, never-inlined function so an instruction profiler can
+/// collect inside it alone (`callgrind --toggle-collect`, `scripts/profile.sh`).
+#[inline(never)]
+pub fn timed_cold_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
     let (_, m) = measure(|| {
         for (i, k) in set.keys.iter().enumerate() {
             out[i] = marf.get_value(&set.tip, k);
         }
     });
+    m
+}
+
+/// One warm pass of a cell; same body as the cold pass, separate symbol so
+/// cold and warm instruction profiles do not mix.
+#[inline(never)]
+pub fn timed_warm_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
+    let (_, m) = measure(|| {
+        for (i, k) in set.keys.iter().enumerate() {
+            out[i] = marf.get_value(&set.tip, k);
+        }
+    });
+    m
+}
+
+fn pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, Counters, u64) {
+    let _ = marf.counters();
+    let m = timed_cold_pass(marf, set, out);
     (m.elapsed, marf.counters(), m.peak)
 }
 
@@ -550,7 +571,14 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
         t.elapsed().as_secs_f64(),
         built.all_keys.len()
     );
-    let sets = key_sets(dir.path(), &opts, &built, reads);
+    let mut sets = key_sets(dir.path(), &opts, &built, reads);
+    // SETS=a,b keeps only the key sets whose name contains one of the
+    // substrings (profiling aid: one set per profiled process).
+    if let Ok(filter) = std::env::var("SETS") {
+        let wanted: Vec<&str> = filter.split(',').filter(|s| !s.is_empty()).collect();
+        sets.retain(|s| wanted.iter().any(|w| s.name.contains(w)));
+        assert!(!sets.is_empty(), "SETS={filter} matched no key set");
+    }
     let describe = M::open(&dir.path().join("marf.sqlite"), &opts).describe(&opts);
     println!("impl {}: {}", M::NAME, describe);
     println!(
@@ -629,19 +657,20 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
                 let model = model_for(set);
                 let occupancy_entry = marf.cache_occupancy();
                 let (cold_t, counters_cold, peak) = pass(marf, set, &mut out);
-                verify(set, &out, model);
+                verify(set, &out, model, "cold pass");
                 let occupancy_after_cold = marf.cache_occupancy();
                 let mut warm_ns = vec![];
                 let mut counters_warm = Counters::default();
                 let _ = marf.counters();
                 let mut warm_peak = 0u64;
-                for _ in 0..passes {
-                    let (d, _, p) = pass_no_counters(marf, set, &mut out);
+                for p in 0..passes {
+                    let (d, _, pk) = pass_no_counters(marf, set, &mut out);
                     warm_ns.push(d.as_nanos());
-                    warm_peak = warm_peak.max(p);
+                    warm_peak = warm_peak.max(pk);
+                    // every pass is checked, outside its timed region
+                    verify(set, &out, model, &format!("warm pass {}", p + 1));
                 }
                 counters_warm = counters_warm.max_merge(marf.counters());
-                verify(set, &out, model);
                 let occupancy_exit = marf.cache_occupancy();
                 let cell = cells.entry((si, ci)).or_insert_with(|| Cell {
                     cold: Samples::default(),
@@ -757,17 +786,83 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
 /// A timed pass without touching the counters (they accumulate across the
 /// warm passes and are taken once after them).
 fn pass_no_counters<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, (), u64) {
-    let (_, m) = measure(|| {
-        for (i, k) in set.keys.iter().enumerate() {
-            out[i] = marf.get_value(&set.tip, k);
-        }
-    });
+    let m = timed_warm_pass(marf, set, out);
     (m.elapsed, (), m.peak)
 }
 
-fn verify(set: &KeySet, out: &[Option<[u8; 40]>], model: &HashMap<String, [u8; 40]>) {
-    for (i, k) in set.keys.iter().enumerate() {
+/// Check one pass's returned values against the model. `Err` names the
+/// first wrong key. Called after every pass (cold and each warm pass),
+/// outside the timed region, so a wrong intermediate pass cannot be hidden
+/// by a correct later one.
+pub fn check_pass(
+    keys: &[String],
+    out: &[Option<[u8; 40]>],
+    model: &HashMap<String, [u8; 40]>,
+) -> Result<(), String> {
+    for (i, k) in keys.iter().enumerate() {
         let expected = model.get(k).copied();
-        assert_eq!(out[i], expected, "set {} key {k}: wrong value", set.name);
+        if out[i] != expected {
+            return Err(format!("key {k}: got {:?}, expected {:?}", out[i], expected));
+        }
+    }
+    Ok(())
+}
+
+/// Check every pass of a cell in order; `Err((pass, message))` is the first
+/// pass that disagreed with the model.
+pub fn check_passes(
+    keys: &[String],
+    passes: &[Vec<Option<[u8; 40]>>],
+    model: &HashMap<String, [u8; 40]>,
+) -> Result<(), (usize, String)> {
+    for (p, out) in passes.iter().enumerate() {
+        check_pass(keys, out, model).map_err(|e| (p, e))?;
+    }
+    Ok(())
+}
+
+fn verify(set: &KeySet, out: &[Option<[u8; 40]>], model: &HashMap<String, [u8; 40]>, pass: &str) {
+    if let Err(e) = check_pass(&set.keys, out, model) {
+        panic!("set {} {pass}: wrong value: {e}", set.name);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model_and_passes() -> (Vec<String>, HashMap<String, [u8; 40]>, Vec<Vec<Option<[u8; 40]>>>) {
+        let keys: Vec<String> = (0..4).map(|i| format!("k{i}")).collect();
+        let mut model = HashMap::new();
+        for (i, k) in keys.iter().enumerate() {
+            model.insert(k.clone(), [i as u8; 40]);
+        }
+        let good: Vec<Option<[u8; 40]>> = (0..4).map(|i| Some([i as u8; 40])).collect();
+        let mut bad = good.clone();
+        bad[2] = Some([0xee; 40]); // one wrong value in the middle pass
+        (keys, model, vec![good.clone(), bad, good])
+    }
+
+    /// A wrong intermediate warm pass followed by a correct final pass: the
+    /// final-only check (the round-5 harness) accepts it; the per-pass check
+    /// rejects it and names the pass.
+    #[test]
+    fn wrong_intermediate_pass_is_not_hidden_by_a_correct_final_pass() {
+        let (keys, model, passes) = model_and_passes();
+        // what the round-5 harness checked: the buffer after the last pass
+        assert!(check_pass(&keys, passes.last().unwrap(), &model).is_ok());
+        // what the harness checks now: every pass
+        let err = check_passes(&keys, &passes, &model).unwrap_err();
+        assert_eq!(err.0, 1, "the second pass (index 1) is the wrong one");
+        assert!(err.1.contains("key k2"), "{}", err.1);
+    }
+
+    #[test]
+    fn all_correct_passes_are_accepted_and_a_missing_value_is_rejected() {
+        let (keys, model, mut passes) = model_and_passes();
+        passes[1] = passes[0].clone();
+        assert!(check_passes(&keys, &passes, &model).is_ok());
+        passes[2][0] = None; // absence where the model has a value
+        assert_eq!(check_passes(&keys, &passes, &model).unwrap_err().0, 2);
     }
 }

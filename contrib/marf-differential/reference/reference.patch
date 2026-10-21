@@ -51,10 +51,10 @@ index dcaa51ddc6..f88d6d42d4 100644
 +    }
 +}
 diff --git a/stacks-marf/src/read_bench.rs b/stacks-marf/src/read_bench.rs
-index ab9a2918b6..0b8d84974a 100644
+index ab9a2918b6..9ff198037b 100644
 --- a/stacks-marf/src/read_bench.rs
 +++ b/stacks-marf/src/read_bench.rs
-@@ -29,6 +29,20 @@ pub struct Counters {
+@@ -29,6 +29,23 @@ pub struct Counters {
      pub cursor_steps: u64,
      /// Inter-trie backpointers followed by the lookup walker.
      pub backpointer_follows: u64,
@@ -62,6 +62,9 @@ index ab9a2918b6..0b8d84974a 100644
 +    pub patch_cache_probes: u64,
 +    /// Probes that missed and whose record was a plain node (benchmark overlay).
 +    pub patch_cache_probe_miss_plain: u64,
++    /// Diagnostic (`marf-diag-late-probe`): probes made after the first patch
++    /// record of a mapped chain was parsed (the extra work before a hit).
++    pub late_probe_after_patch_parse: u64,
 +    /// Patch chains actually resolved, cache enabled or not (benchmark overlay).
 +    pub patch_resolutions: u64,
 +    /// Owned nodes materialized on the read path: resolved chains and root-cache fills (benchmark overlay).
@@ -121,7 +124,7 @@ index 25da549e1c..a57265f2a2 100644
          }
      }
 diff --git a/stacks-marf/src/storage.rs b/stacks-marf/src/storage.rs
-index c9cd260e75..9b821af887 100644
+index c9cd260e75..21d714d3da 100644
 --- a/stacks-marf/src/storage.rs
 +++ b/stacks-marf/src/storage.rs
 @@ -2060,6 +2060,13 @@ fn read_patched_persisted_node<'b>(
@@ -147,7 +150,7 @@ index c9cd260e75..9b821af887 100644
                  cache.put(id, (node, hash, patch_depth));
              }
              let (node, hash, patch_depth) = cache.get(&id).expect("root was found or inserted");
-@@ -2290,11 +2299,20 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
+@@ -2290,11 +2299,25 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
              self.data.resolved_patch_cache.enabled() && self.data.unconfirmed_block_id != Some(id);
          // A row ID may be reused after rollback; use the immutable block identity.
          let patch_cache_key = (self.data.cur_block.clone(), clear_ptr.ptr());
@@ -161,14 +164,19 @@ index c9cd260e75..9b821af887 100644
          } else {
              (0, None)
          };
-+        // Diagnostic order (benchmark overlay, marf-diag-late-probe): read the
-+        // record first and probe only when it is a patch; external blobs only.
++        // Diagnostic order (benchmark overlay, marf-diag-late-probe): for a
++        // mapped record, read it first and probe the cache only when it is a
++        // patch, so a mapped plain record is never probed; the SQLite
++        // fallback probes before its read, exactly as production does. The
++        // probe for a mapped patch therefore happens after its first patch
++        // record has been parsed (extra work before a hit; see the overlay
++        // README).
 +        #[cfg(feature = "marf-diag-late-probe")]
 +        let (patch_cache_generation, cached): (u64, Option<_>) = (0, None);
          if let Some(node) = cached {
              #[cfg(feature = "marf-read-bench-counters")]
              read_bench::update(|c| c.resolved_patch_cache_hits += 1);
-@@ -2316,7 +2334,12 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
+@@ -2316,7 +2339,12 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
                  match blobs.read_trie_item_borrowed(&self.db, id, &clear_ptr, trie_offset)? {
                      Some(MappedTrieItem::Node(node)) => {
                          #[cfg(feature = "marf-read-bench-counters")]
@@ -182,14 +190,23 @@ index c9cd260e75..9b821af887 100644
                          return Ok(node);
                      }
                      Some(MappedTrieItem::Patch {
-@@ -2328,7 +2351,34 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
+@@ -2328,6 +2356,37 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
                  }
              }
          }
++        // Every record reaching this point is a mapped patch (first_patch is
++        // Some) or goes through the SQLite fallback (mapped plain records
++        // returned above): probe in both cases, as production does for the
++        // latter.
 +        #[cfg(feature = "marf-diag-late-probe")]
-+        let (patch_cache_generation, cached) = if patch_cache_enabled && first_patch.is_some() {
++        let (patch_cache_generation, cached) = if patch_cache_enabled {
 +            #[cfg(feature = "marf-read-bench-counters")]
-+            read_bench::update(|c| c.patch_cache_probes += 1);
++            read_bench::update(|c| {
++                c.patch_cache_probes += 1;
++                if first_patch.is_some() {
++                    c.late_probe_after_patch_parse += 1;
++                }
++            });
 +            self.data.resolved_patch_cache.get(&patch_cache_key)
 +        } else {
 +            (patch_cache_generation, None)
@@ -209,26 +226,9 @@ index c9cd260e75..9b821af887 100644
 +                .with_transient_meta(TrieNodeTransientMeta::from_node(node)));
 +        }
  
-+        // Under the diagnostic late probe a patch reached through the SQL path
-+        // (no mapped body) was never probed; its insertion is not an admission
-+        // in the probe = hits + plain misses + admissions identity.
-+        #[cfg(feature = "marf-read-bench-counters")]
-+        let probed = !cfg!(feature = "marf-diag-late-probe") || first_patch.is_some();
          let read = read_patched_persisted_node(
              &self.db,
-             &self.data.record_context,
-@@ -2342,7 +2392,9 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
-         )?;
-         if patch_cache_enabled && read.patch_depth > 0 {
-             #[cfg(feature = "marf-read-bench-counters")]
--            read_bench::update(|c| c.resolved_patch_cache_misses += 1);
-+            if probed {
-+                read_bench::update(|c| c.resolved_patch_cache_misses += 1);
-+            }
-             let patch_depth = read.patch_depth;
-             let (node, hash) = read.into_owned_node()?;
-             let resolved = Arc::new((node, hash, patch_depth));
-@@ -2361,6 +2413,13 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
+@@ -2361,6 +2420,13 @@ impl<T: MarfTrieId, Db: Deref<Target = Connection>> TrieReadStorage<T>
                  .with_patch_depth(*patch_depth)
                  .with_transient_meta(TrieNodeTransientMeta::from_node(node)));
          }
@@ -236,13 +236,13 @@ index c9cd260e75..9b821af887 100644
 +        // blob lookup returned nothing): the production probe above was a
 +        // plain miss.
 +        #[cfg(feature = "marf-read-bench-counters")]
-+        if patch_cache_enabled && !cfg!(feature = "marf-diag-late-probe") {
++        if patch_cache_enabled {
 +            read_bench::update(|c| c.patch_cache_probe_miss_plain += 1);
 +        }
          Ok(read)
      }
  
-@@ -4471,3 +4530,13 @@ mod sealing_hash_tests {
+@@ -4471,3 +4537,13 @@ mod sealing_hash_tests {
          }
      }
  }

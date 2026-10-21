@@ -159,6 +159,10 @@ pub struct Counters {
     pub result_cache_misses: Option<u64>,
     pub result_cache_invalidations: Option<u64>,
     pub cache_occupancy: Option<u64>,
+    /// Diagnostic late-probe build only: probes made after the first patch
+    /// record of a mapped chain was parsed (work the production order does
+    /// not do before a hit). `None` elsewhere.
+    pub late_probe_extra_parses: Option<u64>,
 }
 
 impl Counters {
@@ -181,6 +185,7 @@ impl Counters {
             ("result_cache_misses", self.result_cache_misses),
             ("result_cache_invalidations", self.result_cache_invalidations),
             ("cache_occupancy", self.cache_occupancy),
+            ("late_probe_extra_parses", self.late_probe_extra_parses),
         ]
     }
 
@@ -422,6 +427,7 @@ impl Direct for Rewrite {
             result_cache_misses: None,
             result_cache_invalidations: None,
             cache_occupancy: self.cache_occupancy(),
+            late_probe_extra_parses: None,
         }
     }
     fn cache_occupancy(&mut self) -> Option<u64> {

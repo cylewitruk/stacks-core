@@ -103,7 +103,23 @@ fn check<M: Direct>() {
         "{}: probes = hits + plain misses + admissions",
         M::NAME
     );
-    assert_eq!(c.patch_cache_probe_miss_plain, Some(visits - patched_visits), "{}: plain-record probes", M::NAME);
+    if let Some(extra) = c.late_probe_extra_parses {
+        // the late-probe diagnostic: mapped plain records are not probed, so
+        // only SQLite-path plain records count; a probe on a mapped patch
+        // follows the parse of its first patch record
+        assert!(
+            c.patch_cache_probe_miss_plain.unwrap() <= visits - patched_visits,
+            "{}: diagnostic plain-record probes exceed the plain visits",
+            M::NAME
+        );
+        assert!(
+            extra <= c.patch_cache_hits.unwrap() + c.patch_cache_admissions.unwrap() && extra > 0,
+            "{}: late probes after a patch parse ({extra}) must be among the patched probes",
+            M::NAME
+        );
+    } else {
+        assert_eq!(c.patch_cache_probe_miss_plain, Some(visits - patched_visits), "{}: plain-record probes", M::NAME);
+    }
     assert_eq!(m.cache_occupancy(), Some(distinct as u64), "{}: occupancy after the cold pass", M::NAME);
     // warm: no further resolutions, every patched visit a hit
     let c = pass(&mut m, &tip, &set);

@@ -17,7 +17,7 @@
  name = "marf-differential"
 --- a/contrib/marf-differential/src/alloc.rs
 +++ b/contrib/marf-differential/src/alloc.rs
-@@ -241,31 +241,86 @@
+@@ -246,31 +246,91 @@
  
  pub struct Baseline(stacks_marf::MARF<StacksBlockId>);
  
@@ -94,6 +94,11 @@
 +        result_cache_hits: Some(c.result_cache_hits),
 +        result_cache_misses: Some(c.result_cache_misses),
 +        result_cache_invalidations: Some(c.result_cache_invalidations),
++        late_probe_extra_parses: if cfg!(feature = "reference-lateprobe") {
++            Some(c.late_probe_after_patch_parse)
++        } else {
++            None
++        },
 +        cache_occupancy: occupancy,
 +    }
 +}
@@ -111,7 +116,7 @@
  impl Direct for Baseline {
      const NAME: &'static str = "base";
      fn open(path: &Path, opts: &Opts) -> Self {
-@@ -308,6 +363,7 @@
+@@ -313,6 +373,7 @@
          self.0.get(tip, key).unwrap().map(|v| v.0)
      }
      fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {

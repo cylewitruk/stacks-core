@@ -37,18 +37,27 @@ members, then these patches apply:
     admissions, `patch_records` = patch applications, `cursor_steps`,
     `backpointer_follows`, `mmap_node_returns`, `resolved_item_reads`) are
     used as they are.
-  * under `marf-diag-late-probe` (new feature, diagnostic control for the
-    fifth review): `read_node_with_state` reads the mapped record first and
-    probes the resolved-patch cache only when that record is a patch,
-    instead of probing by location before every read. A plain record's
-    probe can never hit (only resolved chains are admitted), so the change
-    preserves results; it removes the failed probes on plain records.
-    External-blob storage only (the SQLite-stored path is unchanged and its
-    cache is then not consulted, so a chain resolved on that path is
-    inserted without a probe and is not counted as an admission); never a
-    production setting. The harness's counter sanity tests assert
-    `probes == hits + plain misses + admissions` for the reference as well
-    as the rewrite.
+  * under `marf-diag-late-probe` (new feature, diagnostic control; repaired
+    in the sixth review): for a record in the mapped blob,
+    `read_node_with_state` reads the record first and probes the
+    resolved-patch cache only when it is a patch, so a mapped plain record
+    is never probed; a record on the SQLite fallback path is probed before
+    its read, exactly as production. What the diagnostic changes, and what
+    it does not: it removes the probes on mapped plain records (which can
+    never hit: only resolved chains are admitted); it moves the probe for a
+    mapped patch to after its first patch record has been parsed, so a hit
+    costs one borrowed record parse the production order does not pay
+    (counted as `late_probe_after_patch_parse`, exported by the harness as
+    `late_probe_extra_parses`); successful hits still pay the `SharedLru`
+    lock, the `SmallLru` linear scan and the recency rotation; admission
+    and SQLite-path behaviour are those of production. Its timing
+    difference against the production order is therefore the net effect of
+    reordering the probe (plain probes removed, one extra parse per mapped
+    hit), not an isolated measurement of failed probes. Results are
+    unchanged; never a production setting. The harness's counter sanity
+    tests assert `probes == hits + plain misses + admissions` for the
+    reference as well as the rewrite; the identity holds for the diagnostic
+    too (SQLite-path plain records count as plain misses).
 
 The script builds `marf-differential-reference` (timing),
 `marf-differential-reference-counters` (counters), runs the harness's
