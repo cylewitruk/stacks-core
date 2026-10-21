@@ -160,14 +160,17 @@ impl SqliteConnection {
         key.strip_prefix("clr-meta::")?.split_once("::")
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn put(conn: &Connection, key: &str, value: &str) -> Result<(), VmExecutionError> {
         sqlite_put(conn, key, value)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get(conn: &Connection, key: &str) -> Result<Option<String>, VmExecutionError> {
         sqlite_get(conn, key)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_metadata(
         conn: &Connection,
         bhh: &StacksBlockId,
@@ -245,6 +248,7 @@ impl SqliteConnection {
         })
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_metadata_to(
         conn: &Connection,
         from: &StacksBlockId,
@@ -261,6 +265,7 @@ impl SqliteConnection {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn drop_metadata(conn: &Connection, from: &StacksBlockId) -> Result<(), VmExecutionError> {
         if let Err(e) = conn.execute(
             "DELETE FROM metadata_table WHERE blockhash = ?",
@@ -272,6 +277,7 @@ impl SqliteConnection {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_metadata(
         conn: &Connection,
         bhh: &StacksBlockId,
@@ -297,6 +303,7 @@ impl SqliteConnection {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn has_entry(conn: &Connection, key: &str) -> Result<bool, VmExecutionError> {
         sqlite_has_entry(conn, key)
     }
