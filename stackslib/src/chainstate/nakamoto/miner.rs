@@ -217,6 +217,21 @@ pub struct BlockMetadata {
     pub tx_events: Vec<TransactionEvent>,
 }
 
+/// Whether a block of `block_size` bytes is over the epoch's block size
+/// limit. Before epoch 4.1 a block of exactly `MAX_EPOCH_SIZE` bytes was
+/// rejected (an off-by-one); from 4.1 on it is allowed. Both mining paths,
+/// executed and skipped transactions, use this one condition.
+pub fn block_exceeds_epoch_size_limit(
+    epoch: stacks_common::types::StacksEpochId,
+    block_size: u64,
+) -> bool {
+    if epoch.fixes_block_size_off_by_one() {
+        block_size > u64::from(MAX_EPOCH_SIZE)
+    } else {
+        block_size >= u64::from(MAX_EPOCH_SIZE)
+    }
+}
+
 impl NakamotoBlockBuilder {
     /// Append a transaction that the source block marked as problematic while
     /// replaying that block. The fee and nonces are applied, but the payload is
@@ -229,12 +244,13 @@ impl NakamotoBlockBuilder {
         category: u8,
         total_receipts_size: &mut u64,
     ) -> TransactionResult {
-        if self.bytes_so_far + tx_len >= u64::from(MAX_EPOCH_SIZE) {
+        let block_size = self.bytes_so_far + tx_len;
+        if block_exceeds_epoch_size_limit(clarity_tx.get_epoch(), block_size) {
             return TransactionResult::skipped_due_to_error(tx, Error::TxWouldNotFitError);
         }
 
         if let Some(parent_header) = &self.parent_header {
-            let mut total_tenure_size = self.bytes_so_far + tx_len;
+            let mut total_tenure_size = block_size;
             if parent_header.consensus_hash == self.header.consensus_hash {
                 total_tenure_size += parent_header.total_tenure_size;
             }
@@ -863,12 +879,7 @@ impl BlockBuilder for NakamotoBlockBuilder {
         total_receipts_size: &mut u64,
     ) -> TransactionResult {
         let block_size = self.bytes_so_far + tx_len;
-        let exceeds_size_limit = if clarity_tx.get_epoch().fixes_block_size_off_by_one() {
-            block_size > u64::from(MAX_EPOCH_SIZE)
-        } else {
-            block_size >= u64::from(MAX_EPOCH_SIZE)
-        };
-        if exceeds_size_limit {
+        if block_exceeds_epoch_size_limit(clarity_tx.get_epoch(), block_size) {
             debug!("Transaction {} would be too big to include", tx.txid());
             return TransactionResult::skipped_due_to_error(tx, Error::TxWouldNotFitError);
         }
@@ -1048,5 +1059,29 @@ fn parse_process_transaction_error(
             }
             _ => TransactionResult::error(tx, e),
         }
+    }
+}
+
+#[cfg(test)]
+mod epoch_size_limit_tests {
+    use stacks_common::types::StacksEpochId;
+
+    use super::{MAX_EPOCH_SIZE, block_exceeds_epoch_size_limit};
+
+    /// The boundary both mining paths share: exactly `MAX_EPOCH_SIZE` is
+    /// rejected before epoch 4.1 and accepted from 4.1 on; one byte either
+    /// side behaves the same in every epoch.
+    #[test]
+    fn exactly_max_epoch_size_flips_at_epoch_4_1() {
+        let max = u64::from(MAX_EPOCH_SIZE);
+        for epoch in [StacksEpochId::Epoch30, StacksEpochId::Epoch40] {
+            assert!(!block_exceeds_epoch_size_limit(epoch, max - 1), "{epoch:?}");
+            assert!(block_exceeds_epoch_size_limit(epoch, max), "{epoch:?}");
+            assert!(block_exceeds_epoch_size_limit(epoch, max + 1), "{epoch:?}");
+        }
+        let epoch = StacksEpochId::Epoch41;
+        assert!(!block_exceeds_epoch_size_limit(epoch, max - 1));
+        assert!(!block_exceeds_epoch_size_limit(epoch, max));
+        assert!(block_exceeds_epoch_size_limit(epoch, max + 1));
     }
 }
