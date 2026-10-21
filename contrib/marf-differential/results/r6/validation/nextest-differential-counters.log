@@ -1,0 +1,17 @@
+   Compiling marf-differential v0.1.0 (/home/user/stacks-core/contrib/marf-differential)
+    Finished `test` profile [optimized + debuginfo] target(s) in 31.54s
+────────────
+ Nextest run ID c7c78d42-5acb-4edf-95ef-3673a194c9d1 with nextest profile: default
+    Starting 10 tests across 4 binaries
+        PASS [   0.017s] ( 1/10) marf-differential ablate::tests::wrong_intermediate_pass_is_not_hidden_by_a_correct_final_pass
+        PASS [   0.019s] ( 2/10) marf-differential ablate::tests::all_correct_passes_are_accepted_and_a_missing_value_is_rejected
+        PASS [   0.128s] ( 3/10) marf-differential::counters rewrite_counters_are_consistent
+        PASS [   0.265s] ( 4/10) marf-differential::counters baseline_counters_are_consistent_or_unavailable
+        PASS [   9.299s] ( 5/10) marf-differential::fixtures rewrite_reproduces_fixtures
+        PASS [   9.810s] ( 6/10) marf-differential::fixtures rewrite_reproduces_supported_fixture_ops
+        PASS [   0.011s] ( 7/10) marf-differential::fixtures storage_variants_agree_on_consensus_observations
+        PASS [  14.589s] ( 8/10) marf-differential::fixtures baseline_reproduces_fixtures
+        PASS [  26.649s] ( 9/10) marf-differential::fixtures baseline_then_rewrite_handoff
+        PASS [  37.216s] (10/10) marf-differential::fixtures rewrite_then_baseline_handoff
+────────────
+     Summary [  46.645s] 10 tests run: 10 passed, 0 skipped

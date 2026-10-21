@@ -52,16 +52,17 @@ def parse_total(text):
 
 
 def fun_cost(text, pat):
-    """Inclusive cost of the first top-level entry matching pat (the entry
-    with the binary in brackets; file-split sub-entries are skipped)."""
+    """Inclusive cost of the function matching pat: the largest of its
+    per-file entries (callgrind_annotate lists a function once per source
+    file it has code in; the entry for its defining file carries its total)."""
     best = None
     for line in text.splitlines():
         m = re.match(r"^\s*([\d,]+)\s+\(\s*[\d.]+%\)\s+(.*)$", line)
         if not m:
             continue
         rest = m.group(2)
-        if "[" not in rest:
-            continue  # a file-split line, not the function's total
+        # a function spanning several source files is listed once per file;
+        # the largest entry (its defining file) is the function's total
         if re.search(pat, rest):
             v = int(m.group(1).replace(",", ""))
             if best is None or v > best:
