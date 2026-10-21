@@ -26,7 +26,7 @@ the qualifications the sixth review required.
 | 2b | separating successful-hit cache overhead from traversal | not done: no exact decomposition is available | section 6.4 states what the scoped profiles bound and what stays unassigned; no further control was built (the smallest valid one would be a hashed-index LRU in the reference, which changes its code beyond a reordering) |
 | 3 | every warm pass verified outside its timed region; regression check that a wrong intermediate pass cannot be hidden; original provenance of old rows kept | completed | `src/ablate.rs` (`check_pass`/`check_passes`, called after the cold pass and after each warm pass), tests `ablate::tests::wrong_intermediate_pass_is_not_hidden_by_a_correct_final_pass` and `..._missing_value_is_rejected`; round-6 rows carry the per-pass check; round-5 rows are labelled "final pass verified only" wherever cited (sections 4, 5) |
 | 4 | interpretation corrected: capacity not the sole explanation; equal capacity does not make cache implementations equivalent; workload-specific construction ratios; no categorical "no regression"; measured time vs instruction attribution vs source-supported mechanism vs hypothesis; interpreter vs `MarfedKV` left open | completed | sections 5.1, 6.4, 7, 8, 10 (rewritten); `STATUS.md` summary |
-| 5 | Clarity builder validated once from a fresh checkout into a new empty `WORK`; provider revisions verified; identities and log recorded; caching disclosed | see section 2 ("Clarity provenance") | `contrib/clarity-bench/scripts/build-variants.sh` (checks out and verifies each worktree revision, records them in `MANIFEST.clarity`), `contrib/clarity-bench/results/r6/evidence/clarity-provenance.log` |
+| 5 | Clarity builder validated once from a fresh checkout into a new empty `WORK`; provider revisions verified; identities and log recorded; caching disclosed | completed, with a disclosed interruption (the first invocation ran out of disk on the third variant and was repeated in the same clone and `WORK`; section 2) | `contrib/clarity-bench/scripts/build-variants.sh` (checks out and verifies each worktree revision, records them in `MANIFEST.clarity`), `contrib/clarity-bench/results/r6/evidence/clarity-provenance.log` (binaries `ce183997…`, `ed40e375…`, `3d406759…`) |
 | 6 | reruns bounded: impact matrix first; interleaved timing/counters over patch-free, fitting and wider sets at 64 and 4,096; scoped profiles; everything else reused and labelled | completed | `results/r6/IMPACT.md` (written before any rerun); `results/r6/` (18 runs); `results/r6/profile/`; construction and Clarity samples reused from `results/r5/` |
 | - | focused tests | completed | section 9 (round-6 rows) |
 
@@ -90,8 +90,22 @@ The rewritten script was validated with no pre-existing worktree (it created
 both overlays applied, four binaries, counter tests `2 passed`, manifest) and
 then with a repeat invocation on the same worktree (reset, clean, re-copy,
 re-apply; log `build-reference-repeat-at-d6fd444c54.log`). The Clarity builder was
-run with `CLEAN=1` (worktrees' `target/` removed, every variant rebuilt from
-scratch) and again without it.
+run with `CLEAN=1` (worktrees' `target/` removed after each build) and again
+without it in round 5; that did not establish a start from a fresh checkout,
+so in the sixth review it was run once from a fresh single-branch clone of
+the branch into a new, empty `WORK` directory
+(`contrib/clarity-bench/results/r6/evidence/clarity-provenance.log`). The
+script now checks out and verifies every worktree's revision (`ad5c5778`
+for upstream and optmarf, `29ef093d` for the optimized source) and records
+them in `MANIFEST.clarity`; the log has the manifest, an independent
+`rev-parse` of each worktree, the three binaries' sha256 and a one-block
+smoke run of each. Disclosure: the first invocation built the rewrite and
+upstream variants and failed on the optmarf variant when the machine's disk
+allowance ran out; after unrelated build directories were removed the same
+invocation was repeated in the same clone and `WORK` (cargo reused the two
+finished targets and resumed the third), and that second invocation
+produced the manifest. The shared `~/.cargo` registry cache was used; every
+`target/` directory involved was new at the first invocation.
 
 Options. Upstream: `MARFOpenOpts::new(Deferred, external).with_compression`.
 Reference: the production settings of its `Config::get_marf_opts`
