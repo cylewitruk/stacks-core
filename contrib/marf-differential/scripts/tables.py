@@ -112,15 +112,15 @@ def ablate(d):
             print("Cold = the first pass of the cell; warm = all warm passes of the cell together. "
                   "Occupancy = entries retained in the patch cache at cell entry / after the cold pass / at cell exit; "
                   "n/a = the provider has no equivalent counter.\n")
-            print("| set | capacity | pass | node visits | probes | hits | plain misses | admissions | clears | resolutions | applications | materializations | record reads | occupancy entry / after cold / exit | preceding sets |")
-            print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+            print("| set | capacity | pass | node visits | probes | hits | plain misses | admissions | clears | resolutions | applications | materializations | record reads | late-probe extra parses | occupancy entry / after cold / exit | preceding sets |")
+            print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             for c in r["cells"]:
                 if c["repetition"] != 0:
                     continue
                 cap = c["capacity"] if c["capacity"] is not None else "prod"
                 pre = ", ".join(c.get("preceding_sets") or []) or "-"
                 for label, w in (("cold", c["counters_cold"]), ("warm", c["counters_warm"])):
-                    print(f"| {c['set']} | {cap} | {label} | {g(w,'node_visits')} | {g(w,'patch_cache_probes')} | {g(w,'patch_cache_hits')} | {g(w,'patch_cache_probe_miss_plain')} | {g(w,'patch_cache_admissions')} | {g(w,'patch_cache_clears')} | {g(w,'patch_resolutions')} | {g(w,'patch_applications')} | {g(w,'owned_materializations')} | {g(w,'record_reads')} | {occ(c['occupancy_entry'])} / {occ(c['occupancy_after_cold'])} / {occ(c['occupancy_exit'])} | {pre} |")
+                    print(f"| {c['set']} | {cap} | {label} | {g(w,'node_visits')} | {g(w,'patch_cache_probes')} | {g(w,'patch_cache_hits')} | {g(w,'patch_cache_probe_miss_plain')} | {g(w,'patch_cache_admissions')} | {g(w,'patch_cache_clears')} | {g(w,'patch_resolutions')} | {g(w,'patch_applications')} | {g(w,'owned_materializations')} | {g(w,'record_reads')} | {g(w,'late_probe_extra_parses')} | {occ(c['occupancy_entry'])} / {occ(c['occupancy_after_cold'])} / {occ(c['occupancy_exit'])} | {pre} |")
 
 
 def construct(d, check_only=False):

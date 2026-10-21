@@ -62,9 +62,12 @@ s=re.sub(r'^stacks-marf = .*$', dep, s, flags=re.M); open(p,'w').write(s)
 PY
   add_member "$1"
 }
-worktree() { # <path> <rev>
+worktree() { # <path> <rev>: create or reset, then verify the revision
   if [ ! -d "$1" ]; then git worktree add --detach "$1" "$2"; fi
-  git -C "$1" checkout -- . && git -C "$1" clean -fdq
+  git -C "$1" checkout --detach -q "$2" && git -C "$1" checkout -- . && git -C "$1" clean -fdq
+  local actual; actual=$(git -C "$1" rev-parse HEAD)
+  [ "$actual" = "$2" ] || { echo "worktree $1 is at $actual, expected $2" >&2; exit 1; }
+  echo "worktree $1 at $actual"
 }
 
 # A: this tree
@@ -80,7 +83,7 @@ cp "$WORK/upstream/target/release/clarity-bench" "$OUT/clarity-bench-upstream"
 
 # C: upstream consumer code over the optimized MARF crate
 worktree "$WORK/optmarf" "$UP_REV"
-if [ ! -d "$WORK/refsrc" ]; then git worktree add --detach "$WORK/refsrc" "$REF_REV"; fi
+worktree "$WORK/refsrc" "$REF_REV"
 rm -rf "$WORK/optmarf/stacks-marf" "$WORK/optmarf/crates/stacks-mmap"
 cp -r "$WORK/refsrc/stacks-marf" "$WORK/optmarf/stacks-marf"
 mkdir -p "$WORK/optmarf/crates" && cp -r "$WORK/refsrc/crates/stacks-mmap" "$WORK/optmarf/crates/stacks-mmap"
@@ -136,6 +139,10 @@ fi
   echo "tree_rev $MARF_BENCH_TREE_REV $(git describe --always --dirty)"
   echo "upstream_rev $UP_REV"
   echo "reference_rev $REF_REV"
+  echo "work_dir $WORK"
+  for wt in upstream optmarf refsrc; do
+    [ -d "$WORK/$wt" ] && echo "worktree $wt at $(git -C "$WORK/$wt" rev-parse HEAD)"
+  done
   echo "toolchain $MARF_BENCH_RUSTC"
   for v in rewrite upstream optmarf optstack; do
     [ -x "$OUT/clarity-bench-$v" ] && echo "binary clarity-bench-$v sha256 $(sha256sum "$OUT/clarity-bench-$v" | cut -d' ' -f1)"

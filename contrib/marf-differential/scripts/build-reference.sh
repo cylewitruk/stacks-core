@@ -84,6 +84,10 @@ fi
 cp "$WORKTREE/target/release/marf-differential" "$OUT/marf-differential-reference-lateprobe"
 (cd "$WORKTREE" && cargo build --release -p marf-differential --features reference-lateprobe,counters)
 cp "$WORKTREE/target/release/marf-differential" "$OUT/marf-differential-reference-lateprobe-counters"
+if [ "${RUN_TESTS:-1}" = 1 ]; then
+  # the counter identity must hold for the diagnostic too
+  (cd "$WORKTREE" && cargo test --release -p marf-differential --features counters,reference-lateprobe --test counters 2>&1 | tail -3)
+fi
 
 # 5. manifest
 {
