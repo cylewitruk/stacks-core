@@ -669,6 +669,7 @@ impl<T: MarfTrieId> TrieRAM<T> {
     /// If the given `storage_tx`'s hash calculation mode is set to
     /// `TrieHashCalculationMode::Deferred`, then this method will also store each non-leaf node's
     /// hash.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn calculate_node_hashes(
         &mut self,
         storage_tx: &mut TrieStorageTransaction<T>,
@@ -1371,6 +1372,10 @@ pub struct TrieSqlHashMapCursor<'a, T: MarfTrieId> {
 }
 
 impl NodeHashReader for TrieSqlCursor<'_> {
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     fn read_node_hash_bytes<W: Write>(&mut self, ptr: &TriePtr, w: &mut W) -> Result<(), Error> {
         trie_sql::read_node_hash_bytes(self.db, w, self.block_id, ptr)
     }
@@ -2086,6 +2091,7 @@ impl<'a, T: MarfTrieId> TrieStorageTransaction<'a, T> {
     }
 
     /// Flush uncommitted state to disk.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn flush(&mut self) -> Result<(), Error> {
         if self.data.unconfirmed {
             self.inner_flush(FlushOptions::UnconfirmedTable)
@@ -2095,12 +2101,14 @@ impl<'a, T: MarfTrieId> TrieStorageTransaction<'a, T> {
     }
 
     /// Flush uncommitted state to disk, but under the given block hash.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn flush_to(&mut self, bhh: &T) -> Result<(), Error> {
         self.inner_flush(FlushOptions::NewHeader(bhh))
     }
 
     /// Flush uncommitted state to disk for a mined block (i.e. not part of the chainstate, and not
     /// an ancestor of any block), and do so under a given block hash.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn flush_mined(&mut self, bhh: &T) -> Result<(), Error> {
         self.inner_flush(FlushOptions::MinedTable(bhh))
     }
@@ -2154,6 +2162,7 @@ impl<'a, T: MarfTrieId> TrieStorageTransaction<'a, T> {
     /// Extend the forest of Tries to include a new confirmed block.
     /// Fails if the block already exists, or if the storage is read-only, or open
     /// only for unconfirmed state.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn extend_to_block(&mut self, bhh: &T) -> Result<(), Error> {
         self.clear_cached_ancestor_hashes_bytes();
         if self.data.readonly {
@@ -2190,6 +2199,7 @@ impl<'a, T: MarfTrieId> TrieStorageTransaction<'a, T> {
     /// Extend the forest of Tries to include a new unconfirmed block.
     /// If the unconfirmed block (bhh) already exists, then load up its trie as the uncommitted_writes
     /// trie.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn extend_to_unconfirmed_block(&mut self, bhh: &T) -> Result<bool, Error> {
         self.clear_cached_ancestor_hashes_bytes();
         if !self.data.unconfirmed {
@@ -2971,6 +2981,10 @@ impl<T: MarfTrieId> TrieStorageConnection<'_, T> {
     }
 
     /// Read a persisted node's hash
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn read_node_hash_bytes(&mut self, ptr: &TriePtr) -> Result<TrieHash, Error> {
         if let Some((ref uncommitted_bhh, ref mut trie_ram)) = self.data.uncommitted_writes {
             // special case
@@ -2983,6 +2997,12 @@ impl<T: MarfTrieId> TrieStorageConnection<'_, T> {
         match self.data.cur_block_id {
             Some(block_id) => {
                 let node_hash = self.inner_read_persisted_node_hash(block_id, ptr)?;
+                #[cfg(feature = "profiler")]
+                stacks_profiler::record_if!(
+                    crate::profiler::capture_marf_disk_reads(),
+                    "MARF_NODE_HASH_DISK_READ",
+                    block_id as u64
+                );
                 Ok(node_hash)
             }
             None => {

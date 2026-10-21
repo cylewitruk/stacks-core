@@ -386,6 +386,7 @@ impl DefinedFunction {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn check_trait_expectations(
         &self,
         epoch: &StacksEpochId,
@@ -462,6 +463,7 @@ impl DefinedFunction {
         &self.arg_types
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn canonicalize_types(&mut self, epoch: &StacksEpochId) {
         for i in 0..self.arguments.len() {
             self.arg_types[i] = self.arg_types[i].canonicalize(epoch);

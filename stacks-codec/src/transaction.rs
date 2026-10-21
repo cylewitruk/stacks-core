@@ -2726,6 +2726,25 @@ impl TransactionPayload {
         }
     }
 
+    /// Map this payload instance to its wire-format discriminator.
+    pub fn payload_id(&self) -> TransactionPayloadID {
+        match self {
+            TransactionPayload::TokenTransfer(..) => TransactionPayloadID::TokenTransfer,
+            TransactionPayload::SmartContract(_, Some(_)) => {
+                TransactionPayloadID::VersionedSmartContract
+            }
+            TransactionPayload::SmartContract(_, None) => TransactionPayloadID::SmartContract,
+            TransactionPayload::ContractCall(..) => TransactionPayloadID::ContractCall,
+            TransactionPayload::PoisonMicroblock(..) => TransactionPayloadID::PoisonMicroblock,
+            TransactionPayload::Coinbase(_, _, Some(_)) => TransactionPayloadID::NakamotoCoinbase,
+            TransactionPayload::Coinbase(_, Some(_), None) => {
+                TransactionPayloadID::CoinbaseToAltRecipient
+            }
+            TransactionPayload::Coinbase(_, None, None) => TransactionPayloadID::Coinbase,
+            TransactionPayload::TenureChange(..) => TransactionPayloadID::TenureChange,
+        }
+    }
+
     pub fn new_contract_call(
         contract_address: StacksAddress,
         contract_name: &str,

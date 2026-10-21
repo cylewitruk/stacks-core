@@ -78,6 +78,7 @@ pub fn special_filter(
     let function_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
+    crate::profiler::record_name!(function_name);
 
     let mut sequence =
         eval(&args[1], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
@@ -147,6 +148,7 @@ pub fn special_fold(
     let function_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
+    crate::profiler::record_name!(function_name);
 
     let function = lookup_function(function_name, exec_state, invoke_ctx)?;
     let sequence = eval(&args[1], exec_state, invoke_ctx, context)?.clone_with_cost(exec_state)?;
@@ -225,6 +227,7 @@ pub fn special_map_v200(
     let function_name = args[0]
         .match_atom()
         .ok_or(RuntimeCheckErrorKind::Unreachable("Expected name".into()))?;
+    crate::profiler::record_name!(function_name);
     let function = lookup_function(function_name, exec_state, invoke_ctx)?;
 
     // Let's consider a function f (f a b c ...)

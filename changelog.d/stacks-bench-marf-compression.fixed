@@ -1,0 +1,1 @@
+Enabled MARF patch-node compression during benchmark replay to match the node default.

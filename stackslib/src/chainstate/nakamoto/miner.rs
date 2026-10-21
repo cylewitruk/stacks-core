@@ -33,6 +33,7 @@ use crate::chainstate::stacks::db::blocks::{DummyEventDispatcher, MAX_RECEIPT_SI
 use crate::chainstate::stacks::db::{
     ChainstateTx, ClarityTx, StacksBlockHeaderTypes, StacksChainState, StacksHeaderInfo,
 };
+use crate::chainstate::stacks::events::StacksTransactionReceipt;
 use crate::chainstate::stacks::miner::{
     BlockBuilder, BlockBuilderSettings, BlockLimitFunction, TransactionEvent,
     TransactionResourceBudgets, TransactionResult,
@@ -219,6 +220,69 @@ pub struct BlockMetadata {
 }
 
 impl NakamotoBlockBuilder {
+    /// Append a transaction that the source block marked as problematic while
+    /// replaying that block. The fee and nonces are applied, but the payload is
+    /// deliberately not executed.
+    pub fn try_mine_skipped_tx_with_len(
+        &mut self,
+        clarity_tx: &mut ClarityTx,
+        tx: &StacksTransaction,
+        tx_len: u64,
+        category: u8,
+        total_receipts_size: &mut u64,
+    ) -> TransactionResult {
+        if self.bytes_so_far + tx_len >= u64::from(MAX_EPOCH_SIZE) {
+            return TransactionResult::skipped_due_to_error(tx, Error::TxWouldNotFitError);
+        }
+
+        if let Some(parent_header) = &self.parent_header {
+            let mut total_tenure_size = self.bytes_so_far + tx_len;
+            if parent_header.consensus_hash == self.header.consensus_hash {
+                total_tenure_size += parent_header.total_tenure_size;
+            }
+            if total_tenure_size >= self.max_tenure_bytes {
+                return TransactionResult::skipped_due_to_error(tx, Error::TenureTooBigError);
+            }
+        }
+
+        let Some(receipt_size) =
+            StacksTransactionReceipt::from_problematic_skipped(tx.clone(), category).size()
+        else {
+            return TransactionResult::error(
+                tx,
+                Error::InvalidStacksBlock("Could not calculate receipt size".into()),
+            );
+        };
+        let next_receipts_size = total_receipts_size.saturating_add(receipt_size);
+        if next_receipts_size >= MAX_RECEIPT_SIZES {
+            return TransactionResult::error(tx, Error::BlockCostExceeded);
+        }
+
+        let (_fee, receipt) = match StacksChainState::process_skipped_transaction(clarity_tx, tx, category, !cfg!(test))
+        {
+            Ok(result) => result,
+            Err(error) => return TransactionResult::error(tx, error),
+        };
+        *total_receipts_size = next_receipts_size;
+
+        let tx_index = match u32::try_from(self.txs.len()) {
+            Ok(index) => index,
+            Err(_) => {
+                return TransactionResult::error(
+                    tx,
+                    Error::InvalidStacksBlock("Too many transactions in replayed block".into()),
+                );
+            }
+        };
+        self.header
+            .problematic_txs
+            .push(crate::chainstate::nakamoto::ProblematicTxMarker { tx_index, category });
+        self.txs.push(tx.clone());
+        self.bytes_so_far += tx_len;
+
+        TransactionResult::success(tx, receipt)
+    }
+
     /// Make a block builder from genesis (testing only)
     pub fn new_first_block(coinbase: &StacksTransaction) -> NakamotoBlockBuilder {
         NakamotoBlockBuilder {
@@ -616,6 +680,7 @@ impl NakamotoBlockBuilder {
     }
 
     /// Finish building the Nakamoto block
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn mine_nakamoto_block(
         &mut self,
         clarity_tx: &mut ClarityTx,
@@ -796,6 +861,7 @@ impl NakamotoBlockBuilder {
 impl BlockBuilder for NakamotoBlockBuilder {
     /// Append a transaction if doing so won't exceed the epoch data size.
     /// Errors out if we exceed budget, or the transaction is invalid.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn try_mine_tx_with_len(
         &mut self,
         clarity_tx: &mut ClarityTx,
