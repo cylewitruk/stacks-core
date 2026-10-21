@@ -1,0 +1,1614 @@
+--------------------------------------------------------------------------------
+Profile data file 'contrib/marf-differential/results/r6/profile/rewrite-64-patchednodes64-warm.callgrind.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 369645523
+Trigger: Program termination
+Profiled target:  target/bench-bin/marf-differential-upstream ablate rewrite std (PID 5117, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                   
+--------------------------------------------------------------------------------
+490,062,143 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                    file:function
+--------------------------------------------------------------------------------
+490,062,143 (100.0%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+490,062,143 (100.0%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+490,062,143 (100.0%)  /home/user/stacks-core/contrib/marf-differential/src/ablate.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Rewrite>
+490,062,143 (100.0%)  /home/user/stacks-core/contrib/marf-differential/src/bin/main.rs:marf_differential::main
+490,062,143 (100.0%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+490,062,143 (100.0%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+490,062,143 (100.0%)  ???:(below main) [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+490,062,143 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+490,062,143 (100.0%)  ???:main [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+490,062,143 (100.0%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Rewrite> [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+490,062,143 (100.0%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::timed_warm_pass::<marf_differential::alloc::Rewrite> [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+490,062,143 (100.0%)  contrib/marf-differential/src/ablate.rs:marf_differential::main
+490,062,098 (100.0%)  /home/user/stacks-core/contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::timed_warm_pass<marf_differential::alloc::Rewrite>::{closure#0}>
+489,897,508 (99.97%)  contrib/marf-differential/src/ablate.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::timed_warm_pass<marf_differential::alloc::Rewrite>::{closure#0}>
+489,283,103 (99.84%)  /home/user/stacks-core/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+289,029,663 (58.98%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+288,456,223 (58.86%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::lookup [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+199,024,640 (40.61%)  stacks-common/src/types/chainstate.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+198,819,840 (40.57%)  stacks-common/src/types/chainstate.rs:<stacks_common::types::chainstate::TrieHash>::from_data [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+193,290,240 (39.44%)  /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/core_api.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+192,757,760 (39.33%)  /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512.rs:sha2::sha512::compress512 [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+192,266,240 (39.23%)  /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::compress512
+191,856,640 (39.15%)  /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2 [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+134,113,490 (27.37%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::NodeView>::descend [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+133,001,163 (27.14%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+128,293,323 (26.18%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth
+126,629,283 (25.84%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::resolve_in [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+117,329,170 (23.94%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::marf::NodeView>::descend
+111,085,285 (22.67%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::skip_scan [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 42,362,330 ( 8.64%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::resolve_in
+ 40,785,820 ( 8.32%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)> [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 39,976,960 ( 8.16%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/intrinsics/mod.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+ 30,474,240 ( 6.22%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+ 27,415,530 ( 5.59%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::location_in [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 24,527,920 ( 5.01%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/std/src/hash/random.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 22,077,440 ( 4.51%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/num/uint_macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+ 21,066,320 ( 4.30%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::record_in [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 19,516,140 ( 3.98%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::location_in
+ 18,431,910 ( 3.76%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32> [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 18,301,900 ( 3.73%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/sip.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+ 15,892,480 ( 3.24%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/cmp.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+ 14,714,550 ( 3.00%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::trie_bytes [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 13,762,560 ( 2.81%)  /home/user/stacks-core/crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_id
+ 11,468,800 ( 2.34%)  /rust/deps/hashbrown-0.17.1/src/map.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_id
+ 11,182,080 ( 2.28%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&stacks_common::types::chainstate::StacksBlockId> [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+ 10,641,740 ( 2.17%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::marf::NodeView>::descend
+  9,606,070 ( 1.96%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::descend_branch [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+  9,431,530 ( 1.92%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/slice/index.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+  9,293,400 ( 1.90%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Blobs>::slice [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+  8,924,867 ( 1.82%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::storage::resolve_in
+  8,683,520 ( 1.77%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/sip.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&stacks_common::types::chainstate::StacksBlockId>
+  8,419,807 ( 1.72%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+  7,064,875 ( 1.44%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/result.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+  7,045,120 ( 1.44%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/sip.rs:<core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write [/home/user/stacks-core/target/bench-bin/marf-differential-upstream]
+  6,663,030 ( 1.36%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/sip.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)>
+  5,111,370 ( 1.04%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/sip.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32>
+  5,030,660 ( 1.03%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/cmp.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+  5,030,660 ( 1.03%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/iter/range.rs:<stacks_marf_next::codec::BranchView>::skip_scan
+  4,874,240 ( 0.99%)  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/iter/range.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/core_api.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 128 ----------------------------------------
+      .                   };
+      .                   let block_len = 0;
+      .                   Ok(Self { state, block_len })
+      .               }
+      .           
+      .               #[inline]
+      .               fn finalize_variable_core(&mut self, buffer: &mut Buffer<Self>, out: &mut Output<Self>) {
+      .                   let bs = Self::BlockSize::U64 as u128;
+245,760 ( 0.05%)          let bit_len = 8 * (buffer.get_pos() as u128 + bs * self.block_len);
+122,880 ( 0.03%)          buffer.len128_padding_be(bit_len, |b| compress512(&mut self.state, from_ref(b)));
+192,757,760 (39.33%)  => /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512.rs:sha2::sha512::compress512 (136,799x)
+      .           
+      .                   for (chunk, v) in out.chunks_exact_mut(8).zip(self.state.iter()) {
+163,840 ( 0.03%)              chunk.copy_from_slice(&v.to_be_bytes());
+      .                   }
+      .               }
+      .           }
+      .           
+      .           impl AlgorithmName for Sha512VarCore {
+      .               #[inline]
+      .               fn write_alg_name(f: &mut fmt::Formatter<'_>) -> fmt::Result {
+      .                   f.write_str("Sha512")
+-- line 148 ----------------------------------------
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 28 ----------------------------------------
+      .               }
+      .           }
+      .           
+      .           /// Raw SHA-512 compression function.
+      .           ///
+      .           /// This is a low-level "hazmat" API which provides direct access to the core
+      .           /// functionality of SHA-512.
+      .           #[cfg_attr(docsrs, doc(cfg(feature = "compress")))]
+327,680 ( 0.07%)  pub fn compress512(state: &mut [u64; 8], blocks: &[GenericArray<u8, U128>]) {
+      .               // SAFETY: GenericArray<u8, U64> and [u8; 64] have
+      .               // exactly the same memory layout
+      .               let p = blocks.as_ptr() as *const [u8; 128];
+      .               let blocks = unsafe { core::slice::from_raw_parts(p, blocks.len()) };
+      .               compress(state, blocks)
+      .           }
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: crates/stacks-marf-next/src/marf.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 223 ----------------------------------------
+        .           pub(crate) enum Site {
+        .               /// The trie being built, in memory.
+        .               Mem,
+        .               /// A persisted trie with this storage id.
+        .               Block(u32),
+        .           }
+        .           
+        .           fn root_ptr(site: Site) -> Ptr {
+  122,880 ( 0.03%)      match site {
+        .                   Site::Mem => Ptr::new(id::NODE256, 0, 0),
+        .                   Site::Block(_) => Ptr::new(id::NODE256, 0, ROOT_OFFSET),
+        .               }
+        .           }
+        .           
+        .           /// A node borrowed from wherever it lives: the arena of the trie being
+        .           /// built, or storage (a record, or a patch chain resolved into scratch).
+        .           /// Traversal (path, child selection, leaf value) never builds an owned node.
+-- line 239 ----------------------------------------
+-- line 262 ----------------------------------------
+        .                   match self {
+        .                       NodeView::Mem(Node::Leaf(_)) => Ok(None),
+        .                       NodeView::Mem(Node::Branch(b)) => Ok(b.child(chr).copied()),
+        .                       NodeView::Store(n) => n.child(chr),
+        .                   }
+        .               }
+        .           
+        .               /// One step of a key walk (see [`codec::Record::descend`]).
+  970,690 ( 0.20%)      pub(crate) fn descend(&self, key: &[u8], depth: usize) -> Result<Descent<'a>, Error> {
+  277,340 ( 0.06%)          match self {
+        .                       NodeView::Mem(Node::Leaf(l)) => Ok(if key[depth..].starts_with(l.path.as_slice()) {
+        .                           Descent::Leaf {
+        .                               value: codec::LeafView::borrow(l),
+        .                               consumed: l.path.len(),
+        .                           }
+        .                       } else {
+        .                           Descent::Mismatch
+        .                       }),
+        .                       NodeView::Mem(Node::Branch(b)) => descend_branch(b, key, depth),
+        .                       NodeView::Store(n) => n.descend(key, depth),
+        .                   }
+  970,690 ( 0.20%)      }
+        .           
+        .               pub(crate) fn leaf_value(&self) -> Result<Option<MARFValue>, Error> {
+        .                   match self {
+        .                       NodeView::Mem(Node::Leaf(l)) => Ok(Some(l.value.clone())),
+        .                       NodeView::Mem(Node::Branch(_)) => Ok(None),
+        .                       NodeView::Store(n) => n.leaf_value(),
+        .                   }
+        .               }
+-- line 291 ----------------------------------------
+-- line 490 ----------------------------------------
+        .               }
+        .           
+        .               fn site(&mut self, bhh: &T) -> Result<Site, Error> {
+        .                   if let Some(b) = self.inner.building.as_ref() {
+        .                       if b.trie.block == *bhh {
+        .                           return Ok(Site::Mem);
+        .                       }
+        .                   }
+  122,880 ( 0.03%)          Ok(Site::Block(self.inner.store.block_id(self.db, bhh)?))
+13,762,560 ( 2.81%)  => /home/user/stacks-core/crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Store<stacks_common::types::chainstate::StacksBlockId>>::block_id (49,179x)
+        .               }
+        .           
+        .               /// Read the node at `ptr` in `site`, following a back-pointer if `ptr` is
+        .               /// one. The view borrows the arena or storage; nothing is materialized.
+        .               fn read(&mut self, site: Site, ptr: &Ptr) -> Result<(Site, NodeView<'_>), Error> {
+  970,690 ( 0.20%)          let (site, node, _) = self.read_with_depth(site, ptr)?;
+133,001,163 (27.14%)  => crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth (166,953x)
+        .                   Ok((site, node))
+        .               }
+        .           
+        .               /// [`View::read`] that also reports the patch-chain depth of the record
+        .               /// (0 for a plain record or an arena node).
+  832,020 ( 0.17%)      fn read_with_depth(&mut self, site: Site, ptr: &Ptr) -> Result<(Site, NodeView<'_>, u32), Error> {
+        .                   count!(node_visits);
+  138,670 ( 0.03%)          if ptr.is_back() {
+        .                       count!(backptr_follows);
+   72,805 ( 0.01%)              let r = self.inner.store.node(self.db, ptr.back_block, ptr)?;
+        .                       return Ok((Site::Block(ptr.back_block), NodeView::Store(r.node), r.depth));
+        .                   }
+  131,730 ( 0.03%)          match site {
+        .                       Site::Mem => {
+        .                           let idx = u32::try_from(ptr.ptr).map_err(|_| Error::OverflowError)?;
+        .                           let trie = &self
+        .                               .inner
+        .                               .building
+        .                               .as_ref()
+        .                               .expect("Mem site implies a trie")
+        .                               .trie;
+        .                           Ok((site, NodeView::Mem(trie.node(idx)?), 0))
+        .                       }
+        .                       Site::Block(id) => {
+        .                           let r = self.inner.store.node(self.db, id, ptr)?;
+        .                           Ok((site, NodeView::Store(r.node), r.depth))
+        .                       }
+        .                   }
+  554,680 ( 0.11%)      }
+        .           
+        .               /// The shape of the walk a lookup of `path` at `tip` performs: how many
+        .               /// records it reads, how many back-pointers it follows (block changes),
+        .               /// how many of the records are stored as patch chains and the deepest
+        .               /// chain. The shape is a property of the stored trie, which every
+        .               /// compatible implementation shares, so it qualifies benchmark keys.
+        .               #[cfg(any(test, feature = "testing"))]
+        .               pub fn lookup_profile(&mut self, tip: &T, path: &TrieHash) -> Result<WalkProfile, Error> {
+-- line 541 ----------------------------------------
+-- line 578 ----------------------------------------
+        .                               depth += consumed;
+        .                           }
+        .                       }
+        .                   }
+        .               }
+        .           
+        .               /// Walk `path` from the root of `tip`'s trie. `Err(NotFoundError)` if the
+        .               /// block is unknown; `Ok(None)` if the key is absent.
+  450,560 ( 0.09%)      pub fn lookup(&mut self, tip: &T, path: &TrieHash) -> Result<Option<MARFValue>, Error> {
+        .                   self.inner
+        .                       .store
+        .                       .check_historical_read_allowed(self.db, tip)?;
+        .                   let mut site = self.site(tip)?;
+        .                   let mut ptr = root_ptr(site);
+        .                   let key = path.as_bytes();
+        .                   let mut depth = 0usize;
+   97,710 ( 0.02%)          loop {
+  416,010 ( 0.08%)              let (next_site, node) = self.read(site, &ptr)?;
+        .                       site = next_site;
+1,345,740 ( 0.27%)              match node.descend(key, depth)? {
+134,113,490 (27.37%)  => crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::NodeView>::descend (167,171x)
+        .                           Descent::Mismatch => return Ok(None),
+        .                           Descent::Leaf { value, consumed } => {
+  122,880 ( 0.03%)                      if depth + consumed != key.len() {
+        .                                   return Err(corrupt!("Path reached a leaf before its end"));
+        .                               }
+   81,920 ( 0.02%)                      return Ok(Some(value.value()));
+        .                           }
+        .                           Descent::Child { child: None, .. } => return Ok(None),
+        .                           Descent::Child {
+  195,420 ( 0.04%)                      child: Some(p),
+        .                               consumed,
+        .                           } => {
+        .                               ptr = p;
+   97,710 ( 0.02%)                      depth += consumed;
+        .                           }
+        .                       }
+        .                   }
+  327,680 ( 0.07%)      }
+        .           
+        .               pub fn get_by_path(&mut self, tip: &T, path: &TrieHash) -> Result<Option<MARFValue>, Error> {
+  327,680 ( 0.07%)          match self.lookup(tip, path) {
+288,456,223 (58.86%)  => crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::lookup (49,152x)
+  163,840 ( 0.03%)              Ok(value) => Ok(value),
+        .                       Err(Error::NotFoundError) => Ok(None),
+        .                       Err(e) => Err(e),
+        .                   }
+        .               }
+        .           
+        .               pub fn get_by_key(&mut self, tip: &T, key: &str) -> Result<Option<MARFValue>, Error> {
+        .                   self.get_by_path(tip, &TrieHash::from_key(key))
+        .               }
+-- line 627 ----------------------------------------
+-- line 1375 ----------------------------------------
+        .           }
+        .           
+        .           // ---------------------------------------------------------------------------
+        .           // MARF
+        .           
+        .           impl<T: MarfTrieId> MARF<T> {
+        .               fn view(&mut self) -> View<'_, T> {
+        .                   View {
+   81,920 ( 0.02%)              db: &self.db,
+        .                       inner: &mut self.inner,
+        .                   }
+        .               }
+        .           
+        .               pub fn from_storage(storage: TrieFileStorage<T>) -> MARF<T> {
+        .                   MARF {
+        .                       db: storage.db,
+        .                       inner: Inner {
+-- line 1391 ----------------------------------------
+
+1,714,115 ( 0.35%)  <counts for unidentified lines in crates/stacks-marf-next/src/marf.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/stacks-core/contrib/marf-differential/src/ablate.rs
+--------------------------------------------------------------------------------
+  No information has been collected for /home/user/stacks-core/contrib/marf-differential/src/ablate.rs
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/stacks-core/contrib/marf-differential/src/alloc.rs
+--------------------------------------------------------------------------------
+  No information has been collected for /home/user/stacks-core/contrib/marf-differential/src/alloc.rs
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/stacks-core/crates/stacks-marf-next/src/storage.rs
+--------------------------------------------------------------------------------
+  No information has been collected for /home/user/stacks-core/crates/stacks-marf-next/src/storage.rs
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: crates/stacks-marf-next/src/storage.rs
+--------------------------------------------------------------------------------
+Ir                 
+
+-- line 180 ----------------------------------------
+        .               }
+        .           
+        .               pub fn path(&self) -> &Path {
+        .                   &self.path
+        .               }
+        .           
+        .               /// Make sure the map covers `[0, end)`. `Ok(false)` if the file is shorter.
+        .               fn ensure_mapped(&mut self, end: u64) -> io::Result<bool> {
+  464,670 ( 0.09%)          if let Some(m) = &self.map {
+        .                       if m.len() as u64 >= end {
+        .                           return Ok(true);
+        .                       }
+        .                   }
+        .                   let len = self.file.metadata()?.len();
+        .                   if len < end {
+        .                       return Ok(false);
+        .                   }
+-- line 196 ----------------------------------------
+-- line 203 ----------------------------------------
+        .                   // (and the original implementation), never rewritten or truncated
+        .                   // while a MARF is open; the map is a read-only view of them.
+        .                   let map = unsafe { memmap2::MmapOptions::new().len(len).map(&*self.file)? };
+        .                   self.map = Some(map);
+        .                   Ok(true)
+        .               }
+        .           
+        .               /// The bytes `[offset, offset + len)`; an error if the file is shorter.
+1,548,900 ( 0.32%)      pub fn slice(&mut self, offset: u64, len: u64) -> Result<&[u8], Error> {
+  309,780 ( 0.06%)          let end = offset.checked_add(len).ok_or(Error::OverflowError)?;
+        .                   if !self.ensure_mapped(end)? {
+        .                       return Err(corrupt!(
+        .                           "blobs file shorter than {end} bytes (read of {len} at {offset})"
+        .                       ));
+        .                   }
+  309,780 ( 0.06%)          if len == 0 {
+        .                       return Ok(&[]);
+        .                   }
+        .                   let map = self.map.as_ref().expect("mapped");
+  464,670 ( 0.09%)          Ok(&map[offset as usize..end as usize])
+1,394,010 ( 0.28%)      }
+        .           
+        .               /// Append-style positioned write (the caller picks `offset` = file length).
+        .               pub fn write_at(&self, offset: u64, data: &[u8]) -> io::Result<()> {
+        .                   write_all_at(&self.file, data, offset)?;
+        .                   self.file.sync_data()
+        .               }
+        .           
+        .               /// [`Blobs::write_at`] without the sync, for callers that write a blob in
+-- line 231 ----------------------------------------
+-- line 395 ----------------------------------------
+        .                       },
+        .                       StoreNode::Patched(b) => Ok(b.child(chr).copied()),
+        .                   }
+        .               }
+        .           
+        .               /// One step of a key walk: for a record, [`Record::descend`]; for a
+        .               /// resolved patch chain, the equivalent over the branch.
+        .               pub fn descend(&self, key: &[u8], depth: usize) -> Result<codec::Descent<'a>, Error> {
+  277,340 ( 0.06%)          match self {
+  152,100 ( 0.03%)              StoreNode::Record(r) => r.descend(key, depth),
+  438,340 ( 0.09%)              StoreNode::Patched(b) => Ok(descend_branch(b, key, depth)?),
+9,606,070 ( 1.96%)  => crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::descend_branch (162,311x)
+        .                   }
+        .               }
+        .           
+        .               /// The leaf's value, if this is a leaf.
+        .               pub fn leaf_value(&self) -> Result<Option<crate::MARFValue>, Error> {
+        .                   match self {
+        .                       StoreNode::Record(r) if r.kind()? == RecordKind::Leaf => Ok(Some(r.leaf()?.value())),
+        .                       _ => Ok(None),
+-- line 413 ----------------------------------------
+-- line 437 ----------------------------------------
+        .                           codec::Decoded::Patch(_) => Err(corrupt!("unresolved patch")),
+        .                       },
+        .                       StoreNode::Patched(b) => Ok(Node::Branch((*b).clone())),
+        .                   }
+        .               }
+        .           }
+        .           
+        .           /// [`Record::descend`] for an in-memory branch.
+  375,720 ( 0.08%)  pub fn descend_branch<'a>(b: &Branch, key: &[u8], depth: usize) -> Result<codec::Descent<'a>, Error> {
+        .               let rest = &key[depth..];
+  125,240 ( 0.03%)      if !rest.starts_with(b.path.as_slice()) {
+        .                   return Ok(codec::Descent::Mismatch);
+        .               }
+   62,620 ( 0.01%)      let Some(&chr) = rest.get(b.path.len()) else {
+        .                   return Err(corrupt!("Path reached a non-leaf"));
+        .               };
+  375,720 ( 0.08%)      Ok(codec::Descent::Child {
+        .                   child: b.child(chr).copied(),
+   62,620 ( 0.01%)          consumed: b.path.len() + 1,
+        .               })
+  438,340 ( 0.09%)  }
+        .           
+        .           /// The result of resolving a node location.
+        .           pub struct Resolved<'a> {
+        .               pub node: StoreNode<'a>,
+        .               /// The hash stored at the location (of the outermost patch, if any).
+        .               pub hash: TrieHash,
+        .               /// Number of patches followed.
+        .               pub depth: u32,
+        .           }
+        .           
+        .           /// Where block `block_id`'s trie bytes live (cached in `locations`).
+1,858,680 ( 0.38%)  fn location_in(
+        .               locations: &mut HashMap<u32, Location>,
+        .               external: bool,
+        .               conn: &Connection,
+        .               block_id: u32,
+        .           ) -> Result<Location, Error> {
+        .               if let Some(loc) = locations.get(&block_id) {
+  774,450 ( 0.16%)          return Ok(*loc);
+        .               }
+        .               count!(location_sql);
+        .               let (offset, len, unconfirmed): (i64, i64, i64) = conn
+        .                   .prepare_cached(
+        .                       "SELECT external_offset, external_length, unconfirmed FROM marf_data WHERE block_id = ?1",
+        .                   )?
+        .                   .query_row(params![block_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .                   .optional()?
+-- line 484 ----------------------------------------
+-- line 490 ----------------------------------------
+        .                   }
+        .               } else {
+        .                   Location::Sqlite {
+        .                       unconfirmed: unconfirmed != 0,
+        .                   }
+        .               };
+        .               locations.insert(block_id, loc);
+        .               Ok(loc)
+1,239,120 ( 0.25%)  }
+        .           
+        .           /// Bytes of block `block_id`'s trie from `offset` for up to `max` bytes
+        .           /// (fewer at the end of the trie). Borrows the blobs map or the scratch
+        .           /// buffer; takes the fields it needs so callers can hold other parts of the
+        .           /// store at the same time.
+1,703,790 ( 0.35%)  fn trie_bytes<'s>(
+        .               blobs: &'s mut Option<Blobs>,
+        .               scratch: &'s mut BytesScratch,
+        .               conn: &Connection,
+        .               loc: Location,
+        .               block_id: u32,
+        .               offset: u64,
+        .               max: usize,
+        .           ) -> Result<&'s [u8], Error> {
+  309,780 ( 0.06%)      match loc {
+  464,670 ( 0.09%)          Location::External { offset: base, len } => {
+  309,780 ( 0.06%)              if offset >= len {
+        .                           return Err(corrupt!(
+        .                               "offset {offset} beyond trie of {len} bytes (block {block_id})"
+        .                           ));
+        .                       }
+        .                       let want = (max as u64).min(len - offset);
+        .                       let blobs = blobs.as_mut().expect("external location implies blobs");
+  619,560 ( 0.13%)              blobs.slice(base + offset, want)
+9,293,400 ( 1.90%)  => crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::storage::Blobs>::slice (390,475x)
+  154,890 ( 0.03%)          }
+        .                   // A per-node incremental blob read, like the original: a walk through
+        .                   // a trie touches a handful of its nodes and lookups cross many tries,
+        .                   // so caching whole tries here only thrashes. The record is not
+        .                   // length-prefixed; read the hash and type byte first and then only
+        .                   // the bound that type allows, so a leaf costs ~100 bytes of copying
+        .                   // rather than the Node256 bound.
+        .                   Location::Sqlite { .. } => {
+        .                       if scratch.key != Some((block_id, offset)) {
+-- line 531 ----------------------------------------
+-- line 556 ----------------------------------------
+        .                                   scratch.buf.truncate(n + m);
+        .                               }
+        .                           }
+        .                           scratch.key = Some((block_id, offset));
+        .                       }
+        .                       Ok(&scratch.buf)
+        .                   }
+        .               }
+1,239,120 ( 0.25%)  }
+        .           
+        .           /// Parse the record at `ptr` in block `block_id` (located at `loc`).
+1,084,230 ( 0.22%)  fn record_in<'s>(
+        .               blobs: &'s mut Option<Blobs>,
+        .               scratch: &'s mut BytesScratch,
+        .               conn: &Connection,
+        .               loc: Location,
+        .               block_id: u32,
+        .               ptr: &Ptr,
+        .           ) -> Result<Record<'s>, Error> {
+        .               count!(record_reads);
+        .               if matches!(loc, Location::Sqlite { .. }) {
+        .                   count!(sqlite_record_reads);
+        .               }
+  619,560 ( 0.13%)      let bytes = trie_bytes(blobs, scratch, conn, loc, block_id, ptr.ptr, MAX_NODE_LEN)?;
+14,714,550 ( 3.00%)  => crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::trie_bytes (390,366x)
+  154,890 ( 0.03%)      Record::parse(bytes, ptr.kind_id()).map_err(|e| match e {
+        .                   Error::CorruptionError(m) => Error::CorruptionError(format!(
+        .                       "{m} (node at {} in block {block_id})",
+        .                       ptr.ptr
+        .                   )),
+        .                   e => e,
+        .               })
+  619,560 ( 0.13%)  }
+        .           
+        .           /// Open or create the database at `db_path`.
+        .           pub fn open<T: MarfTrieId>(
+        .               db_path: impl AsRef<Path>,
+        .               external_blobs: bool,
+        .               compress: bool,
+        .               readonly: bool,
+        .               unconfirmed: bool,
+-- line 595 ----------------------------------------
+-- line 810 ----------------------------------------
+        .                   .optional()?;
+        .               Ok(len.unwrap_or(0) as u64)
+        .           }
+        .           
+        .           /// See [`Store::node`]; takes the store's fields apart so the result can
+        .           /// borrow the record bytes or the cached branch while the caller keeps the
+        .           /// rest of the store.
+        .           #[allow(clippy::too_many_arguments)]
+1,941,380 ( 0.40%)  fn resolve_in<'s>(
+        .               blobs: &'s mut Option<Blobs>,
+        .               bytes: &'s mut BytesScratch,
+        .               diffs: &mut Vec<Ptr>,
+        .               patched: &'s mut HashMap<(u32, u64), Cached>,
+        .               capacity: usize,
+        .               locations: &mut HashMap<u32, Location>,
+        .               conn: &Connection,
+        .               block_id: u32,
+        .               ptr: &Ptr,
+        .           ) -> Result<Resolved<'s>, Error> {
+        .               let external = blobs.is_some();
+        .               let cur_block = block_id;
+  138,670 ( 0.03%)      let mut block = block_id;
+        .               let mut ptr = ptr.without_back();
+        .               let key = (block_id, ptr.ptr);
+        .               // capacity 0: no lookup, and nothing is retained beyond the one scratch
+        .               // slot a resolved chain is returned from
+  139,950 ( 0.03%)      let cache = capacity > 0;
+  138,670 ( 0.03%)      if cache {
+        .                   count!(patch_cache_lookups);
+  277,340 ( 0.06%)          if patched.len() >= capacity {
+        .                       patched.clear();
+        .                       count!(patch_cache_clears);
+        .                   }
+        .                   // (two lookups on a hit: a borrow returned from one branch of an `if`
+        .                   // would hold `patched` for the rest of the function)
+        .                   if patched.contains_key(&key) {
+        .                       count!(patch_cache_hits);
+        .                       let c = &patched[&key];
+  309,900 ( 0.06%)              return Ok(Resolved {
+        .                           node: StoreNode::Patched(&c.node),
+  309,900 ( 0.06%)                  hash: c.hash,
+   61,980 ( 0.01%)                  depth: c.depth,
+        .                       });
+        .                   }
+        .               }
+   76,690 ( 0.02%)      bytes.key = None;
+        .               diffs.clear();
+        .               // patches met on the way down: (block read from, base pointer, diff range)
+        .               let mut chain: [(u32, Ptr, usize, usize); MAX_PATCH_DEPTH as usize] =
+        .                   [(0, Ptr::default(), 0, 0); MAX_PATCH_DEPTH as usize];
+        .               let mut depth = 0usize;
+        .               let mut hash: Option<TrieHash> = None;
+        .               let mut cacheable = true;
+    6,040 ( 0.00%)      loop {
+  703,800 ( 0.14%)          let loc = location_in(locations, external, conn, block)?;
+13,841,400 ( 2.82%)  => crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::location_in (202,540x)
+  234,600 ( 0.05%)          cacheable &= !matches!(loc, Location::Sqlite { unconfirmed: true });
+  703,800 ( 0.14%)          let rec = record_in(blobs, bytes, conn, loc, block, &ptr)?;
+10,636,480 ( 2.17%)  => crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::record_in (202,540x)
+  234,600 ( 0.05%)          if hash.is_none() {
+        .                       hash = Some(rec.hash());
+        .                   }
+   78,200 ( 0.02%)          if !rec.is_patch() {
+        .                       break;
+        .                   }
+    3,020 ( 0.00%)          if depth == MAX_PATCH_DEPTH as usize {
+        .                       return Err(Error::NodeTooDeep);
+        .                   }
+    3,020 ( 0.00%)          let patch = rec.patch()?;
+   73,990 ( 0.02%)  => /home/user/stacks-core/crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::Record>::patch (14,714x)
+        .                   let start = diffs.len();
+        .                   patch.for_each_diff(|d| diffs.push(d))?;
+   12,080 ( 0.00%)          chain[depth] = (block, patch.base, start, diffs.len());
+    1,510 ( 0.00%)          depth += 1;
+    1,510 ( 0.00%)          block = patch.base.back_block;
+    6,040 ( 0.00%)          ptr = patch.base.without_back();
+        .               }
+        .               let hash = hash.expect("set");
+  536,830 ( 0.11%)      let loc = location_in(locations, external, conn, block)?;
+13,574,130 ( 2.77%)  => crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::location_in (187,826x)
+  766,900 ( 0.16%)      let rec = record_in(blobs, bytes, conn, loc, block, &ptr)?;
+10,429,840 ( 2.13%)  => crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::record_in (187,826x)
+  153,380 ( 0.03%)      if depth == 0 {
+        .                   if cache {
+        .                       count!(patch_cache_probe_miss_plain);
+        .                   }
+  608,400 ( 0.12%)          return Ok(Resolved {
+  228,150 ( 0.05%)              node: StoreNode::Record(rec),
+        .                       hash,
+        .                       depth: 0,
+        .                   });
+        .               }
+        .               count!(patch_resolutions);
+        .               count!(patch_applications, depth as u32);
+        .               count!(owned_materializations);
+        .               let view = rec
+      640 ( 0.00%)          .branch()
+   19,840 ( 0.00%)  => /home/user/stacks-core/crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::Record>::branch (7,429x)
+        .                   .map_err(|_| corrupt!("patch base at {} in block {block} is not a branch", ptr.ptr))?;
+    3,200 ( 0.00%)      let mut out = Branch::new(view.kind(), NodePath::EMPTY);
+   50,830 ( 0.01%)  => /home/user/stacks-core/crates/stacks-marf-next/src/node.rs:<stacks_marf_next::node::Branch>::new (7,429x)
+        .               view.fill(&mut out)?;
+        .               // apply base-first: the innermost patch (closest to the base) first
+        .               for (patch_block, base, start, end) in chain[..depth].iter().rev() {
+   13,590 ( 0.00%)          codec::apply_patch(&mut out, *base, &diffs[*start..*end], *patch_block, cur_block)?;
+4,571,586 ( 0.93%)  => /home/user/stacks-core/crates/stacks-marf-next/src/codec.rs:stacks_marf_next::codec::apply_patch (14,714x)
+        .               }
+        .               let depth = depth as u32;
+        .               // an unconfirmed trie is rewritten in place, so its nodes go to a slot
+        .               // that the next such read overwrites instead of the cache proper; so
+        .               // does everything when the cache is disabled
+    3,200 ( 0.00%)      let key = if cacheable && cache {
+        .                   count!(patch_cache_misses);
+        .                   key
+        .               } else {
+        .                   UNCONFIRMED_SLOT
+        .               };
+        .               patched.insert(
+        .                   key,
+    5,760 ( 0.00%)          Cached {
+    5,120 ( 0.00%)              node: out,
+        .                       hash,
+        .                       depth,
+        .                   },
+        .               );
+        .               let c = &patched[&key];
+    5,760 ( 0.00%)      Ok(Resolved {
+        .                   node: StoreNode::Patched(&c.node),
+        .                   hash,
+        .                   depth,
+        .               })
+1,110,000 ( 0.23%)  }
+        .           
+        .           /// Cache key reserved for nodes of the unconfirmed trie (never a real location).
+        .           const UNCONFIRMED_SLOT: (u32, u64) = (u32::MAX, u64::MAX);
+        .           
+        .           impl<T: MarfTrieId> Store<T> {
+        .               /// A read-only store over the same files with fresh caches.
+        .               pub fn reopen_readonly(&self) -> Store<T> {
+        .                   Store {
+-- line 941 ----------------------------------------
+-- line 1005 ----------------------------------------
+        .                   // undone with it; the next write must issue it again
+        .                   self.sidecar_retired = self.readonly;
+        .                   self.scratch.bytes.key = None;
+        .               }
+        .           
+        .               // -- block identity ----------------------------------------------------
+        .           
+        .               /// Storage id of a block, confirmed or unconfirmed.
+  450,560 ( 0.09%)      pub fn block_id(&mut self, conn: &Connection, bhh: &T) -> Result<u32, Error> {
+        .                   if let Some(id) = self.ids.get(bhh) {
+  122,880 ( 0.03%)              return Ok(*id);
+        .                   }
+        .                   count!(block_id_sql);
+        .                   let row: Option<(u32, i64)> = conn
+        .                       .prepare_cached("SELECT block_id, unconfirmed FROM marf_data WHERE block_hash = ?1")?
+        .                       .query_row(params![bhh], |r| Ok((r.get(0)?, r.get(1)?)))
+        .                       .optional()?;
+        .                   match row {
+        .                       None => Err(Error::NotFoundError),
+-- line 1023 ----------------------------------------
+-- line 1024 ----------------------------------------
+        .                       Some((id, unconfirmed)) => {
+        .                           if unconfirmed == 0 {
+        .                               self.ids.insert(bhh.clone(), id);
+        .                               self.hashes.insert(id, bhh.clone());
+        .                           }
+        .                           Ok(id)
+        .                       }
+        .                   }
+  327,680 ( 0.07%)      }
+        .           
+        .               /// Block identifier for storage id `id`.
+        .               pub fn block_hash(&mut self, conn: &Connection, id: u32) -> Result<&T, Error> {
+        .                   if !self.hashes.contains_key(&id) {
+        .                       let row: Option<(T, i64)> = conn
+        .                           .prepare_cached(
+        .                               "SELECT block_hash, unconfirmed FROM marf_data WHERE block_id = ?1",
+        .                           )?
+-- line 1040 ----------------------------------------
+-- line 1247 ----------------------------------------
+        .           
+        .               /// Read the record at `ptr` in `block_id`: either a node or a patch.
+        .               /// Resolve the node at `ptr` in `block_id` without materializing it:
+        .               /// a plain record is borrowed from storage; a patch chain is followed to
+        .               /// its base (at most [`MAX_PATCH_DEPTH`] hops) and applied into the
+        .               /// store's scratch branch. Nothing is allocated once the scratch buffers
+        .               /// have grown to their working size.
+        .               pub fn node(&mut self, conn: &Connection, block_id: u32, ptr: &Ptr) -> Result<Resolved<'_>, Error> {
+  832,020 ( 0.17%)          resolve_in(
+126,629,283 (25.84%)  => crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::resolve_in (328,388x)
+  138,670 ( 0.03%)              &mut self.blobs,
+        .                       &mut self.scratch.bytes,
+  138,670 ( 0.03%)              &mut self.scratch.diffs,
+  138,670 ( 0.03%)              &mut self.scratch.patched,
+  138,670 ( 0.03%)              self.patch_cache_capacity,
+  277,340 ( 0.06%)              &mut self.locations,
+        .                       conn,
+        .                       block_id,
+        .                       ptr,
+        .                   )
+        .               }
+        .           
+        .               /// Like [`Store::node`], but always as a `Branch` (decoded into scratch
+        .               /// when the record is a plain branch); `None` for a leaf.
+-- line 1269 ----------------------------------------
+
+1,777,250 ( 0.36%)  <counts for unidentified lines in crates/stacks-marf-next/src/storage.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: contrib/marf-differential/src/ablate.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 520 ----------------------------------------
+      .                   }
+      .               });
+      .               m
+      .           }
+      .           
+      .           /// One warm pass of a cell; same body as the cold pass, separate symbol so
+      .           /// cold and warm instruction profiles do not mix.
+      .           #[inline(never)]
+      5 ( 0.00%)  fn timed_warm_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
+     30 ( 0.00%)      let (_, m) = measure(|| {
+490,062,098 (100.0%)  => /home/user/stacks-core/contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::timed_warm_pass<marf_differential::alloc::Rewrite>::{closure#0}> (5x)
+      5 ( 0.00%)          for (i, k) in set.keys.iter().enumerate() {
+532,480 ( 0.11%)              out[i] = marf.get_value(&set.tip, k);
+489,283,103 (99.84%)  => /home/user/stacks-core/contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value (40,960x)
+      .                   }
+      .               });
+      .               m
+     10 ( 0.00%)  }
+      .           
+      .           fn pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, Counters, u64) {
+      .               let _ = marf.counters();
+      .               let m = timed_cold_pass(marf, set, out);
+      .               (m.elapsed, marf.counters(), m.peak)
+      .           }
+      .           
+      .           fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
+-- line 543 ----------------------------------------
+
+ 81,920 ( 0.02%)  <counts for unidentified lines in contrib/marf-differential/src/ablate.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: stacks-common/src/types/chainstate.rs
+--------------------------------------------------------------------------------
+Ir               
+
+-- line 47 ----------------------------------------
+      .               pub const EMPTY: TrieHash = TrieHash([
+      .                   0xc6, 0x72, 0xb8, 0xd1, 0xef, 0x56, 0xed, 0x28, 0xab, 0x87, 0xc3, 0x62, 0x2c, 0x51, 0x14,
+      .                   0x06, 0x9b, 0xdd, 0x3a, 0xd7, 0xb8, 0xf9, 0x73, 0x74, 0x98, 0xd0, 0xc0, 0x1e, 0xce, 0xf0,
+      .                   0x96, 0x7a,
+      .               ]);
+      .           
+      .               #[inline]
+      .               pub fn from_key(k: &str) -> Self {
+163,840 ( 0.03%)          Self::from_data(k.as_bytes())
+198,819,840 (40.57%)  => stacks-common/src/types/chainstate.rs:<stacks_common::types::chainstate::TrieHash>::from_data (49,152x)
+      .               }
+      .           
+      .               /// Create a `TrieHash` from a slice of bytes.
+      .               #[inline] // sha2's new(), update() and finalize() fn's are inlined; ensure we don't break the inlining boundary.
+286,720 ( 0.06%)      pub fn from_data(data: &[u8]) -> TrieHash {
+ 81,920 ( 0.02%)          if data.is_empty() {
+      .                       return TrieHash::EMPTY;
+      .                   }
+      .           
+      .                   let mut hasher = Sha512_256::new();
+      .                   hasher.update(data);
+ 81,920 ( 0.02%)          let out = hasher.finalize().into();
+1,228,800 ( 0.25%)  => ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms (136,799x)
+163,840 ( 0.03%)          TrieHash(out)
+286,720 ( 0.06%)      }
+      .           
+      .               /// Create a `TrieHash` from an array of byte slices.
+      .               #[inline] // sha2's new(), update() and finalize() fn's are inlined; ensure we don't break the inlining boundary.
+      .               pub fn from_data_array<B: AsRef<[u8]>>(data: &[B]) -> TrieHash {
+      .                   if data.is_empty() {
+      .                       return TrieHash::EMPTY;
+      .                   }
+      .           
+-- line 77 ----------------------------------------
+
+ 40,960 ( 0.01%)  <counts for unidentified lines in stacks-common/src/types/chainstate.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512/x86.rs
+--------------------------------------------------------------------------------
+Ir                  
+
+-- line 11 ----------------------------------------
+         .           
+         .           use crate::consts::K64;
+         .           
+         .           cpufeatures::new!(avx2_cpuid, "avx2");
+         .           
+         .           pub fn compress(state: &mut [u64; 8], blocks: &[[u8; 128]]) {
+         .               // TODO: Replace with https://github.com/rust-lang/rfcs/pull/2725
+         .               // after stabilization
+    40,960 ( 0.01%)      if avx2_cpuid::get() {
+         .                   unsafe {
+   368,640 ( 0.08%)              sha512_compress_x86_64_avx2(state, blocks);
+191,856,640 (39.15%)  => /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2 (238,002x)
+         .                   }
+         .               } else {
+         .                   super::soft::compress(state, blocks);
+         .               }
+         .           }
+         .           
+         .           #[target_feature(enable = "avx2")]
+   368,640 ( 0.08%)  unsafe fn sha512_compress_x86_64_avx2(state: &mut [u64; 8], blocks: &[[u8; 128]]) {
+         .               let mut start_block = 0;
+         .           
+   122,880 ( 0.03%)      if blocks.len() & 0b1 != 0 {
+         .                   sha512_compress_x86_64_avx(state, &blocks[0]);
+         .                   start_block += 1;
+         .               }
+         .           
+         .               let mut ms: MsgSchedule = [_mm_setzero_si128(); 8];
+         .               let mut t2: RoundStates = [_mm_setzero_si128(); 40];
+         .               let mut x = [_mm256_setzero_si256(); 8];
+         .           
+-- line 40 ----------------------------------------
+-- line 47 ----------------------------------------
+         .                   rounds_64_79(&mut current_state, &ms);
+         .                   accumulate_state(state, &current_state);
+         .           
+         .                   // Second block
+         .                   current_state = *state;
+         .                   process_second_block(&mut current_state, &t2);
+         .                   accumulate_state(state, &current_state);
+         .               }
+   368,640 ( 0.08%)  }
+         .           
+         .           #[inline(always)]
+         .           unsafe fn sha512_compress_x86_64_avx(state: &mut [u64; 8], block: &[u8; 128]) {
+         .               let mut ms = [_mm_setzero_si128(); 8];
+         .               let mut x = [_mm_setzero_si128(); 8];
+         .           
+         .               // Reduced to single iteration
+   327,680 ( 0.07%)      let mut current_state = *state;
+         .               load_data_avx(&mut x, &mut ms, block.as_ptr() as *const _);
+         .               rounds_0_63_avx(&mut current_state, &mut x, &mut ms);
+         .               rounds_64_79(&mut current_state, &ms);
+         .               accumulate_state(state, &current_state);
+         .           }
+         .           
+         .           #[inline(always)]
+         .           unsafe fn load_data_avx(x: &mut [__m128i; 8], ms: &mut MsgSchedule, data: *const __m128i) {
+-- line 71 ----------------------------------------
+-- line 77 ----------------------------------------
+         .                       x[$i] = _mm_loadu_si128(data.add($i) as *const _);
+         .                       x[$i] = _mm_shuffle_epi8(x[$i], MASK);
+         .           
+         .                       let y = _mm_add_epi64(
+         .                           x[$i],
+         .                           _mm_loadu_si128(&K64[2 * $i] as *const u64 as *const _),
+         .                       );
+         .           
+   368,640 ( 0.08%)              ms[$i] = y;
+         .                   )*};
+         .               }
+         .           
+         .               unrolled_iterations!(0, 1, 2, 3, 4, 5, 6, 7);
+         .           }
+         .           
+         .           #[inline(always)]
+         .           unsafe fn load_data_avx2(
+-- line 93 ----------------------------------------
+-- line 123 ----------------------------------------
+         .           }
+         .           
+         .           #[inline(always)]
+         .           unsafe fn rounds_0_63_avx(current_state: &mut State, x: &mut [__m128i; 8], ms: &mut MsgSchedule) {
+         .               let mut k64_idx: usize = SHA512_BLOCK_WORDS_NUM;
+         .           
+         .               for _ in 0..4 {
+         .                   for j in 0..8 {
+ 3,932,160 ( 0.80%)              let k64 = _mm_loadu_si128(&K64[k64_idx] as *const u64 as *const _);
+         .                       let y = sha512_update_x_avx(x, k64);
+         .           
+         .                       {
+         .                           let ms = cast_ms(ms);
+         .                           sha_round(current_state, ms[2 * j]);
+         .                           sha_round(current_state, ms[2 * j + 1]);
+         .                       }
+         .           
+ 1,310,720 ( 0.27%)              ms[j] = y;
+         .                       k64_idx += 2;
+         .                   }
+         .               }
+         .           }
+         .           
+         .           #[inline(always)]
+         .           unsafe fn rounds_0_63_avx2(
+         .               current_state: &mut State,
+-- line 148 ----------------------------------------
+-- line 185 ----------------------------------------
+         .                   sha_round(current_state, *t2);
+         .               }
+         .           }
+         .           
+         .           #[inline(always)]
+         .           fn sha_round(s: &mut State, x: u64) {
+         .               macro_rules! big_sigma0 {
+         .                   ($a:expr) => {
+ 6,553,600 ( 1.34%)              $a.rotate_right(28) ^ $a.rotate_right(34) ^ $a.rotate_right(39)
+         .                   };
+         .               }
+         .               macro_rules! big_sigma1 {
+         .                   ($a:expr) => {
+ 6,553,600 ( 1.34%)              $a.rotate_right(14) ^ $a.rotate_right(18) ^ $a.rotate_right(41)
+         .                   };
+         .               }
+         .               macro_rules! bool3ary_202 {
+         .                   ($a:expr, $b:expr, $c:expr) => {
+13,107,200 ( 2.67%)              $c ^ ($a & ($b ^ $c))
+         .                   };
+         .               } // Choose, MD5F, SHA1C
+         .               macro_rules! bool3ary_232 {
+         .                   ($a:expr, $b:expr, $c:expr) => {
+19,660,800 ( 4.01%)              ($a & $b) ^ ($a & $c) ^ ($b & $c)
+         .                   };
+         .               } // Majority, SHA1M
+         .           
+         .               macro_rules! rotate_state {
+         .                   ($s:ident) => {{
+         .                       let tmp = $s[7];
+         .                       $s[7] = $s[6];
+         .                       $s[6] = $s[5];
+-- line 216 ----------------------------------------
+-- line 234 ----------------------------------------
+         .               s[3] = s[3].wrapping_add(t);
+         .           
+         .               rotate_state!(s);
+         .           }
+         .           
+         .           #[inline(always)]
+         .           fn accumulate_state(dst: &mut State, src: &State) {
+         .               for i in 0..SHA512_HASH_WORDS_NUM {
+   368,640 ( 0.08%)          dst[i] = dst[i].wrapping_add(src[i]);
+         .               }
+         .           }
+         .           
+         .           macro_rules! fn_sha512_update_x {
+         .               ($name:ident, $ty:ident, {
+         .                   ADD64 = $ADD64:ident,
+         .                   ALIGNR8 = $ALIGNR8:ident,
+         .                   SRL64 = $SRL64:ident,
+-- line 250 ----------------------------------------
+
+16,220,160 ( 3.31%)  <counts for unidentified lines in /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.8/src/sha512/x86.rs>
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: /home/user/stacks-core/contrib/marf-differential/src/bin/main.rs
+--------------------------------------------------------------------------------
+  No information has been collected for /home/user/stacks-core/contrib/marf-differential/src/bin/main.rs
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: crates/stacks-marf-next/src/codec.rs
+--------------------------------------------------------------------------------
+Ir                  
+
+-- line 78 ----------------------------------------
+         .           /// What a node slot on disk decodes to.
+         .           #[derive(Clone, PartialEq, Eq, Debug)]
+         .           pub enum Decoded {
+         .               Node(Node),
+         .               Patch(Patch),
+         .           }
+         .           
+         .           fn sparse_bitmap_len(kind: Kind) -> usize {
+    71,440 ( 0.01%)      match kind {
+         .                   Kind::Node4 => 1,
+         .                   Kind::Node16 => 2,
+         .                   Kind::Node48 => 6,
+         .                   Kind::Node256 => 32,
+         .               }
+         .           }
+         .           
+         .           fn wide(ptr: u64) -> bool {
+-- line 94 ----------------------------------------
+-- line 167 ----------------------------------------
+         .                   let end = self.pos.checked_add(n).ok_or(Bad::Truncated)?;
+         .                   let s = self.buf.get(self.pos..end).ok_or(Bad::Truncated)?;
+         .                   self.pos = end;
+         .                   Ok(s)
+         .               }
+         .           
+         .               #[inline]
+         .               fn u8(&mut self) -> Result<u8, Bad> {
+   407,840 ( 0.08%)          Ok(self.take(1)?[0])
+         .               }
+         .           
+         .               #[inline]
+         .               fn u32(&mut self) -> Result<u32, Bad> {
+         .                   Ok(u32::from_be_bytes(
+         .                       self.take(4)?.try_into().expect("4 bytes"),
+         .                   ))
+         .               }
+         .           
+         .               #[inline]
+         .               fn offset(&mut self, id: u8) -> Result<u64, Bad> {
+   316,770 ( 0.06%)          if id & WIDE_PTR != 0 {
+         .                       Ok(u64::from_be_bytes(
+         .                           self.take(8)?.try_into().expect("8 bytes"),
+         .                       ))
+         .                   } else {
+         .                       Ok(u64::from(self.u32()?))
+         .                   }
+         .               }
+         .           
+-- line 195 ----------------------------------------
+-- line 205 ----------------------------------------
+         .                       back_block,
+         .                   })
+         .               }
+         .           
+         .               fn ptr_compressed(&mut self) -> Result<Ptr, Bad> {
+         .                   let raw = self.u8()?;
+         .                   let chr = self.u8()?;
+         .                   let ptr = self.offset(raw)?;
+   217,860 ( 0.04%)          let back_block = if compressed_has_block(raw) {
+         .                       self.u32()?
+         .                   } else {
+         .                       0
+         .                   };
+         .                   Ok(Ptr {
+    97,860 ( 0.02%)              id: raw & !(COMPRESSED | WIDE_PTR | INLINE_ANNOTATION),
+         .                       chr,
+         .                       ptr,
+         .                       back_block,
+         .                   })
+         .               }
+         .           
+         .               fn path_bytes(&mut self) -> Result<&'a [u8], Bad> {
+         .                   let len = self.u8()? as usize;
+    76,690 ( 0.02%)          if len > 32 {
+         .                       return Err(Bad::PathTooLong);
+         .                   }
+         .                   self.take(len)
+         .               }
+         .           }
+         .           
+         .           /// Encoded size of a plain pointer whose first byte is `raw`.
+         .           #[inline]
+         .           fn plain_len(raw: u8) -> usize {
+         .               2 + if raw & WIDE_PTR != 0 { 8 } else { 4 } + 4
+         .           }
+         .           
+         .           #[inline]
+         .           fn compressed_has_block(raw: u8) -> bool {
+ 6,994,695 ( 1.43%)      raw & (BACKPTR | INLINE_ANNOTATION) != 0
+         .           }
+         .           
+         .           /// Encoded size of a compressed pointer whose first byte is `raw`.
+         .           #[inline]
+         .           fn compressed_len(raw: u8) -> usize {
+ 4,663,130 ( 0.95%)      2 + if raw & WIDE_PTR != 0 { 8 } else { 4 } + if compressed_has_block(raw) { 4 } else { 0 }
+         .           }
+         .           
+         .           // ---------------------------------------------------------------------------
+         .           // borrowed views
+         .           
+         .           /// How a branch body stores its slot list.
+         .           #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+         .           enum SlotEncoding {
+-- line 257 ----------------------------------------
+-- line 297 ----------------------------------------
+         .               /// plus that byte.
+         .               Child { child: Option<Ptr>, consumed: usize },
+         .           }
+         .           
+         .           impl<'a> Record<'a> {
+         .               /// Parse the record at the start of `bytes`, which a pointer of type
+         .               /// `expected_id` refers to. A patch is accepted in place of any branch.
+         .               pub fn parse(bytes: &'a [u8], expected_id: u8) -> Result<Record<'a>, Error> {
+   309,780 ( 0.06%)          if bytes.len() < HASH_LEN + 1 {
+         .                       return Err(corrupt!("record truncated ({} bytes)", bytes.len()));
+         .                   }
+         .                   let (hash, body) = bytes.split_at(HASH_LEN);
+   309,780 ( 0.06%)          Self::check_type(body[0], expected_id)?;
+   774,450 ( 0.16%)          Ok(Record { hash, body })
+         .               }
+         .           
+         .               /// Parse a body without its hash (for in-memory blobs and tests).
+         .               pub fn parse_body(body: &'a [u8], expected_id: u8) -> Result<Record<'a>, Error> {
+         .                   if body.is_empty() {
+         .                       return Err(corrupt!("empty node body"));
+         .                   }
+         .                   Self::check_type(body[0], expected_id)?;
+         .                   Ok(Record {
+         .                       hash: &[0u8; HASH_LEN],
+         .                       body,
+         .                   })
+         .               }
+         .           
+         .               fn check_type(raw: u8, expected_id: u8) -> Result<(), Error> {
+   154,890 ( 0.03%)          let tid = raw & 0x0f;
+   309,780 ( 0.06%)          let expected = expected_id & 0x0f;
+   930,620 ( 0.19%)          if tid == id::PATCH && expected != id::LEAF && expected != id::EMPTY {
+         .                       return Ok(());
+         .                   }
+         .                   if tid != expected {
+         .                       return Err(corrupt!("expected node type {expected:#x}, found {raw:#x}"));
+         .                   }
+         .                   Ok(())
+         .               }
+         .           
+         .               pub fn hash(&self) -> TrieHash {
+         .                   TrieHash::from_bytes(self.hash).expect("32 bytes")
+         .               }
+         .           
+         .               #[inline]
+         .               fn type_id(&self) -> u8 {
+   767,470 ( 0.16%)          self.body[0] & 0x0f
+         .               }
+         .           
+         .               pub fn kind(&self) -> Result<RecordKind, Error> {
+   142,920 ( 0.03%)          Ok(match self.type_id() {
+         .                       id::LEAF => RecordKind::Leaf,
+         .                       id::PATCH => RecordKind::Patch,
+         .                       tid => RecordKind::Branch(
+         .                           Kind::from_id(tid).ok_or_else(|| corrupt!("bad node type id {:#x}", self.body[0]))?,
+         .                       ),
+         .                   })
+         .               }
+         .           
+         .               pub fn is_leaf(&self) -> bool {
+         .                   self.type_id() == id::LEAF
+         .               }
+         .           
+         .               pub fn is_patch(&self) -> bool {
+    78,200 ( 0.02%)          self.type_id() == id::PATCH
+         .               }
+         .           
+         .               pub fn leaf(&self) -> Result<LeafView<'a>, Error> {
+         .                   if !self.is_leaf() {
+         .                       return Err(corrupt!("record is not a leaf"));
+         .                   }
+         .                   Ok(LeafView::parse(self.body)?)
+         .               }
+         .           
+    71,460 ( 0.01%)      pub fn branch(&self) -> Result<BranchView<'a>, Error> {
+         .                   let RecordKind::Branch(kind) = self.kind()? else {
+         .                       return Err(corrupt!("record is not a branch"));
+         .                   };
+    71,460 ( 0.01%)          let encoding = if self.body[0] & COMPRESSED != 0 {
+    35,730 ( 0.01%)              if self.body.get(1) == Some(&SPARSE_MARKER) {
+         .                           SlotEncoding::Sparse
+         .                       } else {
+         .                           SlotEncoding::Dense
+         .                       }
+         .                   } else {
+         .                       SlotEncoding::Plain
+         .                   };
+   178,650 ( 0.04%)          Ok(BranchView {
+         .                       kind,
+         .                       encoding,
+         .                       body: self.body,
+         .                   })
+   107,190 ( 0.02%)      }
+         .           
+     1,510 ( 0.00%)      pub fn patch(&self) -> Result<PatchView<'a>, Error> {
+     3,020 ( 0.00%)          if !self.is_patch() {
+         .                       return Err(corrupt!("record is not a patch"));
+         .                   }
+         .                   let mut r = Reader {
+         .                       buf: self.body,
+         .                       pos: 1,
+         .                   };
+         .                   let base = r.ptr_compressed()?;
+     1,510 ( 0.00%)          let n = r.u8()? as usize + 1;
+    12,080 ( 0.00%)          Ok(PatchView {
+         .                       base,
+         .                       n,
+         .                       diff: &self.body[r.pos..],
+         .                   })
+     3,020 ( 0.00%)      }
+         .           
+         .               /// Walk one step of `key` from `depth` through this record (which must
+         .               /// not be a patch): compare the record's path with the key and, for a
+         .               /// branch, select the child for the next key byte, in one pass.
+         .               pub fn descend(&self, key: &[u8], depth: usize) -> Result<Descent<'a>, Error> {
+   152,100 ( 0.03%)          if self.is_leaf() {
+         .                       let leaf = LeafView::parse(self.body)?;
+   286,720 ( 0.06%)              return Ok(if key[depth..].starts_with(leaf.path) {
+         .                           Descent::Leaf {
+         .                               value: leaf,
+         .                               consumed: leaf.path.len(),
+         .                           }
+         .                       } else {
+         .                           Descent::Mismatch
+         .                       });
+         .                   }
+   175,450 ( 0.04%)          let view = self.branch()?;
+ 1,087,790 ( 0.22%)  => crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::Record>::branch (69,817x)
+   210,540 ( 0.04%)          let mut slots = SlotIndex::EMPTY;
+ 1,508,870 ( 0.31%)  => ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms (69,817x)
+    70,180 ( 0.01%)          let trailer = view.skip_scan(&mut slots)?;
+111,085,285 (22.67%)  => crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::skip_scan (69,817x)
+         .                   let rest = &key[depth..];
+    35,090 ( 0.01%)          if !rest.starts_with(trailer.path) {
+         .                       return Ok(Descent::Mismatch);
+         .                   }
+         .                   let Some(&chr) = rest.get(trailer.path.len()) else {
+         .                       return Err(corrupt!("Path reached a non-leaf"));
+         .                   };
+   245,630 ( 0.05%)          let child = view.child_at(&slots, chr)?;
+ 1,781,195 ( 0.36%)  => crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::child_at (69,817x)
+   105,270 ( 0.02%)          Ok(Descent::Child {
+         .                       child,
+    35,090 ( 0.01%)              consumed: trailer.path.len() + 1,
+         .                   })
+         .               }
+         .           
+         .               /// Fully decode the record into an owned value; also returns the body length.
+         .               pub fn decode(&self) -> Result<(Decoded, usize), Error> {
+         .                   match self.kind()? {
+         .                       RecordKind::Leaf => {
+         .                           let l = self.leaf()?;
+-- line 444 ----------------------------------------
+-- line 486 ----------------------------------------
+         .                       value: &leaf.value.0,
+         .                       end: 0,
+         .                   }
+         .               }
+         .           
+         .               pub fn value(&self) -> MARFValue {
+         .                   let mut v = [0u8; 40];
+         .                   v.copy_from_slice(self.value);
+   245,760 ( 0.05%)          MARFValue(v)
+         .               }
+         .           
+         .               pub fn to_leaf(&self) -> Leaf {
+         .                   Leaf {
+         .                       path: Path::from_slice(self.path).expect("<= 32"),
+         .                       value: self.value(),
+         .                   }
+         .               }
+-- line 502 ----------------------------------------
+-- line 523 ----------------------------------------
+         .               pub fn kind(&self) -> Kind {
+         .                   self.kind
+         .               }
+         .           
+         .               /// Read the pointer at `pos`.
+         .               #[inline]
+         .               fn ptr_at(&self, pos: usize) -> Result<Ptr, Bad> {
+         .                   let mut r = Reader {
+    70,180 ( 0.01%)              buf: self.body,
+         .                       pos,
+         .                   };
+    70,180 ( 0.01%)          match self.encoding {
+         .                       SlotEncoding::Plain => r.ptr_plain(),
+         .                       _ => r.ptr_compressed(),
+         .                   }
+         .               }
+         .           
+         .               /// Pass over the slot list reading only each pointer's first two bytes
+         .               /// (type flags and character), recording where every occupied slot's
+         .               /// pointer starts; returns the trailer (path and Node48 indexes).
+   175,450 ( 0.04%)      fn skip_scan(&self, slots: &mut SlotIndex) -> Result<Trailer<'a>, Bad> {
+    70,180 ( 0.01%)          let body = self.body;
+    35,090 ( 0.01%)          let cap = self.kind.capacity();
+         .                   let mut pos = 1usize;
+         .                   let mut record = |pos: usize| -> Result<usize, Bad> {
+         .                       let raw = *body.get(pos).ok_or(Bad::Truncated)?;
+ 4,663,130 ( 0.95%)              let chr = *body.get(pos + 1).ok_or(Bad::Truncated)?;
+ 4,663,130 ( 0.95%)              if raw & 0x0f != id::EMPTY {
+ 4,663,130 ( 0.95%)                  slots.0[chr as usize] = pos as u16;
+         .                       }
+         .                       Ok(if self.encoding == SlotEncoding::Plain {
+         .                           plain_len(raw)
+         .                       } else {
+         .                           compressed_len(raw)
+         .                       })
+         .                   };
+   105,270 ( 0.02%)          match self.encoding {
+         .                       SlotEncoding::Plain | SlotEncoding::Dense => {
+         .                           for _ in 0..cap {
+         .                               pos += record(pos)?;
+         .                           }
+         .                       }
+         .                       SlotEncoding::Sparse => {
+         .                           pos += 1;
+         .                           let bl = sparse_bitmap_len(self.kind);
+    35,090 ( 0.01%)                  let bitmap = body.get(pos..pos + bl).ok_or(Bad::Truncated)?;
+         .                           pos += bl;
+         .                           for i in 0..cap {
+45,275,940 ( 9.24%)                      if bitmap[i / 8] & (1 << (i % 8)) != 0 {
+ 4,663,130 ( 0.95%)                          pos += record(pos)?;
+         .                               }
+         .                           }
+         .                       }
+         .                   }
+         .                   let mut r = Reader { buf: body, pos };
+    70,180 ( 0.01%)          let indexes = if self.kind == Kind::Node48 {
+         .                       Some(r.take(256)?)
+         .                   } else {
+         .                       None
+         .                   };
+         .                   let path = r.path_bytes()?;
+   210,540 ( 0.04%)          Ok(Trailer {
+         .                       indexes,
+         .                       path,
+         .                       end: r.pos,
+         .                   })
+   210,540 ( 0.04%)      }
+         .           
+         .               /// The child at `chr` given a completed [`skip_scan`](Self::skip_scan).
+   140,360 ( 0.03%)      fn child_at(&self, slots: &SlotIndex, chr: u8) -> Result<Option<Ptr>, Error> {
+   140,360 ( 0.03%)          let pos = slots.0[chr as usize];
+    35,090 ( 0.01%)          if pos == 0 {
+         .                       return Ok(None);
+         .                   }
+   140,360 ( 0.03%)          let p = self.ptr_at(pos as usize)?;
+    70,180 ( 0.01%)          if p.chr != chr {
+         .                       return Err(corrupt!(
+         .                           "{:?}: slot at {pos} holds chr {:02x}, expected {chr:02x}",
+         .                           self.kind,
+         .                           p.chr
+         .                       ));
+         .                   }
+   210,540 ( 0.04%)          Ok(Some(p))
+   105,270 ( 0.02%)      }
+         .           
+         .               /// Scan the slot list in slot order, calling `visit(slot, ptr)` for every
+         .               /// occupied slot while it returns `true`. Returns the trailer when the
+         .               /// whole list was scanned, `None` if `visit` stopped early.
+         .               fn scan(&self, mut visit: impl FnMut(usize, Ptr) -> bool) -> Result<Option<Trailer<'a>>, Bad> {
+         .                   let mut r = Reader {
+     1,280 ( 0.00%)              buf: self.body,
+         .                       pos: 1,
+         .                   };
+         .                   let cap = self.kind.capacity();
+     3,200 ( 0.00%)          match self.encoding {
+         .                       SlotEncoding::Plain => {
+         .                           for i in 0..cap {
+         .                               let p = r.ptr_plain()?;
+         .                               if !p.is_empty() && !visit(i, p) {
+         .                                   return Ok(None);
+         .                               }
+         .                           }
+         .                       }
+         .                       SlotEncoding::Dense => {
+         .                           for i in 0..cap {
+         .                               let p = r.ptr_compressed()?;
+    28,160 ( 0.01%)                      if !p.is_empty() && !visit(i, p) {
+   110,876 ( 0.02%)  => crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0} (14,142x)
+         .                                   return Ok(None);
+         .                               }
+         .                           }
+         .                       }
+         .                       SlotEncoding::Sparse => {
+         .                           r.pos += 1;
+         .                           let bitmap = r.take(sparse_bitmap_len(self.kind))?;
+         .                           for i in 0..cap {
+ 1,292,760 ( 0.26%)                      if bitmap[i / 8] & (1 << (i % 8)) != 0 {
+         .                                   let p = r.ptr_compressed()?;
+   551,340 ( 0.11%)                          if !visit(i, p) {
+ 3,086,621 ( 0.63%)  => crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0} (527,382x)
+         .                                       return Ok(None);
+         .                                   }
+         .                               }
+         .                           }
+         .                       }
+         .                   }
+     1,280 ( 0.00%)          let indexes = if self.kind == Kind::Node48 {
+         .                       Some(r.take(256)?)
+         .                   } else {
+         .                       None
+         .                   };
+         .                   let path = r.path_bytes()?;
+         .                   Ok(Some(Trailer {
+         .                       indexes,
+         .                       path,
+-- line 655 ----------------------------------------
+-- line 677 ----------------------------------------
+         .                           visit(i, p);
+         .                           true
+         .                       })?
+         .                       .expect("full scan")
+         .                       .path)
+         .               }
+         .           
+         .               /// Decode into `out`, reusing its allocation; returns the body length.
+     5,120 ( 0.00%)      fn fill_with_end(&self, out: &mut Branch) -> Result<usize, Error> {
+     1,280 ( 0.00%)          out.kind = self.kind;
+         .                   out.children.clear();
+       640 ( 0.00%)          let kind = self.kind;
+     1,280 ( 0.00%)          let mut bad: Option<Error> = None;
+         .                   let trailer = self
+   385,480 ( 0.08%)              .scan(|i, p| {
+   127,640 ( 0.03%)                  if bad.is_some() {
+         .                               return true;
+         .                           }
+   191,460 ( 0.04%)                  match kind {
+         .                               Kind::Node256 => {
+   191,010 ( 0.04%)                          if p.chr as usize != i {
+         .                                       bad = Some(corrupt!("Node256: slot {i} holds chr {:02x}", p.chr));
+         .                                   }
+         .                               }
+         .                               _ => {
+       450 ( 0.00%)                          if i != out.children.len() {
+         .                                       bad = Some(corrupt!(
+         .                                           "{kind:?}: occupied slot {i} after an empty slot"
+         .                                       ));
+         .                                   }
+         .                               }
+         .                           }
+    63,820 ( 0.01%)                  out.children.push(p);
+         .                           true
+   382,920 ( 0.08%)              })?
+         .                       .expect("full scan");
+     1,280 ( 0.00%)          if let Some(e) = bad {
+         .                       return Err(e);
+         .                   }
+     1,280 ( 0.00%)          if let Some(indexes) = trailer.indexes {
+         .                       for (i, p) in out.children.iter().enumerate() {
+         .                           if indexes[p.chr as usize] != i as u8 {
+         .                               return Err(corrupt!("Node48: corrupt index array: invalid index value"));
+         .                           }
+         .                       }
+         .                       for (chr, ix) in indexes.iter().enumerate() {
+         .                           let ix = *ix as i8;
+         .                           if ix >= 0 {
+-- line 724 ----------------------------------------
+-- line 728 ----------------------------------------
+         .                                   .map(|p| p.chr as usize == chr)
+         .                                   .unwrap_or(false);
+         .                               if !ok {
+         .                                   return Err(corrupt!("Node48: corrupt index array: index points to empty node"));
+         .                               }
+         .                           }
+         .                       }
+         .                   }
+     3,200 ( 0.00%)          out.path = Path::from_slice(trailer.path).expect("<= 32");
+     1,920 ( 0.00%)          Ok(trailer.end)
+     5,120 ( 0.00%)      }
+         .           
+         .               /// Decode into `out`, reusing its allocation.
+         .               pub fn fill(&self, out: &mut Branch) -> Result<(), Error> {
+     1,920 ( 0.00%)          self.fill_with_end(out).map(|_| ())
+ 8,419,807 ( 1.72%)  => crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end (7,429x)
+         .               }
+         .           
+         .               /// Decode into an owned branch.
+         .               pub fn to_branch(&self) -> Result<Branch, Error> {
+         .                   let mut out = Branch::new(self.kind, Path::EMPTY);
+         .                   self.fill(&mut out)?;
+         .                   Ok(out)
+         .               }
+-- line 750 ----------------------------------------
+-- line 767 ----------------------------------------
+         .           
+         .               /// Visit the diff pointers in order; returns the number of diff bytes.
+         .               pub fn for_each_diff(&self, mut visit: impl FnMut(Ptr)) -> Result<usize, Error> {
+         .                   let mut r = Reader {
+         .                       buf: self.diff,
+         .                       pos: 0,
+         .                   };
+         .                   for _ in 0..self.n {
+     8,510 ( 0.00%)              visit(r.ptr_compressed()?);
+         .                   }
+         .                   Ok(r.pos)
+         .               }
+         .           
+         .               fn to_patch_with_len(self) -> Result<(Patch, usize), Error> {
+         .                   let mut diff = Vec::with_capacity(self.n);
+         .                   let used = self.for_each_diff(|p| diff.push(p))?;
+         .                   Ok((
+-- line 783 ----------------------------------------
+-- line 802 ----------------------------------------
+         .               }
+         .           }
+         .           
+         .           fn prepare_patch_base(base: &mut Branch, base_block: u32) {
+         .               backptr_children(&mut base.children, base_block);
+         .           }
+         .           
+         .           fn finish_patch(base: &mut Branch, fits: bool, patch_block: u32, cur_block: u32) -> Result<(), Error> {
+     3,020 ( 0.00%)      if !fits {
+         .                   return Err(corrupt!("patch does not fit its base node"));
+         .               }
+         .               backptr_children(&mut base.children, patch_block);
+         .               for c in base.children.iter_mut() {
+   669,300 ( 0.14%)          if c.is_back() && c.back_block == cur_block {
+     5,220 ( 0.00%)              c.id &= !BACKPTR;
+     4,070 ( 0.00%)              c.back_block = 0;
+         .                   }
+         .               }
+     1,510 ( 0.00%)      Ok(())
+         .           }
+         .           
+         .           /// Apply a patch with base pointer `patch_base` and diff pointers `diff`,
+         .           /// read from `patch_block`, onto `base` (the node as resolved so far),
+         .           /// producing the node as seen from `cur_block`.
+         .           ///
+         .           /// Mirrors the original `apply_node*`: before the patch the base's inline
+         .           /// children become back-pointers into the patch's base block; after it the
+         .           /// patch's inline diffs become back-pointers into the patch's own block; and
+         .           /// pointers that ended up pointing into `cur_block` become inline again.
+    16,610 ( 0.00%)  pub fn apply_patch(
+         .               base: &mut Branch,
+         .               patch_base: Ptr,
+         .               diff: &[Ptr],
+         .               patch_block: u32,
+         .               cur_block: u32,
+         .           ) -> Result<(), Error> {
+     3,020 ( 0.00%)      prepare_patch_base(base, patch_base.back_block);
+         .               let mut fits = true;
+         .               for d in diff {
+    34,040 ( 0.01%)          fits &= base.insert(*d);
+ 1,781,236 ( 0.36%)  => /home/user/stacks-core/crates/stacks-marf-next/src/node.rs:<stacks_marf_next::node::Branch>::insert (99,859x)
+         .               }
+     3,020 ( 0.00%)      finish_patch(base, fits, patch_block, cur_block)
+    12,080 ( 0.00%)  }
+         .           
+         .           // ---------------------------------------------------------------------------
+         .           // decoding
+         .           
+         .           /// Decode the node body at the start of `body` (the bytes after the hash).
+         .           /// `expected_id` is the node type the referring pointer claims (back-pointer
+         .           /// bit ignored); a patch is accepted in place of any branch type.
+         .           /// Returns the decoded value and the number of body bytes consumed.
+-- line 852 ----------------------------------------
+
+ 8,671,340 ( 1.77%)  <counts for unidentified lines in crates/stacks-marf-next/src/codec.rs>
+
+--------------------------------------------------------------------------------
+The following files chosen for auto-annotation could not be found:
+--------------------------------------------------------------------------------
+  ./csu/../csu/libc-start.c
+  ./csu/../sysdeps/nptl/libc_start_call_main.h
+  /rust/deps/hashbrown-0.17.1/src/map.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/cmp.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/mod.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/hash/sip.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/intrinsics/mod.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/iter/range.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/num/uint_macros.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/ops/function.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/result.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/core/src/slice/index.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/std/src/hash/random.rs
+  /rustc/88d9e12ae178fab0fb5cc050a94da85685d449ea/library/std/src/sys/backtrace.rs
+
+--------------------------------------------------------------------------------
+Ir                   
+--------------------------------------------------------------------------------
+182,624,510 (37.27%)  events annotated
+

@@ -1,0 +1,14 @@
+==4958== Callgrind, a call-graph generating cache profiler
+==4958== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==4958== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==4958== Command: target/bench-bin/marf-differential-reference-lateprobe ablate baseline std
+==4958== 
+==4958== For interactive control, run 'callgrind_control -h'.
+==4958== brk segment overflow in thread #1: can't grow to 0x48ff000
+==4958== (see section Limitations in user manual)
+==4958== NOTE: further instances of this message will not be shown
+==4958== 
+==4958== Events    : Ir
+==4958== Collected : 351636927
+==4958== 
+==4958== I   refs:      351,636,927

@@ -1,0 +1,14 @@
+==6143== Callgrind, a call-graph generating cache profiler
+==6143== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==6143== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6143== Command: target/bench-bin/marf-differential-upstream ablate rewrite std
+==6143== 
+==6143== For interactive control, run 'callgrind_control -h'.
+==6143== brk segment overflow in thread #1: can't grow to 0x4894000
+==6143== (see section Limitations in user manual)
+==6143== NOTE: further instances of this message will not be shown
+==6143== 
+==6143== Events    : Ir
+==6143== Collected : 1193479949
+==6143== 
+==6143== I   refs:      1,193,479,949

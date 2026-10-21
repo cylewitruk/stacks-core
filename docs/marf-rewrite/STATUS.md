@@ -360,30 +360,34 @@ Reading the numbers:
   (17 KiB) are created per seal; proofs allocate in all implementations
   (owned proof nodes are the wire format).
 
-## Performance evidence (fifth review)
+## Performance evidence (fifth review, corrected in the sixth)
 
-`PERF.md` holds the evidence as rebuilt for the fifth review: a
-requirement matrix, builds from a fresh checkout with manifests and binary
-hashes, isolated measurement cells with individual samples
-(`contrib/marf-differential/results/r5/*.json`), repaired counter
-semantics with sanity tests for both providers, the late-probe control and
-callgrind attribution of the reference's residual cost, and tables
-generated from the published samples by `scripts/tables.py`. Summary:
-the committed-read speedup against the optimized reference is per-visit
-cost in the read path (4x with no patches and no cache involved; 4-5x with
-both caches at equal capacity and 100% hits on patched probes; still
-3.5-4.5x with every failed probe removed from the reference by a
-diagnostic); the reference's cache lookup is a linear scan that costs it
-9% of its read instructions at 64 entries and 44% at about 1,000, which is
-why its capacity cannot be raised freely (the round-4 reading of that
-effect was contaminated by shared handles and is corrected); during block
-construction the reference's result cache brings hot open-block reads to
-parity and the whole block is 1.8x faster in the rewrite; in Clarity
-execution the rewrite is 1.9-4.1x faster than upstream and, against the
-optimized MARF under identical consumer code, 21% faster on read-heavy
-blocks and equal within repetition noise elsewhere. Round-3 and round-4
-logs are published under `contrib/marf-differential/results/r3/`, `r4/`
-and `contrib/clarity-bench/results/r4/` with their defects named.
+`PERF.md` holds the evidence: a requirement and completion matrix, builds
+from a fresh checkout with manifests and binary hashes, isolated measurement
+cells with individual samples (`contrib/marf-differential/results/r5/`,
+`r6/`), counter semantics with identity tests for both providers, a
+probe-order diagnostic for the reference, scoped instruction profiles, and
+tables generated from the published samples by `scripts/tables.py` and
+`scripts/profile-summary.py`. Summary, with the kind of evidence named:
+measured time, the rewrite's committed reads are 3.8x faster than the
+optimized reference with no patched node on the path and 4-5x with both
+patch caches at 4,096 entries and every patched probe a hit; capacity
+contributes (the rewrite's bulk-tip reads go from 6.3 to 1.4 µs between 64
+and 4,096 entries) but is not the sole explanation. Instruction
+attribution: the reference's cache lookup is a linear scan that is 0.5% of
+its read loop with an empty cache, 10% with 64 entries and 65% with about
+1,000, while its traversal, decoding and SQLite-backed block-id access
+execute 2.3x the rewrite's instructions where no cache work exists; the
+time split between a reference cache hit and the rest of its read path is
+not measured. During block construction the reference's result cache
+brings hot open-block reads to parity; other reads are 1.2-4.2x faster by
+phase and the whole block 1.8x. In Clarity execution the rewrite is
+1.9-4.1x faster than upstream and, against the optimized MARF under
+identical consumer code, 21% faster on read-heavy blocks in 5 of 5 paired
+repetitions and within noise on the other workloads, where five
+repetitions do not establish equivalence. Earlier rounds' logs are
+published under `contrib/marf-differential/results/r3/`, `r4/` and
+`contrib/clarity-bench/results/r4/` with their defects named.
 
 ## Consumer integration
 

@@ -1,0 +1,14 @@
+==6178== Callgrind, a call-graph generating cache profiler
+==6178== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==6178== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6178== Command: target/bench-bin/marf-differential-reference-lateprobe ablate baseline std
+==6178== 
+==6178== For interactive control, run 'callgrind_control -h'.
+==6178== brk segment overflow in thread #1: can't grow to 0x48ff000
+==6178== (see section Limitations in user manual)
+==6178== NOTE: further instances of this message will not be shown
+==6178== 
+==6178== Events    : Ir
+==6178== Collected : 1389843754
+==6178== 
+==6178== I   refs:      1,389,843,754
