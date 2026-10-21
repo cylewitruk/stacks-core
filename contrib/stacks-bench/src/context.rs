@@ -307,7 +307,12 @@ impl<'a> BenchContext<'a> {
             burnchain.marf_opts.clone(),
         )?);
 
-        let marf_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true);
+        // Compressed tries: the node's production setting
+        // (`Config::marf_compress` defaults to true) and the configuration the
+        // optimized reference was measured with, so comparisons across MARF
+        // implementations are of the same storage format.
+        let marf_opts =
+            MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true).with_compression(true);
 
         let (chainstate, _) = StacksChainState::open(
             self.env.is_mainnet,
