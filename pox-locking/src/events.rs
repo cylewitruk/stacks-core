@@ -525,7 +525,7 @@ fn create_event_info_data_code(
         }
         "revoke-delegate-stx" => {
             if let Value::Optional(opt) = *response.data.clone() {
-                eprintln!("Response data in revoke-delegate-stx is: {:?}", opt.data);
+                //eprintln!("Response data in revoke-delegate-stx is: {:?}", opt.data);
                 format!(
                     r#"
                     {{

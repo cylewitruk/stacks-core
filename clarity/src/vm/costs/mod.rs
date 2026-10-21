@@ -904,7 +904,7 @@ impl LimitedCostTracker {
                     contract_id: boot_costs_id.clone(),
                     function_name: each.get_name(),
                 },
-                each.clone(),
+                *each,
                 version,
             );
             cost_functions.insert(each, evaluator);
@@ -1257,7 +1257,7 @@ impl CostTracker for LimitedCostTracker {
                     )),
                 )?;
 
-                match cost_function_ref {
+                let cost = match cost_function_ref {
                     ClarityCostFunctionEvaluator::Default(
                         cost_function_ref,
                         clarity_cost_function,
@@ -1266,7 +1266,15 @@ impl CostTracker for LimitedCostTracker {
                     ClarityCostFunctionEvaluator::Clarity(cost_function_ref) => {
                         compute_cost(data, cost_function_ref.clone(), input, data.epoch)
                     }
+                };
+
+                // If the `profiler` feature is enabled, record cost data on the active span.
+                #[cfg(feature = "profiler")]
+                if let Ok(cost) = cost.as_ref() {
+                    crate::profiler::capture_costs(cost, &cost_function, input);
                 }
+
+                cost
             }
         }
     }
