@@ -529,6 +529,12 @@ fn trie_bytes<'s>(
         // rather than the Node256 bound.
         Location::Sqlite { .. } => {
             if scratch.key != Some((block_id, offset)) {
+                #[cfg(feature = "profiler")]
+                stacks_profiler::record_if!(
+                    crate::profiler::capture_marf_disk_reads(),
+                    "MARF_NODE_HASH_DISK_READ",
+                    u64::from(block_id)
+                );
                 let blob = conn.blob_open(
                     DatabaseName::Main,
                     "marf_data",
@@ -739,6 +745,7 @@ fn detect_partial_migration(conn: &Connection) -> Result<bool, Error> {
 
 /// Move every confirmed trie out of `marf_data.data` into the blobs file
 /// (the schema-1 to schema-2 data migration).
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 fn export_trie_blobs<T: MarfTrieId>(conn: &Connection, blobs: &Blobs) -> Result<(), Error> {
     if detect_partial_migration(conn)? {
         return Err(corrupt!(
@@ -800,6 +807,10 @@ pub(crate) fn read_prune_info(conn: &Connection) -> Result<Option<PruneInfo>, Er
     }))
 }
 
+#[cfg_attr(
+    feature = "profiler",
+    stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+)]
 fn external_blobs_length(conn: &Connection) -> Result<u64, Error> {
     let len: Option<i64> = conn
         .query_row(
@@ -1010,6 +1021,10 @@ impl<T: MarfTrieId> Store<T> {
     // -- block identity ----------------------------------------------------
 
     /// Storage id of a block, confirmed or unconfirmed.
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn block_id(&mut self, conn: &Connection, bhh: &T) -> Result<u32, Error> {
         if let Some(id) = self.ids.get(bhh) {
             return Ok(*id);
@@ -1053,6 +1068,10 @@ impl<T: MarfTrieId> Store<T> {
         Ok(self.hashes.get(&id).expect("just inserted"))
     }
 
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn confirmed_block_id(&self, conn: &Connection, bhh: &T) -> Result<Option<u32>, Error> {
         if let Some(id) = self.ids.get(bhh) {
             return Ok(Some(*id));
@@ -1065,6 +1084,10 @@ impl<T: MarfTrieId> Store<T> {
             .optional()?)
     }
 
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn unconfirmed_block_id(&self, conn: &Connection, bhh: &T) -> Result<Option<u32>, Error> {
         Ok(conn
             .prepare_cached(
@@ -1074,12 +1097,20 @@ impl<T: MarfTrieId> Store<T> {
             .optional()?)
     }
 
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn has_block(&self, conn: &Connection, bhh: &T) -> Result<bool, Error> {
         Ok(self.confirmed_block_id(conn, bhh)?.is_some()
             || self.unconfirmed_block_id(conn, bhh)?.is_some())
     }
 
     /// Highest confirmed storage id (0 when empty).
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn num_blocks(&self, conn: &Connection) -> Result<u32, Error> {
         Ok(conn
             .prepare_cached("SELECT IFNULL(MAX(block_id), 0) FROM marf_data WHERE unconfirmed = 0")?
@@ -1096,6 +1127,10 @@ impl<T: MarfTrieId> Store<T> {
 
     // -- node reads ----------------------------------------------------------
 
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     fn location(&mut self, conn: &Connection, block_id: u32) -> Result<Location, Error> {
         location_in(&mut self.locations, self.blobs.is_some(), conn, block_id)
     }
@@ -1108,6 +1143,7 @@ impl<T: MarfTrieId> Store<T> {
     }
 
     /// Read the whole trie blob of `block_id`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn read_trie_blob(&mut self, conn: &Connection, block_id: u32) -> Result<Vec<u8>, Error> {
         match self.location(conn, block_id)? {
             Location::External { offset, len } => {
@@ -1123,6 +1159,10 @@ impl<T: MarfTrieId> Store<T> {
     }
 
     /// The hash stored in front of the node at `offset`.
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn read_hash(
         &mut self,
         conn: &Connection,
@@ -1155,6 +1195,7 @@ impl<T: MarfTrieId> Store<T> {
     }
 
     /// Insert an empty placeholder row for `bhh`; returns its storage id.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_placeholder(&mut self, conn: &Connection, bhh: &T) -> Result<u32, Error> {
         let id = conn
             .prepare_cached(
@@ -1172,6 +1213,7 @@ impl<T: MarfTrieId> Store<T> {
     /// produces the blob at file offset `base`, in as many positioned writes
     /// as it likes, and returns the blob's length; the file is synced once
     /// afterwards. Returns `(base, length)`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn write_shared_blob_with(
         &mut self,
         conn: &Connection,
@@ -1251,6 +1293,10 @@ impl<T: MarfTrieId> Store<T> {
     /// its base (at most [`MAX_PATCH_DEPTH`] hops) and applied into the
     /// store's scratch branch. Nothing is allocated once the scratch buffers
     /// have grown to their working size.
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     pub fn node(&mut self, conn: &Connection, block_id: u32, ptr: &Ptr) -> Result<Resolved<'_>, Error> {
         resolve_in(
             &mut self.blobs,
@@ -1298,6 +1344,7 @@ impl<T: MarfTrieId> Store<T> {
 
     /// Read the node at `ptr` in `block_id` as an owned value, resolving
     /// patch chains. Returns the node, its stored hash, and the patch depth.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn read_node(
         &mut self,
         conn: &Connection,
@@ -1318,6 +1365,7 @@ impl<T: MarfTrieId> Store<T> {
     // -- writes ----------------------------------------------------------------
 
     /// Persist a confirmed trie under `bhh`; returns its storage id.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn write_confirmed(
         &mut self,
         conn: &Connection,
@@ -1348,6 +1396,7 @@ impl<T: MarfTrieId> Store<T> {
     }
 
     /// Persist (or overwrite) an unconfirmed trie, always inside SQLite.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn write_unconfirmed(
         &mut self,
         conn: &Connection,
@@ -1380,6 +1429,7 @@ impl<T: MarfTrieId> Store<T> {
     }
 
     /// Persist a mined (never-chained) trie.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn write_mined(&mut self, conn: &Connection, bhh: &T, blob: &[u8]) -> Result<(), Error> {
         self.retire_direct_hash_sidecar(conn)?;
         let existing: Option<u32> = conn
@@ -1402,6 +1452,7 @@ impl<T: MarfTrieId> Store<T> {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn drop_unconfirmed(&mut self, conn: &Connection, bhh: &T) -> Result<(), Error> {
         if let Some(id) = self.unconfirmed_block_id(conn, bhh)? {
             self.hashes.remove(&id);
@@ -1416,6 +1467,7 @@ impl<T: MarfTrieId> Store<T> {
 
     /// Take the extension lock for `bhh`; `false` if it is already taken (or,
     /// for confirmed tries, already stored).
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn lock(&self, conn: &Connection, bhh: &T, unconfirmed: bool) -> Result<bool, Error> {
         if !unconfirmed {
             let stored = conn
@@ -1448,6 +1500,7 @@ impl<T: MarfTrieId> Store<T> {
         Ok(true)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn unlock(&self, conn: &Connection, bhh: &T) -> Result<(), Error> {
         conn.execute(
             "DELETE FROM block_extension_locks WHERE block_hash = ?1",
@@ -1549,6 +1602,7 @@ impl<T: MarfTrieId> Store<T> {
 }
 
 /// Remove all extension locks (recovery after a crash).
+#[cfg_attr(feature = "profiler", stacks_profiler::profile)]
 pub fn clear_locks(db_path: &Path) -> Result<(), Error> {
     let conn = sqlite_open(db_path, OpenFlags::SQLITE_OPEN_READ_WRITE, false)?;
     conn.execute("DELETE FROM block_extension_locks", NO_PARAMS)?;

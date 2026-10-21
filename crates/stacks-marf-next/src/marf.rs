@@ -344,6 +344,7 @@ pub trait MarfConnection<T: MarfTrieId> {
     fn sqlite_conn(&self) -> &Connection;
 
     /// Resolve a key from the MARF to a MARFValue with respect to the given block height.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn get(&mut self, block_hash: &T, key: &str) -> Result<Option<MARFValue>, Error> {
         self.with_conn(|c| c.get_by_key(block_hash, key))
     }
@@ -489,6 +490,10 @@ impl<'a, T: MarfTrieId> View<'a, T> {
         Ok(())
     }
 
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     fn site(&mut self, bhh: &T) -> Result<Site, Error> {
         if let Some(b) = self.inner.building.as_ref() {
             if b.trie.block == *bhh {
@@ -507,6 +512,10 @@ impl<'a, T: MarfTrieId> View<'a, T> {
 
     /// [`View::read`] that also reports the patch-chain depth of the record
     /// (0 for a plain record or an arena node).
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     fn read_with_depth(&mut self, site: Site, ptr: &Ptr) -> Result<(Site, NodeView<'_>, u32), Error> {
         count!(node_visits);
         if ptr.is_back() {
@@ -583,6 +592,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
 
     /// Walk `path` from the root of `tip`'s trie. `Err(NotFoundError)` if the
     /// block is unknown; `Ok(None)` if the key is absent.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn lookup(&mut self, tip: &T, path: &TrieHash) -> Result<Option<MARFValue>, Error> {
         self.inner
             .store
@@ -614,7 +624,14 @@ impl<'a, T: MarfTrieId> View<'a, T> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_by_path(&mut self, tip: &T, path: &TrieHash) -> Result<Option<MARFValue>, Error> {
+        #[cfg(feature = "profiler")]
+        stacks_profiler::record_if!(
+            crate::profiler::capture_marf_hash_lookups(),
+            "BH",
+            tip.as_bytes()
+        );
         match self.lookup(tip, path) {
             Ok(value) => Ok(value),
             Err(Error::NotFoundError) => Ok(None),
@@ -622,7 +639,10 @@ impl<'a, T: MarfTrieId> View<'a, T> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_by_key(&mut self, tip: &T, key: &str) -> Result<Option<MARFValue>, Error> {
+        #[cfg(feature = "profiler")]
+        stacks_profiler::record_if!(crate::profiler::capture_marf_keys(), "KEY", key);
         self.get_by_path(tip, &TrieHash::from_key(key))
     }
 
@@ -667,6 +687,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_block_at_height(&mut self, height: u32, tip: &T) -> Result<Option<T>, Error> {
         let Some(tip_height) = self.get_block_height(tip, tip)? else {
             return Ok(None);
@@ -709,6 +730,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
 
     /// MARF root hashes of the ancestors at heights `h - 2^i` of a trie at
     /// `tip` whose height is `height`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn ancestor_hashes(&mut self, tip: &T, height: u32) -> Result<Vec<TrieHash>, Error> {
         let mut out = Vec::with_capacity(33);
         let mut i = 0;
@@ -835,6 +857,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
         self.ancestor_hashes(tip, height)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_with_proof(
         &mut self,
         block_hash: &T,
@@ -850,6 +873,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
         Ok(Some((value, proof)))
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_with_proof_from_hash(
         &mut self,
         block_hash: &T,
@@ -922,6 +946,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     }
 
     /// Begin building `child` on top of `parent`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn begin(&mut self, parent: &T, child: &T) -> Result<(), Error> {
         self.require_writable()?;
         if self.inner.building.is_some() {
@@ -951,6 +976,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     }
 
     /// Begin (or resume) the unconfirmed trie on top of the confirmed `parent`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn begin_unconfirmed(&mut self, parent: &T) -> Result<T, Error> {
         self.require_writable()?;
         if self.inner.building.is_some() {
@@ -1019,6 +1045,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     }
 
     /// Insert key/value pairs into the trie being built.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_batch(&mut self, keys: &[String], values: Vec<MARFValue>) -> Result<(), Error> {
         self.require_writable()?;
         assert_eq!(keys.len(), values.len());
@@ -1037,6 +1064,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     }
 
     /// Insert a single already-hashed path.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_raw(&mut self, path: TrieHash, value: MARFValue) -> Result<(), Error> {
         self.require_writable()?;
         let inner = &mut *self.inner;
@@ -1050,6 +1078,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     }
 
     /// Compute all hashes of the trie being built and return its MARF root hash.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn seal(&mut self) -> Result<TrieHash, Error> {
         self.require_writable()?;
         let (tip, height, sealed) = {
@@ -1122,6 +1151,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     }
 
     /// Seal, serialize and store the trie being built.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     fn flush(&mut self, target: FlushTarget<'_, T>) -> Result<(), Error> {
         self.require_writable()?;
         if self.inner.building.is_none() {
@@ -1171,6 +1201,7 @@ impl<'a, T: MarfTrieId> View<'a, T> {
     }
 
     /// Abandon and delete the unconfirmed trie being built.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn drop_unconfirmed_trie(&mut self) -> Result<(), Error> {
         if self.inner.store.readonly || !self.inner.store.unconfirmed {
             return Ok(());
@@ -1241,11 +1272,13 @@ impl<'a, T: MarfTrieId> MarfTransaction<'a, T> {
     }
 
     /// Begin writing the next trie in the MARF. Fails if the block already exists.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn begin(&mut self, chain_tip: &T, next_chain_tip: &T) -> Result<(), Error> {
         self.view().begin(chain_tip, next_chain_tip)
     }
 
     /// Begin extending the MARF to an unconfirmed trie built on `chain_tip`.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn begin_unconfirmed(&mut self, chain_tip: &T) -> Result<T, Error> {
         self.view().begin_unconfirmed(chain_tip)
     }
@@ -1260,15 +1293,18 @@ impl<'a, T: MarfTrieId> MarfTransaction<'a, T> {
             .set_block_heights(block_hash, next_block_hash, height)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_batch(&mut self, keys: &[String], values: Vec<MARFValue>) -> Result<(), Error> {
         self.view().insert_batch(keys, values)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert(&mut self, key: &str, value: MARFValue) -> Result<(), Error> {
         self.view().insert_batch(&[key.to_string()], vec![value])
     }
 
     /// Seal the trie being built and return the MARF root hash.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn seal(&mut self) -> Result<TrieHash, Error> {
         self.view().seal()
     }
@@ -1293,6 +1329,7 @@ impl<'a, T: MarfTrieId> MarfTransaction<'a, T> {
     }
 
     /// Persist the trie being built under the block it was begun with and commit.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit(mut self) -> Result<(), Error> {
         if self.inner.store.readonly {
             return Err(Error::ReadOnlyError);
@@ -1309,6 +1346,7 @@ impl<'a, T: MarfTrieId> MarfTransaction<'a, T> {
     }
 
     /// Persist the trie being built under `real_bhh` and commit.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_to(mut self, real_bhh: &T) -> Result<(), Error> {
         if self.inner.store.readonly {
             return Err(Error::ReadOnlyError);
@@ -1324,6 +1362,7 @@ impl<'a, T: MarfTrieId> MarfTransaction<'a, T> {
     }
 
     /// Persist the trie being built into the mined-blocks table and commit.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_mined(mut self, bhh: &T) -> Result<(), Error> {
         if self.inner.store.readonly {
             return Err(Error::ReadOnlyError);
@@ -1469,6 +1508,7 @@ impl<T: MarfTrieId> MARF<T> {
     }
 
     /// Insert a batch of key/value pairs into the trie being built.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_batch(&mut self, keys: &[String], values: Vec<MARFValue>) -> Result<(), Error> {
         let mut tx = self.begin_tx()?;
         tx.insert_batch(keys, values)?;
@@ -1476,10 +1516,12 @@ impl<T: MarfTrieId> MARF<T> {
         Ok(())
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert(&mut self, key: &str, value: MARFValue) -> Result<(), Error> {
         self.insert_batch(&[key.to_string()], vec![value])
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert_raw(&mut self, path: TrieHash, value: MARFValue) -> Result<(), Error> {
         let mut tx = self.begin_tx()?;
         tx.view().insert_raw(path, value)?;
@@ -1513,18 +1555,22 @@ impl<T: MarfTrieId> MARF<T> {
         }
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit(&mut self) -> Result<(), Error> {
         self.begin_tx()?.commit()
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_mined(&mut self, bhh: &T) -> Result<(), Error> {
         self.begin_tx()?.commit_mined(bhh)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn commit_to(&mut self, real_bhh: &T) -> Result<(), Error> {
         self.begin_tx()?.commit_to(real_bhh)
     }
 
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn seal(&mut self) -> Result<TrieHash, Error> {
         let mut tx = self.begin_tx()?;
         let h = tx.seal()?;
@@ -1535,6 +1581,7 @@ impl<T: MarfTrieId> MARF<T> {
     /// Test helper: begin a block in its own committed SQLite transaction,
     /// leaving the trie open in memory for `insert`/`commit` on this handle.
     #[cfg(any(test, feature = "testing"))]
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn begin(&mut self, chain_tip: &T, next_chain_tip: &T) -> Result<(), Error> {
         let mut tx = self.begin_tx()?;
         tx.begin(chain_tip, next_chain_tip)?;
@@ -1543,6 +1590,7 @@ impl<T: MarfTrieId> MARF<T> {
     }
 
     #[cfg(any(test, feature = "testing"))]
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn begin_unconfirmed(&mut self, chain_tip: &T) -> Result<T, Error> {
         let mut tx = self.begin_tx()?;
         let tip = tx.begin_unconfirmed(chain_tip)?;

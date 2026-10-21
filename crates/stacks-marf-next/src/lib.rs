@@ -71,6 +71,8 @@ pub mod hash;
 pub mod marf;
 pub mod node;
 pub mod proofs;
+#[cfg(feature = "profiler")]
+pub mod profiler;
 pub mod pruning;
 pub mod stats;
 pub mod storage;

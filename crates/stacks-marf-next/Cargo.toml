@@ -16,6 +16,7 @@ serde = { workspace = true }
 serde_derive = { workspace = true }
 slog = { workspace = true }
 stacks-common = { path = "../../stacks-common", default-features = false, features = ["rusqlite"] }
+stacks-profiler = { workspace = true, optional = true }
 
 [target.'cfg(all(any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64"), not(any(target_os="windows"))))'.dependencies]
 sha2 = { version = "0.10", features = ["asm"] }
@@ -39,3 +40,8 @@ profile-sqlite = ["stacks-common/profile-sqlite"]
 # Per-thread operation counters (`stats`) for benchmark experiments; every
 # hook compiles to nothing without it.
 counters = []
+# `stacks-profiler` spans and records on the same logical operations the
+# original MARF instrumented (reads, walks, inserts, seal, flush/commit,
+# block-id and record I/O), with the same sampling; `profiler::flags` holds
+# the capture toggles stackslib's `profiler` module re-exports.
+profiler = ["stacks-profiler"]

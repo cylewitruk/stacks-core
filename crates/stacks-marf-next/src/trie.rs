@@ -140,6 +140,7 @@ impl<T: MarfTrieId> Trie<T> {
 
     /// Insert `value` at `key`, copying ancestor nodes forward as needed.
     /// `fetch` reads the node a back-pointer refers to.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn insert(
         &mut self,
         key: &[u8; 32],
@@ -304,6 +305,7 @@ impl<T: MarfTrieId> Trie<T> {
     /// Compute every node hash post-order and return the root node's hash
     /// (before the ancestor skip-list is mixed in). `block_id` maps a
     /// back-pointer's block id to that block's 32-byte identifier.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn seal(
         &mut self,
         mut block_id: impl FnMut(u32) -> Result<[u8; 32], Error>,
@@ -314,6 +316,10 @@ impl<T: MarfTrieId> Trie<T> {
         Ok(root)
     }
 
+    #[cfg_attr(
+        feature = "profiler",
+        stacks_profiler::profile(sample_rate = 8, unsampled = "count_only")
+    )]
     fn hash_subtree(
         &mut self,
         idx: u32,
@@ -363,6 +369,7 @@ impl<T: MarfTrieId> Trie<T> {
     ///
     /// With `compress`, `patcher` may replace a copied-forward node by a
     /// delta against its origin.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn serialize(
         &self,
         compress: bool,
@@ -496,6 +503,7 @@ impl<T: MarfTrieId> Trie<T> {
     /// Reload a trie from a blob written by [`Trie::serialize`] (or by the
     /// original implementation) so it can be extended further. Used for
     /// unconfirmed tries, which are never compressed.
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn load(bytes: &[u8], block: T) -> Result<Trie<T>, Error> {
         if bytes.len() < HEADER_LEN + HASH_LEN {
             return Err(corrupt!("trie blob too short ({} bytes)", bytes.len()));
