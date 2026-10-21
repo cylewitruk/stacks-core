@@ -88,7 +88,7 @@ developer-mode = ["clarity/developer-mode"]
 monitoring_prom = ["prometheus"]
 slog_json = ["stacks-common/slog_json", "clarity/slog_json", "pox-locking/slog_json"]
 testing = ["chrono", "stacks-common/testing", "stacks-marf/testing", "clarity/testing"]
-profiler = ["stacks-profiler", "stacks-common/profiler", "clarity/profiler", "perf-event2"]
+profiler = ["stacks-profiler", "stacks-common/profiler", "stacks-marf/profiler", "clarity/profiler", "perf-event2"]
 
 [target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
 perf-event2 = { version = "0.7.4", optional = true }

@@ -56,6 +56,8 @@ pub mod cache;
 pub mod file;
 pub mod marf;
 pub mod node;
+#[cfg(feature = "profiler")]
+pub mod profiler;
 pub mod proofs;
 pub mod squash;
 pub mod storage;

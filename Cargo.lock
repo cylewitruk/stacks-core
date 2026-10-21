@@ -4937,6 +4937,7 @@ dependencies = [
  "sha2 0.10.9",
  "slog",
  "stacks-common 4.0.5",
+ "stacks-profiler",
  "stdext",
  "tempfile",
 ]
