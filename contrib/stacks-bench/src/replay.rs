@@ -5,7 +5,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use blockstack_lib::burnchains::Txid;
 use blockstack_lib::chainstate::burn::db::sortdb::{SortitionDB, get_ancestor_sort_id};
 use blockstack_lib::chainstate::nakamoto::miner::{MinerTenureInfoCause, NakamotoBlockBuilder};
-use blockstack_lib::chainstate::nakamoto::{NakamotoChainState, TxToProcess};
+use blockstack_lib::chainstate::nakamoto::NakamotoChainState;
+use blockstack_lib::chainstate::stacks::db::transactions::TxToProcess;
 use blockstack_lib::chainstate::stacks::db::StacksChainState;
 use blockstack_lib::chainstate::stacks::miner::{
     BlockBuilder, BlockLimitFunction, TransactionResourceBudgets, TransactionResult,

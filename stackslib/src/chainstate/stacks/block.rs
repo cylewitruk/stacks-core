@@ -448,7 +448,7 @@ impl StacksBlock {
             }
             txids.insert(txid, i);
         }
-        return true;
+        true
     }
 
     /// verify all txs are same mainnet/testnet
@@ -462,7 +462,7 @@ impl StacksBlock {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     /// verify all txs are same chain ID
@@ -478,7 +478,7 @@ impl StacksBlock {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     /// verify anchor modes
@@ -502,7 +502,7 @@ impl StacksBlock {
                 (_, _) => {}
             }
         }
-        return true;
+        true
     }
 
     /// verify that a coinbase is present and is on-chain only, or is absent
@@ -536,19 +536,15 @@ impl StacksBlock {
         }
 
         match (check_present, found_coinbase) {
-            (true, true) => {
-                return true;
-            }
-            (false, false) => {
-                return true;
-            }
+            (true, true) => true,
+            (false, false) => true,
             (true, false) => {
                 error!("Expected coinbase, but not found");
-                return false;
+                false
             }
             (false, true) => {
                 error!("Found coinbase, but it was unexpected");
-                return false;
+                false
             }
         }
     }
@@ -563,7 +559,7 @@ impl StacksBlock {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     /// Verify that one transaction is supported in the given epoch, as indicated by `epoch_id`
@@ -574,6 +570,14 @@ impl StacksBlock {
         if let Err(reason) = stacks_transactions::check_post_conditions_supported_in_epoch(
             &tx.post_conditions,
             &tx.post_condition_mode,
+            epoch_id,
+        ) {
+            error!("{reason}"; "txid" => %tx.txid(), "epoch_id" => %epoch_id);
+            return false;
+        }
+        if let Err(reason) = stacks_transactions::check_contract_names_supported_in_epoch(
+            &tx.payload,
+            &tx.post_conditions,
             epoch_id,
         ) {
             error!("{reason}"; "txid" => %tx.txid(), "epoch_id" => %epoch_id);
@@ -619,7 +623,7 @@ impl StacksBlock {
             error!("Authentication mode not supported in Epoch {epoch_id}");
             return false;
         }
-        return true;
+        true
     }
 
     /// static sanity checks on transactions.
@@ -647,7 +651,7 @@ impl StacksBlock {
         if !StacksBlock::validate_transactions_static_epoch(&self.txs, epoch_id) {
             return false;
         }
-        return true;
+        true
     }
 
     /// Does this block have a microblock parent?
@@ -782,7 +786,7 @@ impl StacksMicroblock {
         if !StacksBlock::validate_coinbase(&self.txs, false) {
             return false;
         }
-        return true;
+        true
     }
 }
 
@@ -1313,8 +1317,8 @@ mod test {
             let txid_vecs: Vec<_> = txs.iter().map(|tx| tx.txid().as_bytes().to_vec()).collect();
 
             let merkle_tree = MerkleTree::<Sha512Trunc256Sum>::new(&txid_vecs);
-            let tx_merkle_root = merkle_tree.root();
-            tx_merkle_root
+
+            merkle_tree.root()
         };
 
         let mut block_header_no_coinbase = header.clone();
@@ -1437,8 +1441,8 @@ mod test {
             let txid_vecs: Vec<_> = txs.iter().map(|tx| tx.txid().as_bytes().to_vec()).collect();
 
             let merkle_tree = MerkleTree::<Sha512Trunc256Sum>::new(&txid_vecs);
-            let tx_merkle_root = merkle_tree.root();
-            tx_merkle_root
+
+            merkle_tree.root()
         };
 
         let mut block_header_coinbase = header.clone();
@@ -1527,8 +1531,8 @@ mod test {
             let txid_vecs: Vec<_> = txs.iter().map(|tx| tx.txid().as_bytes().to_vec()).collect();
 
             let merkle_tree = MerkleTree::<Sha512Trunc256Sum>::new(&txid_vecs);
-            let tx_merkle_root = merkle_tree.root();
-            tx_merkle_root
+
+            merkle_tree.root()
         };
         let mut block_header_dup_tx = header.clone();
         block_header_dup_tx.tx_merkle_root = get_tx_root(txs);

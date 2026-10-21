@@ -23,10 +23,10 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use stacks_common::types::chainstate::{BlockHeaderHash, ConsensusHash, StacksBlockId};
 use stacks_common::types::sqlite::NO_PARAMS;
 use stacks_common::util::get_epoch_time_secs;
+use stacks_marf::marf::MarfConnection;
 
 use crate::chainstate::nakamoto::{NakamotoBlock, NakamotoChainState};
 use crate::chainstate::stacks::db::StacksChainState;
-use crate::chainstate::stacks::index::marf::MarfConnection;
 use crate::chainstate::stacks::Error as ChainstateError;
 use crate::stacks_common::codec::StacksMessageCodec;
 use crate::util_lib::db::{
@@ -537,7 +537,7 @@ impl NakamotoStagingBlocksTx<'_> {
         let update_dependents = "UPDATE nakamoto_staging_blocks SET orphaned = 1
                                  WHERE parent_block_id = ?";
 
-        self.execute(update_dependents, &[&block])?;
+        self.execute(update_dependents, [&block])?;
 
         let clear_staged_block =
             "UPDATE nakamoto_staging_blocks SET processed = 1, processed_time = ?2, orphaned = 1
@@ -558,7 +558,7 @@ impl NakamotoStagingBlocksTx<'_> {
     ) -> Result<(), ChainstateError> {
         let update_dependents = "UPDATE nakamoto_staging_blocks SET burn_attachable = 1
                                  WHERE consensus_hash = ?";
-        self.execute(update_dependents, &[consensus_hash])?;
+        self.execute(update_dependents, [consensus_hash])?;
 
         Ok(())
     }
@@ -891,7 +891,7 @@ impl StacksChainState {
         path: &str,
         readwrite: bool,
     ) -> Result<NakamotoStagingBlocksConn, ChainstateError> {
-        let exists = fs::metadata(&path).is_ok();
+        let exists = fs::metadata(path).is_ok();
         let flags = if !exists {
             // try to instantiate
             if readwrite {

@@ -20,6 +20,7 @@ path = "src/main.rs"
 # Local dependencies
 clarity = { path = "../../clarity", features = ["rusqlite"] }
 stackslib = { path = "../../stackslib", features = ["profiler"] }
+stacks-marf = { path = "../../stacks-marf" }
 stacks-common = { path = "../../stacks-common" }
 stx_genesis = { path = "../../stx-genesis", package = "stx-genesis" }
 stacks-profiler.workspace = true
