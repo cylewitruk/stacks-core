@@ -7,6 +7,7 @@ pub mod remove;
 pub mod rerun;
 pub mod run;
 pub mod show;
+pub mod verify;
 
 #[derive(clap::Subcommand, Debug)]
 pub enum BenchCommand {
@@ -21,6 +22,9 @@ pub enum BenchCommand {
     List(list::ListArgs),
     /// Show details and profiler data for a benchmark run.
     Show(show::ShowArgs),
+    /// Compare two runs' correctness records (state roots, receipt digests);
+    /// fails on any mismatch.
+    Verify(verify::VerifyArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -40,6 +44,7 @@ impl ExecCommand for BenchArgs {
             BenchCommand::Remove(args) => Ok(boxed(args.exec(ctx).await?)),
             BenchCommand::List(args) => Ok(boxed(args.exec(ctx).await?)),
             BenchCommand::Show(args) => Ok(boxed(args.exec(ctx).await?)),
+            BenchCommand::Verify(args) => Ok(boxed(args.exec(ctx).await?)),
         }
     }
 }

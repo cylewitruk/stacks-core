@@ -8,12 +8,14 @@ use blockstack_lib::chainstate::nakamoto::miner::{MinerTenureInfoCause, Nakamoto
 use blockstack_lib::chainstate::nakamoto::NakamotoChainState;
 use blockstack_lib::chainstate::stacks::db::transactions::TxToProcess;
 use blockstack_lib::chainstate::stacks::db::StacksChainState;
+use blockstack_lib::chainstate::stacks::events::StacksTransactionReceipt;
 use blockstack_lib::chainstate::stacks::miner::{
     BlockBuilder, BlockLimitFunction, TransactionResourceBudgets, TransactionResult,
 };
 use blockstack_lib::config::DEFAULT_MAX_TENURE_BYTES;
 use clarity::vm::costs::ExecutionCost;
 use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
+use stacks_common::util::hash::Sha512Trunc256Sum;
 
 use crate::context::BenchContext;
 use crate::metrics::{BlockMetrics, TransactionMetrics};
@@ -53,6 +55,66 @@ pub struct SegmentReplayInfo {
     pub tx_range: Range<usize>,
     /// Whether this segment is sampled or not.
     pub sampled: bool,
+    /// The repetition of the schedule entry this segment ran under.
+    pub repetition: u32,
+    /// Whether metrics were taken for this segment (false for warmup entries
+    /// and for unmeasured segments of a measured entry).
+    pub measured: bool,
+    /// The state root the segment's synthetic block committed. Equal to the
+    /// canonical header root only for a single full-block segment at
+    /// repetition 0; otherwise comparable between runs of the same schedule.
+    pub state_index_root: TrieHash,
+    /// Digest of the segment's transaction receipts ([`receipts_digest`]).
+    pub receipts_digest: Sha512Trunc256Sum,
+    /// `Some(matched)` when the segment was checked against the canonical
+    /// header root (single full-block segment at repetition 0); `None` when
+    /// that comparison is not defined for the segment.
+    pub canonical_root_match: Option<bool>,
+}
+
+/// Digest of a segment's transaction receipts, for cross-run comparison. For
+/// every receipt in order: txid, tx index, the serialized result value, the
+/// post-condition flag, STX burned, the five execution-cost dimensions, the
+/// problematic-skip marker, the VM error text and the `Debug` rendering of
+/// each event. Contract analyses and microblock headers are left out.
+/// Comparable between runs built from the same `stackslib` source.
+pub fn receipts_digest(receipts: &[StacksTransactionReceipt]) -> Result<Sha512Trunc256Sum> {
+    let mut bytes = Vec::new();
+    for r in receipts {
+        bytes.extend_from_slice(r.transaction.txid().as_bytes());
+        bytes.extend_from_slice(&r.tx_index.to_le_bytes());
+        let result = r
+            .result
+            .serialize_to_vec()
+            .map_err(|e| anyhow!("failed to serialize a receipt result: {e:?}"))?;
+        bytes.extend_from_slice(&(result.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&result);
+        bytes.push(u8::from(r.post_condition_aborted));
+        bytes.extend_from_slice(&r.stx_burned.to_le_bytes());
+        for v in [
+            r.execution_cost.write_length,
+            r.execution_cost.write_count,
+            r.execution_cost.read_length,
+            r.execution_cost.read_count,
+            r.execution_cost.runtime,
+        ] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        match r.problematic_skipped {
+            Some(category) => bytes.extend_from_slice(&[1, category]),
+            None => bytes.extend_from_slice(&[0, 0]),
+        }
+        let vm_error = format!("{:?}", r.vm_error);
+        bytes.extend_from_slice(&(vm_error.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(vm_error.as_bytes());
+        bytes.extend_from_slice(&(r.events.len() as u64).to_le_bytes());
+        for event in &r.events {
+            let rendered = format!("{event:?}");
+            bytes.extend_from_slice(&(rendered.len() as u64).to_le_bytes());
+            bytes.extend_from_slice(rendered.as_bytes());
+        }
+    }
+    Ok(Sha512Trunc256Sum::from_data(&bytes))
 }
 
 #[derive(Clone, Debug)]
@@ -330,7 +392,6 @@ where
     let mut cur_parent_info = parent_info.clone();
 
     let mut out: Vec<BlockMetrics> = Vec::new();
-    let mut last_state_index_root = None;
 
     for (seg_ix, seg) in segments.iter().enumerate() {
         if seg.range.is_empty() && !seg.sampled {
@@ -421,7 +482,34 @@ where
 
         drop(_segment_root);
 
-        last_state_index_root = Some(exec_result.state_index_root);
+        // The canonical header root is reproduced only by a single segment
+        // covering every transaction of the block at repetition 0: multi-
+        // segment replays commit intermediate state under synthetic block
+        // IDs, and `repetition > 0` shifts the timestamp (see
+        // `execute_segment`), both of which change the MARF entries. Every
+        // other segment's root and receipts digest are still recorded (in
+        // `SegmentReplayInfo`) for comparison between runs of the same
+        // schedule.
+        let canonical = repetition == 0 && segments.len() == 1 && seg.range == (0..block.tx_count());
+        let canonical_root_match =
+            canonical.then(|| exec_result.state_index_root == block.header.state_index_root);
+        if canonical_root_match == Some(false) {
+            let tenure_tx = block.get_tenure_tx_payload();
+            let tenure_cause = tenure_tx.as_ref().map(|t| format!("{:?}", t.cause));
+            bail!(
+                "State root mismatch for block {origin_id} \
+                 (height={}, consensus_hash={}, parent={}, \
+                 tenure={}, txs={}): \
+                 expected {}, got {}",
+                block.header.chain_length,
+                block.header.consensus_hash,
+                block.header.parent_block_id,
+                tenure_cause.as_deref().unwrap_or("none"),
+                block.tx_count(),
+                block.header.state_index_root,
+                exec_result.state_index_root,
+            );
+        }
 
         // Grab all profiler roots for this segment.
         let segment_profiler_roots = if measure {
@@ -457,6 +545,11 @@ where
             seg_ix,
             tx_range: seg.range.clone(),
             sampled: seg.sampled,
+            repetition,
+            measured: measure,
+            state_index_root: exec_result.state_index_root,
+            receipts_digest: exec_result.receipts_digest,
+            canonical_root_match,
         };
 
         if measure {
@@ -493,36 +586,6 @@ where
         }
     }
 
-    // Validate state root only for canonical-equivalent replays — i.e. a
-    // single segment covering every transaction in the block, executed at
-    // `repetition == 0`. Two cases break the comparison even though Clarity
-    // execution is bit-identical:
-    //   * Multi-segment replays commit intermediate state under synthetic
-    //     block IDs, altering the MARF trie structure.
-    //   * `repetition > 0` synthesizes a shifted timestamp (see
-    //     `execute_segment`) to avoid header-table collisions, which changes
-    //     the block hash and therefore the MARF entries committed under it.
-    if repetition == 0 && segments.len() == 1 && segments[0].range == (0..block.tx_count()) {
-        if let Some(replayed_root) = last_state_index_root {
-            if replayed_root != block.header.state_index_root {
-                let tenure_tx = block.get_tenure_tx_payload();
-                let tenure_cause = tenure_tx.as_ref().map(|t| format!("{:?}", t.cause));
-                bail!(
-                    "State root mismatch for block {origin_id} \
-                     (height={}, consensus_hash={}, parent={}, \
-                     tenure={}, txs={}): \
-                     expected {}, got {replayed_root}",
-                    block.header.chain_length,
-                    block.header.consensus_hash,
-                    block.header.parent_block_id,
-                    tenure_cause.as_deref().unwrap_or("none"),
-                    block.tx_count(),
-                    block.header.state_index_root,
-                );
-            }
-        }
-    }
-
     Ok(out)
 }
 
@@ -534,6 +597,7 @@ struct SegmentExecResult {
     segment_total_clarity_cost: ExecutionCost,
     segment_tx_metrics: Vec<(Txid, Duration, ExecutionCost)>,
     state_index_root: TrieHash,
+    receipts_digest: Sha512Trunc256Sum,
 }
 
 fn execute_segment(
@@ -655,6 +719,9 @@ fn execute_segment(
     let mut segment_tx_metrics: Vec<(Txid, Duration, ExecutionCost)> = Vec::new();
     let mut segment_total_clarity_cost = ExecutionCost::ZERO;
     let mut total_receipts_size = 0u64;
+    // Receipts are moved here (not cloned) during the measured loop and
+    // digested after the timed intervals.
+    let mut receipts: Vec<StacksTransactionReceipt> = Vec::with_capacity(seg.range.len());
 
     let starting_cost = clarity_tx.cost_so_far();
     let resource_budgets = TransactionResourceBudgets::unlimited();
@@ -697,7 +764,7 @@ fn execute_segment(
         let dur = tx_start.map(|s| s.elapsed()).unwrap_or(Duration::ZERO);
 
         let success = match res {
-            TransactionResult::Success(ref s) => s,
+            TransactionResult::Success(s) => s,
             _ => {
                 clarity_tx.rollback_block();
                 return Err(anyhow!(
@@ -713,6 +780,7 @@ fn execute_segment(
             segment_total_clarity_cost.add(&cost)?;
             segment_tx_metrics.push((tx.txid(), dur, cost));
         }
+        receipts.push(success.receipt);
     }
 
     drop(_exec_guard);
@@ -846,6 +914,9 @@ fn execute_segment(
 
     let commit_duration = commit_start.map(|s| s.elapsed()).unwrap_or(Duration::ZERO);
 
+    // Outside every timed interval.
+    let receipts_digest = receipts_digest(&receipts)?;
+
     Ok(SegmentExecResult {
         new_tip_info,
         commit_duration,
@@ -854,5 +925,6 @@ fn execute_segment(
         segment_total_clarity_cost,
         segment_tx_metrics,
         state_index_root: mined_state_index_root,
+        receipts_digest,
     })
 }

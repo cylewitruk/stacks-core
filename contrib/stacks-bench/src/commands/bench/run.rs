@@ -12,7 +12,7 @@ use stacks_bench::bench_events::{self, BenchEvent, BenchEventSender, ModeSummary
 use stacks_bench::blocks::{BackwardsBlockStream, BlockRef};
 use stacks_bench::context::{BenchContext, BenchEnv};
 use stacks_bench::db::DbOpenForRead;
-use stacks_bench::db::app::models::BenchmarkRun;
+use stacks_bench::db::app::models::{BenchmarkRun, ReplayCheck};
 use stacks_bench::db::app::{
     AppDb, ProfilerStoragePolicy, ProfilerThreshold, deserialize_profiler_thresholds,
 };
@@ -1097,6 +1097,10 @@ async fn execute_replay_plan(
     );
 
     // --- Replay loop ---
+    // Correctness records (state root and receipts digest) of every replayed
+    // segment, warmup entries and unmeasured segments included; compared
+    // between runs by `bench verify`.
+    let mut replay_checks: Vec<ReplayCheck> = Vec::new();
     let mut warmup_complete_emitted = false;
     let mut warmup_phase_started_at: Option<Instant> = None;
     let mut warmup_duration = Duration::ZERO;
@@ -1165,8 +1169,18 @@ async fn execute_replay_plan(
         }
 
         let storage_deltas = params.storage_deltas;
-        let mut on_segment = |_: &SegmentReplayInfo, m: Option<&mut BlockMetrics>| -> Result<()> {
-            let delta_since_last = if storage_deltas {
+        let run_id = run_model.id;
+        let entry_block_id = entry.block_id.clone();
+        let mut on_segment = |info: &SegmentReplayInfo, m: Option<&mut BlockMetrics>| -> Result<()> {
+            replay_checks.push(ReplayCheck::from_segment(
+                run_id,
+                &entry_block_id,
+                is_warmup,
+                info,
+            ));
+            // Storage deltas are measured-entry bookkeeping (warmup entries
+            // never ran this callback before the records were added).
+            let delta_since_last = if storage_deltas && !is_warmup {
                 let storage_delta_start = Instant::now();
                 let storage_report = shadow_dir.calculate_storage_delta()?;
                 total_storage_delta_duration += storage_delta_start.elapsed();
@@ -1193,12 +1207,16 @@ async fn execute_replay_plan(
             &block,
             entry.repetition,
             !is_warmup,
-            if is_warmup {
-                None
-            } else {
-                Some(&mut on_segment)
-            },
+            Some(&mut on_segment),
         )?;
+
+        if replay_checks.len() >= 1024 {
+            let flush_start = Instant::now();
+            app_db
+                .save_replay_checks(std::mem::take(&mut replay_checks))
+                .await?;
+            total_metrics_flush_duration += flush_start.elapsed();
+        }
 
         if is_warmup {
             warmup_done += 1;
@@ -1264,6 +1282,12 @@ async fn execute_replay_plan(
             },
         );
     }
+
+    let flush_start = Instant::now();
+    app_db
+        .save_replay_checks(std::mem::take(&mut replay_checks))
+        .await?;
+    total_metrics_flush_duration += flush_start.elapsed();
 
     // Flush remaining metrics. On interruption, skip the last-chance model
     // fit so un-calibrated metrics receive heuristic attribution.

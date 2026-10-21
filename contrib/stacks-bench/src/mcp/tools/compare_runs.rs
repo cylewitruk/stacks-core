@@ -76,6 +76,26 @@ impl StacksBenchServer {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Candidate run {} not found", params.candidate_id))?;
 
+        // Correctness gate: the runs must have replayed the same segments to
+        // the same state roots and receipts (`replay_check`); otherwise their
+        // timings are not comparable and the comparison is rejected.
+        let checks = crate::commands::bench::verify::compare_replay_checks(
+            params.baseline_id,
+            params.candidate_id,
+            &self.app_db.get_replay_checks(params.baseline_id).await?,
+            &self.app_db.get_replay_checks(params.candidate_id).await?,
+            10,
+        );
+        if !checks.ok {
+            anyhow::bail!(
+                "runs {} and {} are not comparable: {}; first mismatches: {:?}",
+                params.baseline_id,
+                params.candidate_id,
+                checks.describe(),
+                checks.mismatches
+            );
+        }
+
         // Summary-level delta
         let b_summary = self
             .app_db

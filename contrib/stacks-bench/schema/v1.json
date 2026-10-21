@@ -917,6 +917,149 @@
         "title": "ShowResult",
         "type": "object"
       }
+    },
+    "run_verify": {
+      "result_version": 1,
+      "schema": {
+        "$defs": {
+          "MismatchJson": {
+            "properties": {
+              "baseline": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "candidate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "description": "`state_root`, `receipts`, `canonical_root`, `only_in_baseline`, `only_in_candidate`.",
+                "type": "string"
+              },
+              "origin_index_hash": {
+                "type": "string"
+              },
+              "repetition": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "segment_index": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "tx_end": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "tx_start": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "origin_index_hash",
+              "segment_index",
+              "tx_start",
+              "tx_end",
+              "repetition",
+              "kind"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Outcome of comparing two runs' correctness records.",
+        "properties": {
+          "baseline_run_id": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "baseline_unmeasured": {
+            "description": "Segments of the baseline that were warmup or unmeasured (included in\nthe comparison like every other segment).",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "candidate_run_id": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "canonical_root_mismatches": {
+            "description": "Segments either run found to disagree with the canonical header root.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "compared": {
+            "description": "Segments present in both runs.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "matching": {
+            "description": "Segments whose state root and receipts digest agree.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mismatches": {
+            "description": "The first mismatches, for the report.",
+            "items": {
+              "$ref": "#/$defs/MismatchJson"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "description": "False on any mismatch or missing segment.",
+            "type": "boolean"
+          },
+          "only_in_baseline": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "only_in_candidate": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "receipt_mismatches": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root_mismatches": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unverified": {
+            "description": "True when a run has no records at all (a run made before records\nexisted): the comparison is then not rejected but is unverified.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "baseline_run_id",
+          "candidate_run_id",
+          "compared",
+          "matching",
+          "root_mismatches",
+          "receipt_mismatches",
+          "canonical_root_mismatches",
+          "only_in_baseline",
+          "only_in_candidate",
+          "baseline_unmeasured",
+          "unverified",
+          "ok",
+          "mismatches"
+        ],
+        "title": "VerifyResult",
+        "type": "object"
+      }
     }
   },
   "envelope": {

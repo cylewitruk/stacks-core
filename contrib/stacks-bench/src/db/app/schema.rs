@@ -376,7 +376,26 @@ joinable!(profiler_record_kv -> profiler_kv_key (profiler_kv_key_id));
 joinable!(profiler_record_kv -> profiler_kv_value (profiler_kv_value_id));
 joinable!(profiler_record_clarity_costs -> profiler_record (profiler_record_id));
 
+table! {
+    replay_check (benchmark_run_id, origin_index_hash, segment_index, tx_start, tx_end, repetition) {
+        benchmark_run_id -> Integer,
+        origin_index_hash -> Binary,
+        segment_index -> Integer,
+        tx_start -> Integer,
+        tx_end -> Integer,
+        repetition -> Integer,
+        is_warmup -> Bool,
+        measured -> Bool,
+        state_index_root -> Binary,
+        receipts_digest -> Binary,
+        canonical_root_match -> Nullable<Bool>,
+    }
+}
+
+joinable!(replay_check -> benchmark_run (benchmark_run_id));
+
 allow_tables_to_appear_in_same_query!(
+    replay_check,
     network,
     chainstate,
     epoch,

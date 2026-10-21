@@ -5,6 +5,7 @@ use stacks_common::types::StacksEpochId;
 use stacks_common::types::chainstate::{BlockHeaderHash, BurnchainHeaderHash, StacksBlockId};
 
 use super::schema::{
+    replay_check,
     _staged_profiler_record_clarity_costs, _staged_profiler_record_kv, _staged_stacks_block,
     _staged_stacks_tx, baseline_calibration, benchmark_run, block_processing_baseline, burn_block,
     chainstate, epoch, network, profiler_location, profiler_record, profiler_record_clarity_costs,
@@ -510,4 +511,57 @@ pub struct SpanComparisonRow {
     pub delta_pct: Option<f64>,
     pub baseline_calls: Option<i64>,
     pub candidate_calls: Option<i64>,
+}
+
+/// Correctness record of one replayed segment (table `replay_check`); see
+/// the migration that creates the table and `stacks_bench::replay`.
+#[derive(Insertable, Queryable, Selectable, Debug, Clone, PartialEq, Eq)]
+#[diesel(table_name = replay_check)]
+pub struct ReplayCheck {
+    pub benchmark_run_id: i32,
+    pub origin_index_hash: Vec<u8>,
+    pub segment_index: i32,
+    pub tx_start: i32,
+    pub tx_end: i32,
+    pub repetition: i32,
+    pub is_warmup: bool,
+    pub measured: bool,
+    pub state_index_root: Vec<u8>,
+    pub receipts_digest: Vec<u8>,
+    pub canonical_root_match: Option<bool>,
+}
+
+impl ReplayCheck {
+    /// The record of a segment the replay just reported.
+    pub fn from_segment(
+        run_id: i32,
+        origin: &StacksBlockId,
+        is_warmup: bool,
+        info: &crate::replay::SegmentReplayInfo,
+    ) -> Self {
+        ReplayCheck {
+            benchmark_run_id: run_id,
+            origin_index_hash: origin.as_bytes().to_vec(),
+            segment_index: info.seg_ix as i32,
+            tx_start: info.tx_range.start as i32,
+            tx_end: info.tx_range.end as i32,
+            repetition: info.repetition as i32,
+            is_warmup,
+            measured: info.measured,
+            state_index_root: info.state_index_root.as_bytes().to_vec(),
+            receipts_digest: info.receipts_digest.as_bytes().to_vec(),
+            canonical_root_match: info.canonical_root_match,
+        }
+    }
+
+    /// The key two runs' records are matched on.
+    pub fn key(&self) -> (Vec<u8>, i32, i32, i32, i32) {
+        (
+            self.origin_index_hash.clone(),
+            self.segment_index,
+            self.tx_start,
+            self.tx_end,
+            self.repetition,
+        )
+    }
 }

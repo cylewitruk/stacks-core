@@ -1028,6 +1028,44 @@ impl AppDb {
     }
 
     /// Looks up a benchmark run by its ID, returning `None` if it doesn't exist.
+    /// Store correctness records of a run's replayed segments (`replay_check`).
+    pub async fn save_replay_checks(&self, rows: Vec<ReplayCheck>) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        // One statement per row inside a transaction: SQLite batch inserts
+        // cannot carry the nullable `canonical_root_match` column through
+        // diesel's single-query path.
+        self.get_conn()
+            .await?
+            .transaction::<(), anyhow::Error, _>(|dbtx| {
+                Box::pin(async {
+                    for row in &rows {
+                        diesel::insert_into(replay_check::table)
+                            .values(row)
+                            .execute(dbtx)
+                            .await?;
+                    }
+                    Ok(())
+                })
+            })
+            .await
+    }
+
+    /// The correctness records of a run, in a deterministic order.
+    pub async fn get_replay_checks(&self, run_id: i32) -> Result<Vec<ReplayCheck>> {
+        Ok(replay_check::table
+            .filter(replay_check::benchmark_run_id.eq(run_id))
+            .order((
+                replay_check::origin_index_hash.asc(),
+                replay_check::repetition.asc(),
+                replay_check::segment_index.asc(),
+                replay_check::tx_start.asc(),
+            ))
+            .load::<ReplayCheck>(&mut self.get_conn().await?)
+            .await?)
+    }
+
     pub async fn get_benchmark_run(&self, run_id: i32) -> Result<Option<BenchmarkRun>> {
         benchmark_run::table
             .find(run_id)

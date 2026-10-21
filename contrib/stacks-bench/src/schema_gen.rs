@@ -56,6 +56,7 @@ fn build_schema_document() -> Value {
             "run": payload!(1, crate::commands::bench::run::RunResult),
             "baseline_calibration": payload!(1, crate::commands::bench::baseline::BaselineCalibrationResult),
             "run_show": payload!(1, crate::commands::bench::show::ShowResult),
+            "run_verify": payload!(1, crate::commands::bench::verify::VerifyResult),
             "run_list": payload!(1, Vec<crate::commands::bench::list::RunJson>),
             "run_remove": payload!(1, crate::commands::bench::remove::RemoveResult),
             "chainstate_list": payload!(1, Vec<crate::commands::chainstate::list::ChainstateJson>),
