@@ -4839,7 +4839,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "stacks-common 4.0.5",
- "stacks-marf",
+ "stacks-marf-next",
  "stacks-profiler",
  "stackslib 0.0.1",
  "stx-genesis",
