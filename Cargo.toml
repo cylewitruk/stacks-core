@@ -13,6 +13,7 @@ members = [
     "libsigner",
     "stacks-signer",
     "stacks-node",
+    "contrib/stacks-bench",
     "stacks-profiler",
     "stacks-profiler-macros",
     "contrib/stacks-inspect",
@@ -46,6 +47,29 @@ thiserror = "1.0.65"
 tikv-jemallocator = "0.5.4"
 toml = "0.5.6"
 variant_count = "1.1"
+
+# stacks-bench dependencies
+clap = { version = "4.5.58", default-features = false, features = ["std", "derive", "color", "help", "usage", "error-context", "suggestions"] }
+anyhow = { version = "1.0.100", default-features = false }
+tempfile = { version = "3.25.0", default-features = false, features = ["getrandom"] }
+diesel = { version = "2.3.4", default-features = false, features = ["sqlite", "returning_clauses_for_sqlite_3_35", "chrono", "32-column-tables", "serde_json"] }
+diesel_migrations = { version = "2.3.1", default-features = false, features = ["sqlite"] }
+diesel-async = { version = "0.7.4", default-features = false, features = ["sqlite", "migrations", "bb8"] }
+reflink-copy = { version = "0.1.28", default-features = false }
+ignore = { version = "0.4.25", default-features = false }
+globset = "0.4.18"
+hex = { version = "0.4.3", default-features = false, features = ["std"] }
+home = { version = "0.5", default-features = false }
+chrono = { version = "0.4.43", default-features = false, features = ["serde"] }
+sha2 = { version = "0.10.9", default-features = false }
+bollard = { version = "0.20.1", default-features = false, features = ["http", "pipe"] }
+tokio = { version = "1.49.0", default-features = false, features = ["signal", "macros", "rt-multi-thread", "rt"] }
+futures = { version = "0.3.31", default-features = false }
+cliclack = { version = "0.3.8", default-features = false }
+console = { version = "0.16.2", default-features = false, features = ["std", "unicode-width", "ansi-parsing"] }
+erased-serde = { version = "0.4", default-features = false, features = ["std"] }
+rmcp = { version = "1.8", features = ["transport-io"] }
+schemars = "1.2"
 
 # Other dependencies
 libc = { version = "0.2.182", default-features = false }

@@ -1900,6 +1900,18 @@ impl StacksChainState {
         Ok(state_index.into_sqlite_conn())
     }
 
+    /// Checkpoint the Clarity state DB.
+    pub fn checkpoint_sqlite_dbs(&mut self) -> Result<(), db_error> {
+        self.clarity_state.with_marf(|marf| {
+            marf.sqlite_conn()
+                .query_row("PRAGMA wal_checkpoint(RESTART)", [], |_| Ok(()))
+        })?;
+        self.state_index
+            .sqlite_conn()
+            .query_row("PRAGMA wal_checkpoint(RESTART)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     pub fn blocks_path(mut path: PathBuf) -> PathBuf {
         path.push("blocks");
         path

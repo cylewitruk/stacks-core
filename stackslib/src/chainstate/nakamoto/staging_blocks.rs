@@ -341,6 +341,7 @@ impl<'a> NakamotoStagingBlocksConnRef<'a> {
     /// Returns Ok(Some(block, size)) if the block was present
     /// Returns Ok(None) if there was no such block
     /// Returns Err(..) on DB error, including block corruption
+    #[cfg_attr(feature = "profiler", stacks_profiler::profile)]
     pub fn get_nakamoto_block(
         &self,
         index_block_hash: &StacksBlockId,

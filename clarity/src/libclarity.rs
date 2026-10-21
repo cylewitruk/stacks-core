@@ -49,6 +49,8 @@ pub use stacks_common::{
 /// The Clarity virtual machine
 pub mod vm;
 
+mod profiler;
+
 pub mod boot_util {
 
     use stacks_common::types::chainstate::StacksAddress;
