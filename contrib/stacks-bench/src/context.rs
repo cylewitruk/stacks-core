@@ -320,7 +320,8 @@ impl<'a> BenchContext<'a> {
             burnchain.marf_opts.clone(),
         )?);
 
-        let marf_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, "noop", true);
+        let marf_opts = MARFOpenOpts::new(TrieHashCalculationMode::Deferred, "noop", true)
+            .with_compression(true);
 
         let (chainstate, _) = StacksChainState::open(
             self.env.is_mainnet,
