@@ -6,7 +6,8 @@ use rusqlite::Connection;
 use stacks_common::types::chainstate::TrieHash;
 use stacks_common::types::sqlite::NO_PARAMS;
 
-use crate::{corrupt, Error, MarfTrieId};
+use crate::archive::ArchiveMetadata;
+use crate::{Error, MarfTrieId, corrupt};
 
 /// One confirmed `marf_data` row.
 #[derive(Debug, Clone)]
@@ -19,7 +20,6 @@ pub struct MarfDataEntry<T> {
 /// The handful of SQL helpers the snapshot tooling reaches for directly.
 pub mod trie_sql {
     use super::*;
-
     pub use crate::storage::PruneInfo as SqlPruneInfo;
     /// The original's name for [`SqlPruneInfo`].
     pub type SqlSquashInfo = SqlPruneInfo;
@@ -96,7 +96,7 @@ pub mod trie_sql {
     }
 
     pub fn read_prune_info(conn: &Connection) -> Result<Option<SqlPruneInfo>, Error> {
-        crate::storage::read_prune_info(conn)
+        conn.read_prune_info()
     }
 
     pub fn bulk_read_block_entries<T: MarfTrieId>(

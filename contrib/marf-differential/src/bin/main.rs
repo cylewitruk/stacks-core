@@ -2,14 +2,24 @@
 //! `marf-differential replay <impl> <fixture.json>...` replays fixtures.
 //! `marf-differential record <name> <seed> [blocks] [inserts] [pool]` records an ad-hoc fixture.
 
+use std::env;
 use std::path::PathBuf;
 
-use marf_differential::gen::{generate, standard_fixtures, GenConfig};
-use marf_differential::{fixtures_dir, load_fixture, record, replay, save_fixture, Impl};
+use marf_differential::r#gen::{GenConfig, generate, standard_fixtures};
+use marf_differential::{Impl, fixtures_dir, load_fixture, record, replay, save_fixture};
 
 #[cfg(feature = "alloc-count")]
 #[global_allocator]
 static ALLOC: marf_differential::alloc::Counting = marf_differential::alloc::Counting;
+
+/// Select benchmark compression; defaults to production's enabled setting.
+fn benchmark_compression() -> bool {
+    match env::var("MARF_BENCH_COMPRESSION").as_deref() {
+        Ok("on") | Err(_) => true,
+        Ok("off") => false,
+        Ok(value) => panic!("MARF_BENCH_COMPRESSION must be on or off, got {value}"),
+    }
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -122,8 +132,10 @@ fn main() {
         Some("ablate") => {
             // ablate <baseline|rewrite> <std|big> [reads] [plain]; env CAPS, REPEAT, PASSES
             let which = Impl::parse(args.get(1).expect("impl")).expect("baseline|rewrite");
-            let w = marf_differential::ablate::Workload::parse(args.get(2).map(String::as_str).unwrap_or("std"))
-                .expect("std|big");
+            let w = marf_differential::ablate::Workload::parse(
+                args.get(2).map(String::as_str).unwrap_or("std"),
+            )
+            .expect("std|big");
             let reads: usize = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(5000);
             let plain = args.get(4).is_some_and(|s| s == "plain");
             marf_differential::ablate::run(which, &w, reads, plain);
@@ -131,7 +143,10 @@ fn main() {
         Some("construct") => {
             // construct <baseline|rewrite> [result-cache <n|off>] [blocks] [inserts] [reads]; env REPEAT
             let which = Impl::parse(args.get(1).expect("impl")).expect("baseline|rewrite");
-            let mut cfg = marf_differential::construct::Config::default();
+            let mut cfg = marf_differential::construct::Config {
+                compress: benchmark_compression(),
+                ..Default::default()
+            };
             let mut rest = args[2..].iter();
             let mut positional = vec![];
             while let Some(a) = rest.next() {
@@ -174,7 +189,9 @@ fn main() {
             marf_differential::alloc::report(&cfg);
         }
         _ => {
-            eprintln!("usage: marf-differential record-all | record <name> <seed> [blocks] [inserts] [pool] | replay <baseline|rewrite> <fixture>...");
+            eprintln!(
+                "usage: marf-differential record-all | record <name> <seed> [blocks] [inserts] [pool] | replay <baseline|rewrite> <fixture>..."
+            );
             std::process::exit(2);
         }
     }

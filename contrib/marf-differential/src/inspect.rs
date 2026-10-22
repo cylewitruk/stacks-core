@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use rusqlite::{Connection, OpenFlags};
 use stacks_marf_next::codec::{self, Decoded};
-use stacks_marf_next::node::{id, Node, Ptr};
+use stacks_marf_next::node::{Node, Ptr, id};
 
 pub fn run(db_path: &str) {
     let conn =

@@ -12,7 +12,7 @@
 use sha2::{Digest, Sha512_256};
 use stacks_common::types::chainstate::TrieHash;
 
-use crate::node::{id, Branch, Leaf, Ptr};
+use crate::node::{Branch, Leaf, Ptr, id};
 
 /// What a branch's child contributes to its parent's hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,8 +115,8 @@ pub fn marf_root_hash(root_node_hash: &TrieHash, ancestors: &[TrieHash]) -> Trie
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::{Kind, Path};
     use crate::MARFValue;
+    use crate::node::{Kind, Path};
 
     #[test]
     fn empty_root_hash_is_stable() {

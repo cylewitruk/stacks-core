@@ -47,20 +47,24 @@ fn note(size: usize) {
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         note(layout.size());
-        System.alloc(layout)
+        // SAFETY: the caller supplies the valid layout required by GlobalAlloc.
+        unsafe { System.alloc(layout) }
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         LIVE.fetch_sub(layout.size() as u64, Ordering::Relaxed);
-        System.dealloc(ptr, layout)
+        // SAFETY: the caller guarantees ptr and layout identify a live allocation.
+        unsafe { System.dealloc(ptr, layout) }
     }
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         note(layout.size());
-        System.alloc_zeroed(layout)
+        // SAFETY: the caller supplies the valid layout required by GlobalAlloc.
+        unsafe { System.alloc_zeroed(layout) }
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         LIVE.fetch_sub(layout.size() as u64, Ordering::Relaxed);
         note(new_size);
-        System.realloc(ptr, layout, new_size)
+        // SAFETY: the caller guarantees a live allocation and valid replacement size.
+        unsafe { System.realloc(ptr, layout, new_size) }
     }
 }
 
@@ -173,7 +177,10 @@ impl Counters {
             ("record_reads", self.record_reads),
             ("patch_cache_probes", self.patch_cache_probes),
             ("patch_cache_hits", self.patch_cache_hits),
-            ("patch_cache_probe_miss_plain", self.patch_cache_probe_miss_plain),
+            (
+                "patch_cache_probe_miss_plain",
+                self.patch_cache_probe_miss_plain,
+            ),
             ("patch_cache_admissions", self.patch_cache_admissions),
             ("patch_cache_clears", self.patch_cache_clears),
             ("patch_resolutions", self.patch_resolutions),
@@ -183,7 +190,10 @@ impl Counters {
             ("block_id_sql", self.block_id_sql),
             ("result_cache_hits", self.result_cache_hits),
             ("result_cache_misses", self.result_cache_misses),
-            ("result_cache_invalidations", self.result_cache_invalidations),
+            (
+                "result_cache_invalidations",
+                self.result_cache_invalidations,
+            ),
             ("cache_occupancy", self.cache_occupancy),
             ("late_probe_extra_parses", self.late_probe_extra_parses),
         ]
@@ -347,8 +357,9 @@ impl Direct for Rewrite {
     const NAME: &'static str = "next";
     fn open(path: &Path, opts: &Opts) -> Self {
         use stacks_marf_next::marf::TrieHashCalculationMode;
-        let mut o = stacks_marf_next::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
-            .with_compression(opts.compress);
+        let mut o =
+            stacks_marf_next::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
+                .with_compression(opts.compress);
         if let Some(c) = opts.patch_cache_capacity {
             o = o.with_patch_cache_capacity(c);
         }
@@ -372,8 +383,10 @@ impl Direct for Rewrite {
         self.0.begin(parent, child).unwrap();
     }
     fn insert_batch(&mut self, keys: &[String], values: &[[u8; 40]]) {
-        let values: Vec<stacks_marf_next::MARFValue> =
-            values.iter().map(|v| stacks_marf_next::MARFValue(*v)).collect();
+        let values: Vec<stacks_marf_next::MARFValue> = values
+            .iter()
+            .map(|v| stacks_marf_next::MARFValue(*v))
+            .collect();
         self.0.insert_batch(keys, values).unwrap();
     }
     fn seal(&mut self) {
@@ -525,13 +538,21 @@ impl Manifest {
             harness: "marf-differential",
             experiment: experiment.to_string(),
             args: std::env::args().skip(1).collect(),
-            tree_rev: option_env!("MARF_BENCH_TREE_REV").unwrap_or("unknown").to_string(),
+            tree_rev: option_env!("MARF_BENCH_TREE_REV")
+                .unwrap_or("unknown")
+                .to_string(),
             oracle: option_env!("MARF_BENCH_PROVIDER")
                 .unwrap_or("upstream stacks-marf (in tree)")
                 .to_string(),
             binary_sha256: exe,
-            rustc: option_env!("MARF_BENCH_RUSTC").unwrap_or("unknown").to_string(),
-            profile: if cfg!(debug_assertions) { "debug" } else { "release" },
+            rustc: option_env!("MARF_BENCH_RUSTC")
+                .unwrap_or("unknown")
+                .to_string(),
+            profile: if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
             counters: cfg!(feature = "counters"),
             alloc_count: ALLOC_COUNTING,
             reference_lateprobe: cfg!(feature = "reference-lateprobe"),
@@ -600,7 +621,11 @@ pub fn environment() -> String {
     format!(
         "env: {cpu} x{cores}, linux {kernel}, rustc {}, profile {}, alloc-count={}, counters={}, repeat={}",
         option_env!("MARF_BENCH_RUSTC").unwrap_or("unknown"),
-        if cfg!(debug_assertions) { "debug" } else { "release" },
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
         ALLOC_COUNTING,
         cfg!(feature = "counters"),
         repeat()
@@ -688,7 +713,7 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
         let child = bid(b as u32 + 1);
         marf.begin(&parent, &child);
         let keys: Vec<String> = (0..cfg.inserts)
-            .map(|i| format!("key::{b}::{i}::{}", rng.gen::<u32>()))
+            .map(|i| format!("key::{b}::{i}::{}", rng.r#gen::<u32>()))
             .collect();
         let values: Vec<[u8; 40]> = (0..cfg.inserts)
             .map(|_| {
@@ -840,7 +865,8 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
             ("patched", &tip, all_keys.iter().collect()),
         ];
         for (tip_label, at, candidates) in &tips {
-            let mut buckets: std::collections::BTreeMap<(u32, u32), Vec<&String>> = Default::default();
+            let mut buckets: std::collections::BTreeMap<(u32, u32), Vec<&String>> =
+                Default::default();
             let mut nodes_sum: std::collections::BTreeMap<(u32, u32), u64> = Default::default();
             for k in candidates {
                 let p = profiler.lookup_profile(at, k).expect("profile");
@@ -860,11 +886,17 @@ pub fn run_direct<M: Direct>(dir: &Path, cfg: &Config) -> Vec<Phase> {
                 if keys.len() < 64 {
                     continue;
                 }
-                let avg_nodes = *nodes_sum.get(&(*hops, *patch)).unwrap() as f64 / keys.len() as f64;
-                let hops_label = if *hops == 3 { "3+".to_string() } else { hops.to_string() };
+                let avg_nodes =
+                    *nodes_sum.get(&(*hops, *patch)).unwrap() as f64 / keys.len() as f64;
+                let hops_label = if *hops == 3 {
+                    "3+".to_string()
+                } else {
+                    hops.to_string()
+                };
                 let patch_label = ["none", "1-2", "3-4"][*patch as usize];
-                let label =
-                    format!("get@{tip_label} hops={hops_label} patch={patch_label} ~{avg_nodes:.1}nodes");
+                let label = format!(
+                    "get@{tip_label} hops={hops_label} patch={patch_label} ~{avg_nodes:.1}nodes"
+                );
                 // cycle `set` for cfg.reads lookups (warmed once first)
                 let mut cycle = |set: &[&String], name: String| {
                     for k in set {
@@ -1055,7 +1087,10 @@ pub fn report(cfg: &Config) {
     for i in 0..rows {
         let p = base.get(i).or(next.get(i)).expect("row");
         if let (Some(b), Some(n)) = (base.get(i), next.get(i)) {
-            assert_eq!(b.name, n.name, "phase order differs between implementations");
+            assert_eq!(
+                b.name, n.name,
+                "phase order differs between implementations"
+            );
         }
         let mut line = format!("{:<60} {:>8}", p.name, p.ops);
         for ph in [base.get(i), next.get(i)].into_iter().flatten() {
@@ -1065,7 +1100,11 @@ pub fn report(cfg: &Config) {
                 ph.allocs_per_op(),
                 ph.bytes_per_op(),
                 ph.micros_per_op(),
-                format!("{:.2}-{:.2}", per_op(ph.samples.min()), per_op(ph.samples.max())),
+                format!(
+                    "{:.2}-{:.2}",
+                    per_op(ph.samples.min()),
+                    per_op(ph.samples.max())
+                ),
                 ph.m.peak / 1024
             ));
         }

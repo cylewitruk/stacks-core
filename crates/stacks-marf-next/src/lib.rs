@@ -31,12 +31,18 @@
 //! * [`trie`]: the in-memory trie under construction for one block.
 //! * [`storage`]: SQLite + blob-file persistence of committed tries.
 //! * [`marf`]: the forest: blocks, forks, lookups, commits, ancestry.
-//! * [`proofs`]: Merkle proofs of inclusion.
-//! * [`pruning`]: collapsing history into a single trie at a height.
+//! * [`access`]: borrowed authenticated-read capabilities.
+//! * [`archive`]: historical source and transactional destination contracts.
+//! * [`proofs`]: Merkle proofs over authenticated-read capabilities.
+//! * [`pruning`]: staging, hashing and streaming archives through capabilities.
 
 #[allow(unused_imports)]
 #[macro_use(o, slog_log, slog_trace, slog_debug, slog_info, slog_warn, slog_error)]
 extern crate slog;
+
+// Shared domain tests also compile in the external extraction guard.
+#[cfg(test)]
+extern crate self as stacks_marf_next;
 
 #[macro_use]
 extern crate stacks_common;
@@ -49,7 +55,7 @@ use std::{error, fmt, io};
 
 use sha2::{Digest, Sha512_256};
 use stacks_common::types::chainstate::{
-    BurnchainHeaderHash, SortitionId, StacksBlockId, TrieHash, TRIEHASH_ENCODED_SIZE,
+    BurnchainHeaderHash, SortitionId, StacksBlockId, TRIEHASH_ENCODED_SIZE, TrieHash,
 };
 
 /// Bump a [`stats::Counters`] field on the current thread; a no-op unless
@@ -65,23 +71,26 @@ macro_rules! count {
     };
 }
 
+pub mod access;
+pub mod archive;
 pub mod codec;
 pub mod compat;
 pub mod hash;
 pub mod marf;
 pub mod node;
-pub mod proofs;
+mod positioned_io;
 #[cfg(feature = "profiler")]
 pub mod profiler;
+pub mod proofs;
 pub mod pruning;
 pub mod stats;
 pub mod storage;
 pub mod trie;
 
-pub use crate::compat::{file, trie_sql, MarfDataEntry};
-pub use crate::marf::{MARFOpenOpts, MarfConnection, MarfTransaction, MARF};
+pub use crate::compat::{MarfDataEntry, file, trie_sql};
 #[cfg(any(test, feature = "testing"))]
 pub use crate::marf::WalkProfile;
+pub use crate::marf::{MARF, MARFOpenOpts, MarfConnection, MarfTransaction};
 pub use crate::proofs::{
     ProofTrieNode, ProofTriePtr, TrieLeaf, TrieMerkleProof, TrieMerkleProofType,
 };

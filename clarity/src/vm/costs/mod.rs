@@ -480,7 +480,7 @@ impl TrackerData {
                 ClarityCostFunctionReference::new(boot_costs_id.clone(), f.get_name());
             m.insert(
                 f,
-                ClarityCostFunctionEvaluator::Default(cost_function_ref, f.clone(), v),
+                ClarityCostFunctionEvaluator::Default(cost_function_ref, *f, v),
             );
         }
 

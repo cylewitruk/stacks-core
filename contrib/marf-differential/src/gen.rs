@@ -4,7 +4,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-use crate::ops::{block_hex, sentinel_hex, value_hex_from_str, BlockHex, Op, OpenOpts, Tamper};
+use crate::ops::{BlockHex, Op, OpenOpts, Tamper, block_hex, sentinel_hex, value_hex_from_str};
 
 /// Knobs for [`generate`].
 #[derive(Debug, Clone)]
@@ -224,7 +224,7 @@ pub fn generate_unconfirmed(seed: u64, opts: OpenOpts) -> Vec<Op> {
             let k = key(rng.gen_range(0..10));
             ops.push(Op::Insert {
                 key: k,
-                value: value_hex_from_str(&format!("u{round}-{}", rng.gen::<u32>())),
+                value: value_hex_from_str(&format!("u{round}-{}", rng.r#gen::<u32>())),
             });
         }
         ops.push(Op::OpenTip);
@@ -858,7 +858,7 @@ pub fn generate_proofs(seed: u64, opts: OpenOpts) -> Vec<Op> {
         for _ in 0..rng.gen_range(2..=8) {
             ops.push(Op::Insert {
                 key: key(rng.gen_range(0..30)),
-                value: value_hex_from_str(&format!("p{}", rng.gen::<u64>())),
+                value: value_hex_from_str(&format!("p{}", rng.r#gen::<u64>())),
             });
         }
         ops.push(Op::Commit);

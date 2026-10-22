@@ -1,7 +1,7 @@
 //! Replay the checked-in fixtures against each implementation.
 
 use marf_differential::ops::{Observation, Op};
-use marf_differential::{compare, fixtures_dir, handoff, load_fixture, replay, Impl};
+use marf_differential::{Impl, compare, fixtures_dir, handoff, load_fixture, replay};
 
 fn fixture_paths() -> Vec<std::path::PathBuf> {
     let mut paths: Vec<_> = std::fs::read_dir(fixtures_dir())

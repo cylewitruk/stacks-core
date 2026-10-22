@@ -1,0 +1,1 @@
+Restructured stacks-marf-next into capability-bounded modules without changing on-disk formats or consensus behavior.

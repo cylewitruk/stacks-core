@@ -59,8 +59,10 @@ use rand_chacha::ChaCha20Rng;
 use stacks_common::types::chainstate::StacksBlockId;
 use stacks_marf_next::ClarityMarfTrieId as _;
 
-use crate::alloc::{environment, measure, repeat, write_json, Counters, Direct, Manifest, Opts, Samples};
 use crate::Impl;
+use crate::alloc::{
+    Counters, Direct, Manifest, Opts, Samples, environment, measure, repeat, write_json,
+};
 
 /// One measurement cell of the ablation, as written to `JSON_OUT`.
 #[derive(Clone, Debug, serde::Serialize)]
@@ -174,7 +176,12 @@ struct Built {
 /// Walk shape of a key set: distinct patched records met, and the total
 /// number of patched-record visits over one pass (what a fully warm cache
 /// would answer).
-pub fn set_shape(dir: &Path, opts: &Opts, tip: &StacksBlockId, keys: &[String]) -> (usize, u64, u64) {
+pub fn set_shape(
+    dir: &Path,
+    opts: &Opts,
+    tip: &StacksBlockId,
+    keys: &[String],
+) -> (usize, u64, u64) {
     let ps = profiles(dir, opts, tip, keys);
     let mut sites = HashSet::new();
     let mut patched_visits = 0u64;
@@ -192,7 +199,11 @@ pub fn set_shape(dir: &Path, opts: &Opts, tip: &StacksBlockId, keys: &[String]) 
 /// Build a small patched database for tests: `blocks` bulk blocks of
 /// `inserts` keys then `patch_blocks` blocks rewriting `patch_inserts` of
 /// them. Returns the final tip and every key.
-pub fn build_small<M: Direct>(dir: &Path, opts: &Opts, w: &Workload) -> (StacksBlockId, Vec<String>) {
+pub fn build_small<M: Direct>(
+    dir: &Path,
+    opts: &Opts,
+    w: &Workload,
+) -> (StacksBlockId, Vec<String>) {
     let b = build::<M>(dir, w, opts);
     (b.tip, b.all_keys)
 }
@@ -210,7 +221,7 @@ fn build<M: Direct>(dir: &Path, w: &Workload, opts: &Opts) -> Built {
         let child = bid(b as u32 + 1);
         marf.begin(&parent, &child);
         let keys: Vec<String> = (0..w.inserts)
-            .map(|i| format!("key::{b}::{i}::{}", rng.gen::<u32>()))
+            .map(|i| format!("key::{b}::{i}::{}", rng.r#gen::<u32>()))
             .collect();
         let values: Vec<[u8; 40]> = (0..w.inserts)
             .map(|_| {
@@ -283,7 +294,9 @@ fn drop_caches_or_die() {
     let _ = std::process::Command::new("sync").status();
     if let Err(e) = std::fs::write("/proc/sys/vm/drop_caches", b"3") {
         eprintln!("DROP_CACHES=1 requested but writing /proc/sys/vm/drop_caches failed: {e}");
-        eprintln!("page-cold measurements are unavailable on this machine; aborting instead of reporting warm figures");
+        eprintln!(
+            "page-cold measurements are unavailable on this machine; aborting instead of reporting warm figures"
+        );
         std::process::exit(3);
     }
 }
@@ -400,9 +413,18 @@ fn key_sets(dir: &Path, opts: &Opts, built: &Built, reads: usize) -> Vec<KeySet>
         keys.sort();
         keys.truncate(reads);
         let ps = profiles(dir, opts, &built.tip1, &keys);
-        assert!(ps.iter().all(|p| p.patched_nodes == 0 && p.backptr_hops == 0));
+        assert!(
+            ps.iter()
+                .all(|p| p.patched_nodes == 0 && p.backptr_hops == 0)
+        );
         let refs: Vec<&_> = ps.iter().collect();
-        sets.push(make_set("patchfree@tip1".into(), &built.tip1, "tip1", keys, &refs));
+        sets.push(make_set(
+            "patchfree@tip1".into(),
+            &built.tip1,
+            "tip1",
+            keys,
+            &refs,
+        ));
     }
     // the bulk tip: a random sample of every key, read at the tip of the
     // bulk blocks (full root, second-level nodes as patch chains)
@@ -412,7 +434,13 @@ fn key_sets(dir: &Path, opts: &Opts, built: &Built, reads: usize) -> Vec<KeySet>
             .collect();
         let ps = profiles(dir, opts, &built.bulk_tip, &keys);
         let refs: Vec<&_> = ps.iter().collect();
-        sets.push(make_set("bulk tip (random keys)".into(), &built.bulk_tip, "bulk", keys, &refs));
+        sets.push(make_set(
+            "bulk tip (random keys)".into(),
+            &built.bulk_tip,
+            "bulk",
+            keys,
+            &refs,
+        ));
     }
     // the final tip: bucket by (hops, depth) as `alloc` does
     let keys = &built.all_keys;
@@ -437,7 +465,11 @@ fn key_sets(dir: &Path, opts: &Opts, built: &Built, reads: usize) -> Vec<KeySet>
         }
         let label = format!(
             "tip hops={} depth={}",
-            if hops == 3 { "3+".to_string() } else { hops.to_string() },
+            if hops == 3 {
+                "3+".to_string()
+            } else {
+                hops.to_string()
+            },
             ["none", "1-2", "3-4"][depth as usize]
         );
         let mut idx = idx.clone();
@@ -456,20 +488,27 @@ fn key_sets(dir: &Path, opts: &Opts, built: &Built, reads: usize) -> Vec<KeySet>
         }
     }
     // working sets bounded by distinct patched nodes, from every patched key
-    let patched: Vec<usize> = (0..keys.len()).filter(|&i| ps[i].patched_nodes > 0).collect();
+    let patched: Vec<usize> = (0..keys.len())
+        .filter(|&i| ps[i].patched_nodes > 0)
+        .collect();
     let mut order = patched.clone();
     for i in (1..order.len()).rev() {
         let j = rng.gen_range(0..=i);
         order.swap(i, j);
     }
     for limit in [32usize, 64, 1024, 4096, usize::MAX] {
-        let name = if limit == usize::MAX { "patched all" } else { "patched" };
-        if let Some(set) = bounded_set(name, &built.tip, keys, &ps, &order, limit, reads.max(8192)) {
+        let name = if limit == usize::MAX {
+            "patched all"
+        } else {
+            "patched"
+        };
+        if let Some(set) = bounded_set(name, &built.tip, keys, &ps, &order, limit, reads.max(8192))
+        {
             // skip a bound that did not bind (same node count as a smaller one)
-            if sets
-                .iter()
-                .any(|s| s.name.starts_with("patched") && s.distinct_patched_nodes == set.distinct_patched_nodes)
-            {
+            if sets.iter().any(|s| {
+                s.name.starts_with("patched")
+                    && s.distinct_patched_nodes == set.distinct_patched_nodes
+            }) {
                 continue;
             }
             sets.push(set);
@@ -484,7 +523,13 @@ pub fn capacities() -> Vec<Option<usize>> {
     std::env::var("CAPS")
         .unwrap_or_else(|_| "0,64,4096,prod".into())
         .split(',')
-        .map(|s| if s == "prod" { None } else { Some(s.parse().expect("capacity")) })
+        .map(|s| {
+            if s == "prod" {
+                None
+            } else {
+                Some(s.parse().expect("capacity"))
+            }
+        })
         .collect()
 }
 
@@ -513,7 +558,11 @@ pub fn run(which: Impl, w: &Workload, reads: usize, plain: bool) {
 /// a separate, never-inlined function so an instruction profiler can
 /// collect inside it alone (`callgrind --toggle-collect`, `scripts/profile.sh`).
 #[inline(never)]
-fn timed_cold_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
+fn timed_cold_pass<M: Direct>(
+    marf: &mut M,
+    set: &KeySet,
+    out: &mut [Option<[u8; 40]>],
+) -> crate::alloc::Measure {
     let (_, m) = measure(|| {
         for (i, k) in set.keys.iter().enumerate() {
             out[i] = marf.get_value(&set.tip, k);
@@ -525,7 +574,11 @@ fn timed_cold_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8;
 /// One warm pass of a cell; same body as the cold pass, separate symbol so
 /// cold and warm instruction profiles do not mix.
 #[inline(never)]
-fn timed_warm_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> crate::alloc::Measure {
+fn timed_warm_pass<M: Direct>(
+    marf: &mut M,
+    set: &KeySet,
+    out: &mut [Option<[u8; 40]>],
+) -> crate::alloc::Measure {
     let (_, m) = measure(|| {
         for (i, k) in set.keys.iter().enumerate() {
             out[i] = marf.get_value(&set.tip, k);
@@ -534,7 +587,11 @@ fn timed_warm_pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8;
     m
 }
 
-fn pass<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, Counters, u64) {
+fn pass<M: Direct>(
+    marf: &mut M,
+    set: &KeySet,
+    out: &mut [Option<[u8; 40]>],
+) -> (std::time::Duration, Counters, u64) {
     let _ = marf.counters();
     let m = timed_cold_pass(marf, set, out);
     (m.elapsed, marf.counters(), m.peak)
@@ -594,7 +651,9 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
             "fresh handle, OS page cache as left by building the database (process-cold)"
         }
     );
-    println!("key sets (walk shape from the rewrite's profiler; identical trie for every implementation):");
+    println!(
+        "key sets (walk shape from the rewrite's profiler; identical trie for every implementation):"
+    );
     for s in &sets {
         println!(
             "  {:<28} n={:<6} distinct patched nodes={:<6} avg hops={:.2} avg patched/walk={:.2} avg depth={:.2}",
@@ -607,10 +666,14 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
         );
     }
     let caps = capacities();
-    let passes: usize = std::env::var("PASSES").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
+    let passes: usize = std::env::var("PASSES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5);
     let mut cells: BTreeMap<(usize, usize), Cell> = BTreeMap::new();
     let mut samples: Vec<CellSample> = vec![];
-    let mut out: Vec<Option<[u8; 40]>> = vec![None; sets.iter().map(|s| s.keys.len()).max().unwrap_or(0)];
+    let mut out: Vec<Option<[u8; 40]>> =
+        vec![None; sets.iter().map(|s| s.keys.len()).max().unwrap_or(0)];
     let model_for = |set: &KeySet| -> &HashMap<String, [u8; 40]> {
         if set.tip == built.tip1 {
             &built.model1
@@ -752,12 +815,19 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
     let any = cells.values().any(|c| c.counters_warm.available);
     if any {
         println!();
-        println!("counters per set and capacity (first repetition; cold = first pass, warm = {passes} passes):");
+        println!(
+            "counters per set and capacity (first repetition; cold = first pass, warm = {passes} passes):"
+        );
         for (si, set) in sets.iter().enumerate() {
             for (ci, cap) in caps.iter().enumerate() {
                 let cell = &cells[&(si, ci)];
                 for (label, c) in [("cold", &cell.counters_cold), ("warm", &cell.counters_warm)] {
-                    println!("  {:<28} cap={:<5} {label}: {}", set.name, cap_label(*cap), c.summary());
+                    println!(
+                        "  {:<28} cap={:<5} {label}: {}",
+                        set.name,
+                        cap_label(*cap),
+                        c.summary()
+                    );
                 }
             }
         }
@@ -768,7 +838,12 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
         println!();
         for (si, set) in sets.iter().enumerate() {
             for (ci, cap) in caps.iter().enumerate() {
-                println!("  peak live heap {:<28} cap={:<5} {} KiB", set.name, cap_label(*cap), cells[&(si, ci)].peak_kb);
+                println!(
+                    "  peak live heap {:<28} cap={:<5} {} KiB",
+                    set.name,
+                    cap_label(*cap),
+                    cells[&(si, ci)].peak_kb
+                );
             }
         }
     }
@@ -785,7 +860,11 @@ fn run_direct<M: Direct>(w: &Workload, reads: usize, plain: bool) {
 
 /// A timed pass without touching the counters (they accumulate across the
 /// warm passes and are taken once after them).
-fn pass_no_counters<M: Direct>(marf: &mut M, set: &KeySet, out: &mut [Option<[u8; 40]>]) -> (std::time::Duration, (), u64) {
+fn pass_no_counters<M: Direct>(
+    marf: &mut M,
+    set: &KeySet,
+    out: &mut [Option<[u8; 40]>],
+) -> (std::time::Duration, (), u64) {
     let m = timed_warm_pass(marf, set, out);
     (m.elapsed, (), m.peak)
 }
@@ -802,7 +881,10 @@ pub fn check_pass(
     for (i, k) in keys.iter().enumerate() {
         let expected = model.get(k).copied();
         if out[i] != expected {
-            return Err(format!("key {k}: got {:?}, expected {:?}", out[i], expected));
+            return Err(format!(
+                "key {k}: got {:?}, expected {:?}",
+                out[i], expected
+            ));
         }
     }
     Ok(())
@@ -831,7 +913,15 @@ fn verify(set: &KeySet, out: &[Option<[u8; 40]>], model: &HashMap<String, [u8; 4
 mod tests {
     use super::*;
 
-    fn model_and_passes() -> (Vec<String>, HashMap<String, [u8; 40]>, Vec<Vec<Option<[u8; 40]>>>) {
+    /// Keys, expected values, and successive lookup results for pass validation.
+    type PassFixture = (
+        Vec<String>,
+        HashMap<String, [u8; 40]>,
+        Vec<Vec<Option<[u8; 40]>>>,
+    );
+
+    /// Builds one deliberately incorrect pass between two correct passes.
+    fn model_and_passes() -> PassFixture {
         let keys: Vec<String> = (0..4).map(|i| format!("k{i}")).collect();
         let mut model = HashMap::new();
         for (i, k) in keys.iter().enumerate() {

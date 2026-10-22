@@ -253,3 +253,59 @@ field names) plus test helpers re-exposed under their upstream names
 (`trie_sql::{read_squash_info, test_insert_squashed_block,
 test_append_squashed_block}`, `fault_injection_marf_compression`,
 `View::read_block_root_hash`, `MARF::get_root_hash_at`).
+
+
+## ADR-23: Capability boundaries for proof and archive extensions
+
+The crate keeps `codec`, `trie`, `storage`, `marf`, `proofs`, and `pruning`
+as sibling domains. Their `mod.rs` files define shared types and contracts;
+child modules own encoding, traversal, persistence, transaction, proof,
+and staging operations. Responsibility and private caller scope determine
+file boundaries; roughly 1,000 lines is a soft review threshold, not a cap.
+Small related implementations stay together rather than adding thin files.
+
+`access::AuthenticatedRead` and `NodeRead` provide authenticated traversal
+with borrowed nodes and explicit materialization. `proofs::Prove` is a
+blanket extension over that contract. Existing proof constructors and MARF
+convenience methods remain available.
+
+`archive::{Archive, ArchiveSource, ArchiveDestination, ArchiveTransaction,
+ArchiveBlob}` separate historical reads and destination persistence from
+pruning. `pruning::Prune` owns traversal, temporary staging, hashing and
+streaming; the backend adapter owns opening files, SQLite transactions,
+sync and finalization. Archive boundary metadata belongs to the core
+contract, so storage does not depend on the pruning algorithm.
+
+MARF coordination state, storage fields, and trie identity are private.
+`StorageContext` exposes immutable policy and metadata; `TrieIdentity`
+exposes block identity. Capability implementations stay with the owning
+domain. Logical node values and operation results remain ordinary data.
+Borrowed record, branch and patch decoding lives in `codec::record` with
+its private scanning helpers; encoding, pointer primitives and patch application
+remain separate. `storage::read` owns both physical record reads and patch-chain
+resolution. `marf::operations` combines borrowed traversal, ancestry and
+authenticated reads; its nested write module owns pending-trie persistence
+and transaction completion. Public MARF API wrappers, connection adapters and
+archive adapters are siblings of writes. Only the shared trie-abandonment
+helper lives in their common parent; flush machinery stays with writes.
+Shared state stays in `mod.rs`; operation-specific helpers stay with their
+callers and use inherent methods rather than organizational traits. Nested
+modules preserve private access without expanding the public API.
+`MarfConnection` stays available at `marf::MarfConnection` through a reexport.
+Archive transactions use `commit_archive`, distinct from MARF trie commits;
+authenticated ancestry delegates to a separately named private helper.
+There are no restricted visibility modifiers in the crate.
+
+`tests/extraction.rs` compiles the actual proof and pruning modules, plus
+the portable positioned-I/O helper, in a separate test crate. It exercises
+proof generation on building/committed tries and pruning through public
+core capabilities. Its algorithm-facing facades expose only `MARFOpenOpts`
+and trie format constants; backend setup imports the concrete crate directly.
+Included domain unit tests deliberately run in both crates, and pruning tests
+obtain blob paths through `Archive`. Backend access through those facades or
+an inherent implementation on a core type fails compilation there. This is an extraction guard,
+not a new production crate split; a future split must also decide where
+the existing MARF proof convenience API lives.
+
+The codecs, consensus algorithms, streaming buffers and sampling rates
+are unchanged. Profiler context labels follow the new module paths.

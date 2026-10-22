@@ -46,22 +46,27 @@
 //! the Clarity side (this harness keeps no analysis or contract cache).
 
 use std::collections::BTreeMap;
+use std::env;
 use std::time::{Duration, Instant};
 
+use clarity::vm::ClarityVersion;
 use clarity::vm::clarity::TransactionConnection;
 use clarity::vm::costs::ExecutionCost;
 use clarity::vm::resource_limiter::ResourceBudget;
-use clarity::vm::test_util::{generate_test_burn_state_db, UnitTestBurnStateDB, TEST_HEADER_DB};
+use clarity::vm::test_util::{TEST_HEADER_DB, UnitTestBurnStateDB, generate_test_burn_state_db};
 use clarity::vm::types::{PrincipalData, QualifiedContractIdentifier, Value};
-use clarity::vm::ClarityVersion;
 use stacks::chainstate::stacks::boot::BOOT_CODE_COSTS_3;
 use stacks::clarity_vm::clarity::{ClarityBlockConnection, ClarityInstance};
 use stacks::clarity_vm::database::marf::MarfedKV;
 use stacks::util_lib::boot::boot_code_id;
 use stacks_common::consts::CHAIN_ID_TESTNET;
-use stacks_common::types::chainstate::StacksBlockId;
 use stacks_common::types::StacksEpochId;
+use stacks_common::types::chainstate::StacksBlockId;
 use stacks_marf::ClarityMarfTrieId as _;
+
+mod marf_config;
+
+use marf_config::{describe_marf, marf_opts};
 
 const CONTRACT: &str = r#"
 (define-map kv { k: uint } { v: uint })
@@ -87,38 +92,6 @@ fn block_id(n: u32) -> StacksBlockId {
     b[1..5].copy_from_slice(&n.to_be_bytes());
     b[31] = 7;
     StacksBlockId(b)
-}
-
-fn marf_opts() -> stacks_marf::MARFOpenOpts {
-    use stacks_marf::storage::TrieHashCalculationMode;
-    #[allow(unused_mut)]
-    let mut o = stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true).with_compression(true);
-    #[cfg(feature = "optimized-marf")]
-    {
-        o = o.with_mmap(true);
-        o.root_node_cache = false;
-        o.resolved_patch_cache_capacity = 64;
-        o.result_cache_capacity = 2048;
-    }
-    o
-}
-
-#[cfg(feature = "optimized-marf")]
-fn describe_marf() -> String {
-    let o = marf_opts();
-    format!(
-        "optimized stacks-marf (29ef093d): external_blobs={} compress={} mmap={} root_node_cache={} resolved_patch_cache={} result_cache={}",
-        o.external_blobs, o.compress, o.mmap, o.root_node_cache, o.resolved_patch_cache_capacity, o.result_cache_capacity
-    )
-}
-
-#[cfg(not(feature = "optimized-marf"))]
-fn describe_marf() -> String {
-    let o = marf_opts();
-    format!(
-        "stacks-marf package of this workspace: external_blobs={} compress={} (rewrite: mmap always, patch cache 4096; upstream: no caches)",
-        o.external_blobs, o.compress
-    )
 }
 
 /// xorshift, so every variant sees the same key sequence
@@ -179,7 +152,9 @@ impl State {
         r
     }
     fn note(&mut self, v: u64) {
-        self.digest = (self.digest ^ v).wrapping_mul(0x100_0000_01b3).rotate_left(7);
+        self.digest = (self.digest ^ v)
+            .wrapping_mul(0x100_0000_01b3)
+            .rotate_left(7);
     }
 }
 
@@ -274,15 +249,21 @@ struct Bench {
 
 impl Bench {
     fn new(dir: &std::path::Path) -> Bench {
-        let kv = MarfedKV::open(dir.to_str().unwrap(), None, Some(marf_opts())).expect("open MarfedKV");
+        let kv =
+            MarfedKV::open(dir.to_str().unwrap(), None, Some(marf_opts())).expect("open MarfedKV");
         let mut clarity = ClarityInstance::new(false, CHAIN_ID_TESTNET, kv);
         let burn_db = generate_test_burn_state_db(StacksEpochId::Epoch25);
-        let issuer = PrincipalData::parse_standard_principal("SZ2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKQ9H6DPR").unwrap();
+        let issuer =
+            PrincipalData::parse_standard_principal("SZ2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKQ9H6DPR")
+                .unwrap();
         let st = State {
             model: Model::default(),
             rng: Rng(0x9e3779b97f4a7c15),
             sender: issuer.into(),
-            contract: QualifiedContractIdentifier::parse("SZ2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKQ9H6DPR.bench").unwrap(),
+            contract: QualifiedContractIdentifier::parse(
+                "SZ2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKQ9H6DPR.bench",
+            )
+            .unwrap(),
             harness: Duration::ZERO,
             digest: 0,
         };
@@ -290,14 +271,32 @@ impl Bench {
         // the epoch 2.5 blocks that follow
         let genesis = block_id(1);
         {
-            let mut gb = clarity.begin_test_genesis_block(&StacksBlockId::sentinel(), &genesis, &TEST_HEADER_DB, &burn_db);
+            let mut gb = clarity.begin_test_genesis_block(
+                &StacksBlockId::sentinel(),
+                &genesis,
+                &TEST_HEADER_DB,
+                &burn_db,
+            );
             gb.as_transaction(|tx| {
                 let id = boot_code_id("costs-3", false);
                 let (ast, _) = tx
-                    .analyze_smart_contract(&id, ClarityVersion::Clarity1, BOOT_CODE_COSTS_3, &ResourceBudget::unlimited())
+                    .analyze_smart_contract(
+                        &id,
+                        ClarityVersion::Clarity1,
+                        BOOT_CODE_COSTS_3,
+                        &ResourceBudget::unlimited(),
+                    )
                     .expect("analyze costs-3");
-                tx.initialize_smart_contract(&id, ClarityVersion::Clarity1, &ast, BOOT_CODE_COSTS_3, None, |_, _| None, &ResourceBudget::unlimited())
-                    .expect("deploy costs-3");
+                tx.initialize_smart_contract(
+                    &id,
+                    ClarityVersion::Clarity1,
+                    &ast,
+                    BOOT_CODE_COSTS_3,
+                    None,
+                    |_, _| None,
+                    &ResourceBudget::unlimited(),
+                )
+                .expect("deploy costs-3");
             });
             gb.commit_to_block(&genesis);
         }
@@ -312,10 +311,23 @@ impl Bench {
         b.block(|st, blk| {
             blk.as_transaction(|tx| {
                 let (ast, _) = tx
-                    .analyze_smart_contract(&st.contract, ClarityVersion::Clarity2, CONTRACT, &ResourceBudget::unlimited())
+                    .analyze_smart_contract(
+                        &st.contract,
+                        ClarityVersion::Clarity2,
+                        CONTRACT,
+                        &ResourceBudget::unlimited(),
+                    )
                     .expect("analyze");
-                tx.initialize_smart_contract(&st.contract, ClarityVersion::Clarity2, &ast, CONTRACT, None, |_, _| None, &ResourceBudget::unlimited())
-                    .expect("deploy");
+                tx.initialize_smart_contract(
+                    &st.contract,
+                    ClarityVersion::Clarity2,
+                    &ast,
+                    CONTRACT,
+                    None,
+                    |_, _| None,
+                    &ResourceBudget::unlimited(),
+                )
+                .expect("deploy");
             });
             0
         });
@@ -325,11 +337,16 @@ impl Bench {
     /// Run one block: `body` issues the transactions and returns how many;
     /// exec, seal and commit are timed separately. Returns the timing, the
     /// block's cost and its root.
-    fn block<F: FnOnce(&mut State, &mut ClarityBlockConnection<'_, '_>) -> u64>(&mut self, body: F) -> (Timing, ExecutionCost, String) {
+    fn block<F: FnOnce(&mut State, &mut ClarityBlockConnection<'_, '_>) -> u64>(
+        &mut self,
+        body: F,
+    ) -> (Timing, ExecutionCost, String) {
         let next = block_id(self.next);
         self.next += 1;
         let tip = self.tip.clone();
-        let mut blk = self.clarity.begin_block(&tip, &next, &TEST_HEADER_DB, &self.burn_db);
+        let mut blk = self
+            .clarity
+            .begin_block(&tip, &next, &TEST_HEADER_DB, &self.burn_db);
         let h0 = self.st.harness;
         let t0 = Instant::now();
         let txs = body(&mut self.st, &mut blk);
@@ -357,18 +374,27 @@ impl Bench {
     }
 
     /// A block whose writes are abandoned (`rollback_block`).
-    fn rolled_back_block<F: FnOnce(&mut State, &mut ClarityBlockConnection<'_, '_>)>(&mut self, body: F) -> Duration {
+    fn rolled_back_block<F: FnOnce(&mut State, &mut ClarityBlockConnection<'_, '_>)>(
+        &mut self,
+        body: F,
+    ) -> Duration {
         let next = block_id(self.next);
         self.next += 1;
         let tip = self.tip.clone();
         let t0 = Instant::now();
-        let mut blk = self.clarity.begin_block(&tip, &next, &TEST_HEADER_DB, &self.burn_db);
+        let mut blk = self
+            .clarity
+            .begin_block(&tip, &next, &TEST_HEADER_DB, &self.burn_db);
         body(&mut self.st, &mut blk);
         blk.rollback_block();
         t0.elapsed()
     }
 
-    fn workload<F: FnMut(&mut State, &mut ClarityBlockConnection<'_, '_>, usize) -> u64>(&mut self, blocks: usize, mut body: F) -> Record {
+    fn workload<F: FnMut(&mut State, &mut ClarityBlockConnection<'_, '_>, usize) -> u64>(
+        &mut self,
+        blocks: usize,
+        mut body: F,
+    ) -> Record {
         let mut rec = Record::default();
         self.st.digest = 0;
         for i in 0..blocks {
@@ -543,7 +569,11 @@ fn abort(b: &mut Bench, blocks: usize) -> Record {
     b.st.model.round = 0;
     b.block(|st, blk| {
         let r = call(st, blk, "read-many", &[ulist(&hot)]);
-        assert_eq!(ok_uint(&r), before.iter().sum::<u64>(), "rolled-back block's writes visible");
+        assert_eq!(
+            ok_uint(&r),
+            before.iter().sum::<u64>(),
+            "rolled-back block's writes visible"
+        );
         1
     });
     rec
@@ -597,24 +627,51 @@ fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1e3
 }
 
+/// Select benchmark compression; defaults to production's enabled setting.
+fn benchmark_compression() -> bool {
+    match env::var("MARF_BENCH_COMPRESSION").as_deref() {
+        Ok("on") | Err(_) => true,
+        Ok("off") => false,
+        Ok(value) => panic!("MARF_BENCH_COMPRESSION must be on or off, got {value}"),
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let repeat: usize = std::env::var("REPEAT").ok().and_then(|s| s.parse().ok()).unwrap_or(5).max(1);
+    let repeat: usize = std::env::var("REPEAT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5)
+        .max(1);
     let blocks: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(10);
     let cpu = std::fs::read_to_string("/proc/cpuinfo")
         .ok()
-        .and_then(|s| s.lines().find(|l| l.starts_with("model name")).map(|l| l.split(':').nth(1).unwrap_or("").trim().to_string()))
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("model name"))
+                .map(|l| l.split(':').nth(1).unwrap_or("").trim().to_string())
+        })
         .unwrap_or_default();
     println!(
         "clarity-bench: {} | {} | profile {} | repeat {} | {} keys, {} timed blocks per workload",
         describe_marf(),
         cpu,
-        if cfg!(debug_assertions) { "debug" } else { "release" },
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
         repeat,
         KEYS,
         blocks
     );
-    let names = ["read-heavy", "write-heavy", "mixed", "inherited-after-history", "abort"];
+    let names = [
+        "read-heavy",
+        "write-heavy",
+        "mixed",
+        "inherited-after-history",
+        "abort",
+    ];
     let mut aggs: BTreeMap<&str, Agg> = names.iter().map(|n| (*n, Agg::default())).collect();
     let mut populate_time = vec![];
     for _ in 0..repeat {
@@ -628,7 +685,10 @@ fn main() {
             ("write-heavy", write_heavy(&mut b, blocks)),
             ("mixed", mixed(&mut b, blocks)),
             // reads of state written 40 to 70 blocks earlier
-            ("inherited-after-history", read_heavy(&mut b, blocks.max(2) / 2)),
+            (
+                "inherited-after-history",
+                read_heavy(&mut b, blocks.max(2) / 2),
+            ),
             ("abort", abort(&mut b, blocks.max(2) / 2)),
         ];
         for (name, r) in recs {
@@ -643,7 +703,10 @@ fn main() {
             a.blocks = r.rest.blocks;
             let dg = format!("{:016x}", r.values_digest);
             if let Some(prev) = &a.values_digest {
-                assert_eq!(*prev, dg, "{name}: returned values differ between repetitions");
+                assert_eq!(
+                    *prev, dg,
+                    "{name}: returned values differ between repetitions"
+                );
             }
             a.values_digest = Some(dg);
             if let Some(c) = &a.cost {
@@ -656,11 +719,22 @@ fn main() {
             a.roots = Some(r.roots);
         }
     }
-    println!("populate (40 blocks, {KEYS} keys, untimed setup): median {:.1} ms", ms(median(&populate_time)));
+    println!(
+        "populate (40 blocks, {KEYS} keys, untimed setup): median {:.1} ms",
+        ms(median(&populate_time))
+    );
     println!();
     println!(
         "{:<26} {:>6} {:>7} | {:>14} {:>10} {:>14} {:>14} {:>14} | {:>20}",
-        "workload", "blocks", "txs", "exec ms", "harness ms", "seal ms", "commit ms", "total ms", "first block exec ms"
+        "workload",
+        "blocks",
+        "txs",
+        "exec ms",
+        "harness ms",
+        "seal ms",
+        "commit ms",
+        "total ms",
+        "first block exec ms"
     );
     for name in names {
         let a = &aggs[name];
@@ -679,7 +753,11 @@ fn main() {
             format!("{:.1}", ms(median(&a.rest_seal))),
             format!("{:.1}", ms(median(&a.rest_commit))),
             format!("{:.1}", ms(median(&a.rest_total))),
-            format!("{:.1} ({})", ms(median(&a.first_exec)), spread(&a.first_exec)),
+            format!(
+                "{:.1} ({})",
+                ms(median(&a.first_exec)),
+                spread(&a.first_exec)
+            ),
         );
     }
     println!();
@@ -690,7 +768,15 @@ fn main() {
         let roots = a.roots.as_ref().unwrap();
         println!(
             "  {:<26} cost runtime={} read_count={} read_length={} write_count={} write_length={} blocks={} values_digest={} last_root={}",
-            name, c.runtime, c.read_count, c.read_length, c.write_count, c.write_length, roots.len(), a.values_digest.as_deref().unwrap_or(""), roots.last().unwrap()
+            name,
+            c.runtime,
+            c.read_count,
+            c.read_length,
+            c.write_count,
+            c.write_length,
+            roots.len(),
+            a.values_digest.as_deref().unwrap_or(""),
+            roots.last().unwrap()
         );
     }
     if let Ok(path) = std::env::var("JSON_OUT") {
@@ -703,10 +789,18 @@ fn main() {
             harness: "clarity-bench",
             experiment: "clarity",
             variant: describe_marf(),
-            tree_rev: option_env!("MARF_BENCH_TREE_REV").unwrap_or("unknown").to_string(),
+            tree_rev: option_env!("MARF_BENCH_TREE_REV")
+                .unwrap_or("unknown")
+                .to_string(),
             binary_sha256: exe,
-            rustc: option_env!("MARF_BENCH_RUSTC").unwrap_or("unknown").to_string(),
-            profile: if cfg!(debug_assertions) { "debug" } else { "release" },
+            rustc: option_env!("MARF_BENCH_RUSTC")
+                .unwrap_or("unknown")
+                .to_string(),
+            profile: if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
             repeat,
             blocks,
             keys: KEYS,
@@ -714,7 +808,8 @@ fn main() {
             populate_ns: populate_time.iter().map(|d| d.as_nanos()).collect(),
             workloads: &aggs,
         };
-        std::fs::write(&path, serde_json::to_string_pretty(&out).unwrap()).unwrap_or_else(|e| panic!("write {path}: {e}"));
+        std::fs::write(&path, serde_json::to_string_pretty(&out).unwrap())
+            .unwrap_or_else(|e| panic!("write {path}: {e}"));
         eprintln!("[json] wrote {path}");
     }
 }

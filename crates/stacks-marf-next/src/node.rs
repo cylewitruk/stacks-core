@@ -289,7 +289,11 @@ impl Branch {
     pub fn child(&self, chr: u8) -> Option<&Ptr> {
         match self.kind {
             // sorted by chr
-            Kind::Node256 => self.children.binary_search_by_key(&chr, |p| p.chr).ok().map(|i| &self.children[i]),
+            Kind::Node256 => self
+                .children
+                .binary_search_by_key(&chr, |p| p.chr)
+                .ok()
+                .map(|i| &self.children[i]),
             _ => self.children.iter().find(|p| p.chr == chr),
         }
     }

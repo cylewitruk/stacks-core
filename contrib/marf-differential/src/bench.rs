@@ -6,8 +6,8 @@ use std::time::Instant;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
-use crate::ops::{block_hex, sentinel_hex, value_hex_from_str, Op, OpenOpts};
 use crate::Impl;
+use crate::ops::{Op, OpenOpts, block_hex, sentinel_hex, value_hex_from_str};
 
 pub fn run(which: Impl, blocks: usize, inserts_per_block: usize, lookups: usize) {
     let mut rng = ChaCha20Rng::seed_from_u64(7);
@@ -26,7 +26,7 @@ pub fn run(which: Impl, blocks: usize, inserts_per_block: usize, lookups: usize)
         let entries = (0..inserts_per_block)
             .map(|_| {
                 let k = format!("key::{}", rng.gen_range(0..key_pool));
-                (k, value_hex_from_str(&format!("v{}", rng.gen::<u64>())))
+                (k, value_hex_from_str(&format!("v{}", rng.r#gen::<u64>())))
             })
             .collect();
         write_ops.push(Op::InsertBatch { entries });
@@ -79,7 +79,7 @@ pub fn run(which: Impl, blocks: usize, inserts_per_block: usize, lookups: usize)
         blobs / 1024
     );
     if keep {
-        let path = dir.into_path();
+        let path = dir.keep();
         println!("kept {}", path.display());
     }
 }

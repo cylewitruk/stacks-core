@@ -1066,7 +1066,7 @@ fn parse_process_transaction_error(
 mod epoch_size_limit_tests {
     use stacks_common::types::StacksEpochId;
 
-    use super::{MAX_EPOCH_SIZE, block_exceeds_epoch_size_limit};
+    use super::{block_exceeds_epoch_size_limit, MAX_EPOCH_SIZE};
 
     /// The boundary both mining paths share: exactly `MAX_EPOCH_SIZE` is
     /// rejected before epoch 4.1 and accepted from 4.1 on; one byte either

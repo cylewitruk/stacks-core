@@ -8,12 +8,12 @@ use std::path::Path;
 use stacks_common::codec::StacksMessageCodec;
 use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 use stacks_common::util::hash::{hex_bytes, to_hex};
-use stacks_marf_next::marf::{MARFOpenOpts, MarfConnection, MarfTransaction, MARF};
+use stacks_marf_next::marf::{MARF, MARFOpenOpts, MarfConnection, MarfTransaction};
 use stacks_marf_next::pruning::Prune;
 use stacks_marf_next::storage::TrieHashCalculationMode;
 use stacks_marf_next::{ClarityMarfTrieId, Error, MARFValue, TrieMerkleProof};
 
-use crate::adapter::{proof_observation, tamper_bytes, MarfApi, ProofCheck};
+use crate::adapter::{MarfApi, ProofCheck, proof_observation, tamper_bytes};
 use crate::ops::{Observation, Op, OpenOpts, Tamper};
 
 pub struct Rewrite;

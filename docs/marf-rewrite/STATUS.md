@@ -28,7 +28,56 @@ optimizations and where they plug in).
   adapters calling the real APIs of both crates, seeded generators, 22
   recorded fixtures, replay and hand-off tests, the `alloc` measurement, CLI.
 
-## Size
+## Module restructuring
+
+The integration branch splits the six large implementation files into
+subdomain modules. `access` and `archive` define extension capabilities;
+proofs and pruning use those contracts without reaching into MARF or
+storage fields. See ADR-23 in `DECISIONS.md`.
+
+The refactor has 45 source files, 9,441 total physical lines (including
+license headers, comments and tests), and a largest file of 668 lines. These
+are physical sizes, not the production-line metric below. Related borrowed
+codec decoding and storage patch resolution are colocated. MARF traversal,
+ancestry and authenticated reads share a private operations scope; writes
+and transaction completion live beneath it, keeping lifecycle helpers private.
+Responsibility comes first, with roughly 1,000 lines as a soft review threshold.
+Restricted visibility modifiers (`pub(crate)`, `pub(super)`) remain absent;
+`StorageContext` and `TrieIdentity` remain capability contracts.
+The extraction guard limits algorithm-facing
+facades to configuration and format constants, while running the included
+domain tests against direct backend imports.
+
+Run the extraction guard with:
+
+```sh
+cargo nextest run -p stacks-marf-next --test extraction
+```
+
+### Refactor validation and compression controls
+
+The refactor passed 25 crate/differential tests with all features, 68
+pruning/Clarity consumer tests, and all 132 hand-off boundaries in each
+direction. Workspace checking, Clippy, rustdoc and the extraction guard
+also passed. This does not replace the full node/stackslib suites.
+
+For construction and Clarity benchmarks, set
+`MARF_BENCH_COMPRESSION=on|off` (default `on`). This controls compact
+encoding and patch-node selection. The allocation benchmark already
+accepts `compressed|plain` as its storage-format argument.
+
+A/B runs against `6eb30510` covered both settings with identical harness
+controls. Recorded roots, read/result digests and Clarity costs matched;
+102 allocation phases matched at reported precision. One six-pair compressed
+recheck measured insertion about 8% slower; another using the same binaries
+measured external insertion 3.9% faster and SQLite insertion 1.6% slower.
+The insertion slowdown is therefore not established as a stable regression.
+Whole construction was 0.5% and 1.7% slower in those batches, respectively.
+Clarity execution medians across both settings were within 4% of HEAD.
+These bounded synthetic measurements show between-batch variability and
+do not establish production performance equivalence.
+
+## Historical size comparison (before module restructuring)
 
 Production lines = non-blank lines that are not `//` comments, with trailing
 `#[cfg(test)] mod` blocks removed, excluding `test/`, `tests/` and bench
@@ -36,7 +85,7 @@ modules (counted with a 10-line Python script applying these rules; re-run with
 the same rules to compare).
 
 | | Upstream `stacks-marf/src` at `ad5c5778` | Rewrite (`crates/stacks-marf-next/src`) |
-|---|---|---|
+| --- | --- | --- |
 | Production lines | 11,482 | 5,724 |
 | Modules | 14 | 10 |
 | Node representations | `TrieNode4/16/48/256`, `TrieLeaf`, `TrieNodeType`, packed/canonical/mapped variants | `Node::{Leaf, Branch}` plus borrowed `Record`/`BranchView`/`LeafView`/`PatchView` |
@@ -46,7 +95,7 @@ The differential harness is another 2,617 lines (`contrib/marf-differential/src`
 
 ## Tests and how to run them
 
-```
+```sh
 cargo nextest run -p stacks-marf-next -p marf-differential --no-fail-fast
 ```
 
@@ -158,7 +207,7 @@ Two oracles, measured separately with their own binaries:
 **External blobs, compressed (the node's production storage):**
 
 | phase | ops | upstream alloc/op | upstream µs/op | reference alloc/op | reference µs/op | next alloc/op | next µs/op |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | insert | 40,000 | 38.7 | 14.3 | 8.1 | 7.2 | 0.87 | 2.0 |
 | seal (hashing) | 20 | 3,348 | 16,092 | 26.8 | 14,102 | 17.0 | 12,691 |
 | commit (serialize + write) | 20 | 2,202 | 11,984 | 1,312 | 5,723 | 531.5 | 4,266 |
@@ -171,7 +220,7 @@ Two oracles, measured separately with their own binaries:
 **External blobs, plain:**
 
 | phase | ops | upstream alloc/op | upstream µs/op | reference alloc/op | reference µs/op | next alloc/op | next µs/op |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | insert | 40,000 | 19.0 | 8.5 | 7.7 | 6.9 | 0.70 | 1.8 |
 | seal | 20 | 2,729 | 14,373 | 25.8 | 14,203 | 16.9 | 14,289 |
 | commit | 20 | 33.4 | 5,489 | 33.9 | 5,562 | 25.5 | 4,937 |
@@ -184,7 +233,7 @@ Two oracles, measured separately with their own binaries:
 **SQLite-internal blobs, plain:**
 
 | phase | ops | upstream alloc/op | upstream µs/op | reference alloc/op | reference µs/op | next alloc/op | next µs/op |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | insert | 40,000 | 19.0 | 15.2 | 7.7 | 14.6 | 0.70 | 7.0 |
 | seal | 20 | 2,729 | 14,790 | 25.9 | 14,959 | 16.9 | 12,442 |
 | commit | 20 | 30.5 | 11,040 | 30.6 | 10,073 | 25.5 | 9,253 |
@@ -199,7 +248,7 @@ external compressed; the reference's `next` column is the same code, shown
 to give the run-to-run spread):
 
 | phase | upstream | reference | next | next (reference run) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | insert (one 2,000-key block) | 2,538 | 2,611 | 2,500 | 2,500 |
 | commit (one block) | 1,979 | 2,059 | 648 | 648 |
 | proof (500 proofs) | 488 | 356 | 914 | 914 |
@@ -217,7 +266,7 @@ slot (upstream's layout). Measured with the harness's `prune` phase, peak
 live heap during the prune, same binary for upstream and the rewrite:
 
 | workload | nodes collected | rewrite before (`b35cf463b4`) | rewrite now | upstream | reference |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | 28 blocks, 40,400 keys (default) | 48,630 | 15,878 KiB | 4,504 KiB | 5,863 KiB | 5,919 KiB |
 | 58 blocks, 200,400 keys | 254,505 | 81,573 KiB | 23,772 KiB | 31,526 KiB | not run |
 | per node (both sizes agree) | | ~330 B | ~95 B | ~125 B | |
@@ -274,7 +323,7 @@ above (external blobs, compressed); times are best of three, µs per lookup.
   tip block itself.
 
 | tip | hops | patch | ~nodes | pattern | upstream alloc/op | upstream KB/op | upstream µs | reference alloc/op | reference KB/op | reference µs | rewrite alloc/op | rewrite µs |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | bulk | 0 | 3-4 | 3.6 | hot64 | 42.3 | 92.7 | 1,298 | 4.00 | 4.2 | 11.7 | 0 | 1.07 |
 | bulk | 0 | 3-4 | 3.6 | fit(1,024) | 42.3 | 92.7 | 1,243 | 4.13 | 4.3 | 12.7 | 0 | 1.31 |
 | bulk | 1 | 3-4 | 3.4 | hot64 | 42.7 | 93.7 | 1,234 | 4.09 | 4.2 | 11.7 | 0 | 1.03 |
@@ -404,7 +453,7 @@ sortition db, `util_lib::db`, every test mentioning `marf`, `squash` or
 Result of the parallel run: **921 tests selected, 918 passed, 0 failed**, 3
 stalled (see below). Command:
 
-```
+```sh
 cargo nextest run -p stackslib -p stacks-node -p marf-squash -p clarity-cli --no-fail-fast \
   -E 'test(/clarity_vm::tests/) | test(/clarity_vm::database/) | test(/snapshot/) | test(/util_lib::db/) | test(/burn::db::sortdb::tests/) | test(/chainstate::stacks::db::/) | test(/chainstate::stacks::tests/) | test(/marf/) | test(/squash/) | test(/unconfirmed/) | test(/nakamoto::tests::node/)'
 ```

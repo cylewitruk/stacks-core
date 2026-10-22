@@ -43,8 +43,8 @@ use rand_chacha::ChaCha20Rng;
 use stacks_common::types::chainstate::StacksBlockId;
 use stacks_marf_next::ClarityMarfTrieId as _;
 
-use crate::alloc::{environment, repeat, write_json, Counters, Direct, Manifest, Opts, Samples};
 use crate::Impl;
+use crate::alloc::{Counters, Direct, Manifest, Opts, Samples, environment, repeat, write_json};
 
 /// Fold one read into a digest: position, presence and value bytes.
 #[inline]
@@ -149,7 +149,15 @@ impl Rec<'_> {
     fn add(&mut self, name: &str, kind: &'static str, ops: u64, d: Duration, c: Counters) {
         self.add_digest(name, kind, ops, d, c, None);
     }
-    fn add_digest(&mut self, name: &str, kind: &'static str, ops: u64, d: Duration, c: Counters, digest: Option<u64>) {
+    fn add_digest(
+        &mut self,
+        name: &str,
+        kind: &'static str,
+        ops: u64,
+        d: Duration,
+        c: Counters,
+        digest: Option<u64>,
+    ) {
         let key = (self.order, name.to_string());
         let e = self.phases.entry(key).or_default();
         e.time.push(d);
@@ -202,7 +210,10 @@ fn timed_reads<M: Direct>(
             expected = fold(expected, i, &model.get(k.as_str()).copied());
         }
     }
-    assert_eq!(acc, expected, "digest of all reads at {tip} differs from the model");
+    assert_eq!(
+        acc, expected,
+        "digest of all reads at {tip} differs from the model"
+    );
     for (i, k) in keys.iter().enumerate() {
         assert_eq!(out[i], model.get(k.as_str()).copied(), "key {k} at {tip}");
     }
@@ -232,7 +243,7 @@ fn run_once<M: Direct>(dir: &Path, cfg: &Config, rec: &mut Rec<'_>) -> ([u8; 32]
         let child = bid(b as u32 + 1);
         marf.begin(&parent, &child);
         let keys: Vec<String> = (0..cfg.inserts)
-            .map(|i| format!("key::{b}::{i}::{}", rng.gen::<u32>()))
+            .map(|i| format!("key::{b}::{i}::{}", rng.r#gen::<u32>()))
             .collect();
         let values: Vec<[u8; 40]> = (0..cfg.inserts).map(|_| value(&mut rng)).collect();
         marf.insert_batch(&keys, &values);
@@ -277,7 +288,9 @@ fn run_once<M: Direct>(dir: &Path, cfg: &Config, rec: &mut Rec<'_>) -> ([u8; 32]
     rec.add_digest("inherited wide (distinct once)", "read", n, d, c, Some(dg));
 
     // insert 500 new keys, then read them (hot 64 cycled, and all once x10)
-    let new_keys: Vec<String> = (0..500).map(|i| format!("new::{i}::{}", rng.gen::<u32>())).collect();
+    let new_keys: Vec<String> = (0..500)
+        .map(|i| format!("new::{i}::{}", rng.r#gen::<u32>()))
+        .collect();
     let new_values: Vec<[u8; 40]> = (0..500).map(|_| value(&mut rng)).collect();
     let _ = marf.counters();
     let t = Instant::now();
@@ -294,12 +307,20 @@ fn run_once<M: Direct>(dir: &Path, cfg: &Config, rec: &mut Rec<'_>) -> ([u8; 32]
     rec.add_digest("inserted all 500 (x10)", "read", n, d, c, Some(dg));
 
     // update 200 inherited keys, read them (expect the new values)
-    let upd_keys: Vec<String> = (0..200).map(|_| all_keys[rng.gen_range(0..all_keys.len())].clone()).collect();
+    let upd_keys: Vec<String> = (0..200)
+        .map(|_| all_keys[rng.gen_range(0..all_keys.len())].clone())
+        .collect();
     let upd_values: Vec<[u8; 40]> = (0..200).map(|_| value(&mut rng)).collect();
     let _ = marf.counters();
     let t = Instant::now();
     marf.insert_batch(&upd_keys, &upd_values);
-    rec.add("update 200 inherited", "write", 200, t.elapsed(), marf.counters());
+    rec.add(
+        "update 200 inherited",
+        "write",
+        200,
+        t.elapsed(),
+        marf.counters(),
+    );
     for (k, v) in upd_keys.iter().zip(&upd_values) {
         open.insert(k.clone(), *v);
     }
@@ -316,7 +337,13 @@ fn run_once<M: Direct>(dir: &Path, cfg: &Config, rec: &mut Rec<'_>) -> ([u8; 32]
     let _ = marf.counters();
     let t = Instant::now();
     marf.insert_batch(&miss_keys, &miss_values);
-    rec.add("insert the 500 missed", "write", 500, t.elapsed(), marf.counters());
+    rec.add(
+        "insert the 500 missed",
+        "write",
+        500,
+        t.elapsed(),
+        marf.counters(),
+    );
     for (k, v) in miss_keys.iter().zip(&miss_values) {
         open.insert(k.clone(), *v);
     }
@@ -341,19 +368,44 @@ fn run_once<M: Direct>(dir: &Path, cfg: &Config, rec: &mut Rec<'_>) -> ([u8; 32]
     }
     let c = marf.counters();
     rec.add("successive updates x100: writes", "write", 100, wtime, c);
-    rec.add("successive updates x100: reads", "read", 100, rtime, Counters::default());
+    rec.add(
+        "successive updates x100: reads",
+        "read",
+        100,
+        rtime,
+        Counters::default(),
+    );
 
     // ancestor reads while the child is open: the parent tip sees the
     // committed values (updates not visible), block 10's tip its own state
-    let anc: Vec<&String> = (0..2000).map(|_| &all_keys[rng.gen_range(0..all_keys.len())]).collect();
+    let anc: Vec<&String> = (0..2000)
+        .map(|_| &all_keys[rng.gen_range(0..all_keys.len())])
+        .collect();
     let (n, d, c, dg) = timed_reads(&mut marf, &base_tip, &anc, 1, &mut out, &committed);
     rec.add_digest("ancestor reads: parent tip 2000", "read", n, d, c, Some(dg));
-    let old_keys: Vec<&String> = all_keys[..old_block * cfg.inserts].iter().take(2000).collect();
+    let old_keys: Vec<&String> = all_keys[..old_block * cfg.inserts]
+        .iter()
+        .take(2000)
+        .collect();
     let (n, d, c, dg) = timed_reads(&mut marf, &tip10, &old_keys, 1, &mut out, &at_block10);
-    rec.add_digest("ancestor reads: block-10 tip 2000", "read", n, d, c, Some(dg));
+    rec.add_digest(
+        "ancestor reads: block-10 tip 2000",
+        "read",
+        n,
+        d,
+        c,
+        Some(dg),
+    );
     // and the open block again after those context changes
     let (n, d, c, dg) = timed_reads(&mut marf, &child, &hot, reads / 64, &mut out, &open);
-    rec.add_digest("inherited hot64 after ancestor reads", "read", n, d, c, Some(dg));
+    rec.add_digest(
+        "inherited hot64 after ancestor reads",
+        "read",
+        n,
+        d,
+        c,
+        Some(dg),
+    );
 
     let _ = marf.counters();
     let t = Instant::now();
@@ -362,12 +414,25 @@ fn run_once<M: Direct>(dir: &Path, cfg: &Config, rec: &mut Rec<'_>) -> ([u8; 32]
     let t = Instant::now();
     marf.commit();
     rec.add("commit", "write", 1, t.elapsed(), marf.counters());
-    rec.add("whole construction (begin..commit)", "total", 1, construction.elapsed(), Counters::default());
+    rec.add(
+        "whole construction (begin..commit)",
+        "total",
+        1,
+        construction.elapsed(),
+        Counters::default(),
+    );
     let root_child = marf.root_hash(&child).expect("committed child");
     // failed-begin path: the committed block cannot be begun again, and the
     // handle stays usable afterwards
-    assert!(!marf.try_begin(&base_tip, &child), "begin of an existing block succeeded");
-    assert_eq!(marf.root_hash(&child), Some(root_child), "failed begin disturbed the committed block");
+    assert!(
+        !marf.try_begin(&base_tip, &child),
+        "begin of an existing block succeeded"
+    );
+    assert_eq!(
+        marf.root_hash(&child),
+        Some(root_child),
+        "failed begin disturbed the committed block"
+    );
     // committed state must be exactly the open model
     let (n, d, c, dg) = timed_reads(&mut marf, &child, &upd_refs, 1, &mut out, &open);
     rec.add_digest("after commit: updated 200", "read", n, d, c, Some(dg));
@@ -387,10 +452,23 @@ fn run_once<M: Direct>(dir: &Path, cfg: &Config, rec: &mut Rec<'_>) -> ([u8; 32]
     let (n, d, c, dg) = timed_reads(&mut marf, &d_block, &rb_refs, 1, &mut out, &rb_model);
     rec.add_digest("rollback: reads before drop", "read", n, d, c, Some(dg));
     marf.drop_current();
-    rec.add("rollback: begin+insert+drop", "write", 500, t.elapsed(), Counters::default());
-    assert!(marf.root_hash(&d_block).is_none(), "dropped block still has a root");
+    rec.add(
+        "rollback: begin+insert+drop",
+        "write",
+        500,
+        t.elapsed(),
+        Counters::default(),
+    );
+    assert!(
+        marf.root_hash(&d_block).is_none(),
+        "dropped block still has a root"
+    );
     for k in &rb_keys {
-        assert_eq!(marf.get_value(&child, k), None, "dropped write visible at parent");
+        assert_eq!(
+            marf.get_value(&child, k),
+            None,
+            "dropped write visible at parent"
+        );
     }
     // the same block is then built for real and committed
     marf.begin(&child, &d_block);
@@ -442,9 +520,16 @@ fn run_direct<M: Direct>(cfg: &Config) {
         roots = Some(r);
     }
     let (rc, rd) = roots.unwrap();
-    println!("final roots: child={} rollback-rebuilt={}", hex(&rc), hex(&rd));
+    println!(
+        "final roots: child={} rollback-rebuilt={}",
+        hex(&rc),
+        hex(&rd)
+    );
     println!();
-    println!("{:<40} {:>5} {:>8} | {:>12} {:>19} {:>12}", "phase", "kind", "ops", "median us/op", "min-max us/op", "median ms");
+    println!(
+        "{:<40} {:>5} {:>8} | {:>12} {:>19} {:>12}",
+        "phase", "kind", "ops", "median us/op", "min-max us/op", "median ms"
+    );
     let mut read_total = Duration::ZERO;
     let mut write_total = Duration::ZERO;
     for ((_, name), p) in &phases {

@@ -6,11 +6,11 @@
 
 pub mod ablate;
 pub mod adapter;
-pub mod baseline;
 pub mod alloc;
+pub mod baseline;
 pub mod bench;
 pub mod construct;
-pub mod gen;
+pub mod r#gen;
 pub mod inspect;
 pub mod ops;
 pub mod rewrite;

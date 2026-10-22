@@ -5,12 +5,12 @@ use anyhow::{Context as _, Result, anyhow};
 use blockstack_lib::burnchains::Burnchain;
 use blockstack_lib::chainstate::burn::db::sortdb::SortitionDB;
 use blockstack_lib::chainstate::stacks::db::StacksChainState;
-use stacks_marf::storage::TrieHashCalculationMode;
-use stacks_marf::MARFOpenOpts;
 use blockstack_lib::core::{STACKS_EPOCHS_MAINNET, STACKS_EPOCHS_REGTEST, STACKS_EPOCHS_TESTNET};
 use clarity::vm::costs::ExecutionCost;
 use futures::{Stream, StreamExt};
 use stacks_common::types::StacksEpochId;
+use stacks_marf::MARFOpenOpts;
+use stacks_marf::storage::TrieHashCalculationMode;
 
 use crate::blocks::{BackwardsBlockStream, BlockRef};
 use crate::db::node::sortition::SortitionDb;

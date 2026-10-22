@@ -14,8 +14,8 @@
 #                            workspace dependency entries it needs), three
 #                            `MarfCore` trait imports added where upstream's
 #                            stackslib calls methods the optimized crate moved
-#                            to that trait, this crate copied in with the
-#                            optimized-marf feature (production options:
+#                            to that trait, this crate copied in with
+#                            reference backend options (production options:
 #                            mmap, root cache off, 64-entry patch cache,
 #                            2,048-entry result cache)
 #   clarity-bench-optstack   (optional, OPTSTACK=1) worktree of 29ef093d as
@@ -50,10 +50,13 @@ if '"contrib/clarity-bench"' not in s:
     s=s.replace('members = [\n','members = [\n    "contrib/clarity-bench",\n',1); open(p,'w').write(s)
 PY
 }
-copy_crate() { # <worktree> <marf dep line>
+copy_crate() { # <worktree> <marf dep line> [optimized]
   rm -rf "$1/contrib/clarity-bench"
   mkdir -p "$1/contrib"
   cp -r contrib/clarity-bench "$1/contrib/clarity-bench"
+  if [ "${3:-}" = optimized ]; then
+    cp contrib/clarity-bench/scripts/optimized-marf.rs "$1/contrib/clarity-bench/src/marf_config.rs"
+  fi
   rm -rf "$1/contrib/clarity-bench/scripts"
   python3 - "$1/contrib/clarity-bench/Cargo.toml" "$2" <<'PY'
 import sys,re
@@ -117,8 +120,8 @@ if 'MarfCore' not in t:
     t=t.replace('use stacks_marf::marf::{\n','use stacks_marf::marf::{\n    MarfCore,\n',1); open(p,'w').write(t)
 print("optmarf worktree prepared")
 PY
-copy_crate "$WORK/optmarf" 'stacks-marf = { path = "../../stacks-marf" }'
-(cd "$WORK/optmarf" && cargo build --release -p clarity-bench --features optimized-marf)
+copy_crate "$WORK/optmarf" 'stacks-marf = { path = "../../stacks-marf" }' optimized
+(cd "$WORK/optmarf" && cargo build --release -p clarity-bench)
 cp "$WORK/optmarf/target/release/clarity-bench" "$OUT/clarity-bench-optmarf"
 (cd "$WORK/optmarf" && git diff --stat -- stackslib Cargo.toml | tail -5)
 [ "${CLEAN:-0}" = 1 ] && rm -rf "$WORK/optmarf/target"
@@ -126,8 +129,8 @@ cp "$WORK/optmarf/target/release/clarity-bench" "$OUT/clarity-bench-optmarf"
 # D (optional): the whole optimized stack
 if [ "${OPTSTACK:-0}" = 1 ]; then
   worktree "$WORK/optstack" "$REF_REV"
-  copy_crate "$WORK/optstack" 'stacks-marf = { path = "../../stacks-marf" }'
-  if (cd "$WORK/optstack" && cargo build --release -p clarity-bench --features optimized-marf); then
+  copy_crate "$WORK/optstack" 'stacks-marf = { path = "../../stacks-marf" }' optimized
+  if (cd "$WORK/optstack" && cargo build --release -p clarity-bench); then
     cp "$WORK/optstack/target/release/clarity-bench" "$OUT/clarity-bench-optstack"
     [ "${CLEAN:-0}" = 1 ] && rm -rf "$WORK/optstack/target"
   else
