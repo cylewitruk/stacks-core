@@ -55,6 +55,9 @@ jobs:
         with:
           components: clippy
 
+      - name: Check MARF package boundaries
+        run: python3 .github/scripts/check-marf-boundaries.py
+
       # Run clippy with clippy-stacks alias in .cargo/config.toml
       - name: Clippy
         run: cargo clippy-stacks

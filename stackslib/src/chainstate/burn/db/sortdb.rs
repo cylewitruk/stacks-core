@@ -31,7 +31,8 @@ use stacks_common::types::StacksPublicKeyBuffer;
 use stacks_common::util::hash::{hex_bytes, to_hex, Sha512Trunc256Sum};
 use stacks_common::util::vrf::*;
 use stacks_marf::file::TrieFile;
-use stacks_marf::marf::{test_override_marf_compression, MARFOpenOpts, MarfConnection, MARF};
+use stacks_marf::marf::{test_override_marf_compression, MARFOpenOpts, MARF};
+use stacks_marf::sqlite::SqliteAccess;
 use stacks_marf::ClarityMarfTrieId;
 
 #[cfg(test)]

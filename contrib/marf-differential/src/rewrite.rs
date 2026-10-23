@@ -10,6 +10,7 @@ use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
 use stacks_common::util::hash::{hex_bytes, to_hex};
 use stacks_marf_next::marf::{MARF, MARFOpenOpts, MarfConnection, MarfTransaction};
 use stacks_marf_next::pruning::Prune;
+use stacks_marf_next::sqlite::SqliteAccess;
 use stacks_marf_next::storage::TrieHashCalculationMode;
 use stacks_marf_next::{ClarityMarfTrieId, Error, MARFValue, TrieMerkleProof};
 
@@ -88,7 +89,9 @@ fn tip_obs(tip: Option<&StacksBlockId>, height: Option<u32>) -> Observation {
 }
 
 /// Root hash -> block id for every confirmed block, used by proof verification.
-fn root_to_block<C: MarfConnection<StacksBlockId>>(c: &mut C) -> HashMap<TrieHash, StacksBlockId> {
+fn root_to_block<C: MarfConnection<StacksBlockId> + SqliteAccess>(
+    c: &mut C,
+) -> HashMap<TrieHash, StacksBlockId> {
     let blocks: Vec<StacksBlockId> = {
         let conn = c.sqlite_conn();
         let mut stmt = conn
@@ -111,7 +114,7 @@ fn root_to_block<C: MarfConnection<StacksBlockId>>(c: &mut C) -> HashMap<TrieHas
     map
 }
 
-fn check_proof<C: MarfConnection<StacksBlockId>>(
+fn check_proof<C: MarfConnection<StacksBlockId> + SqliteAccess>(
     c: &mut C,
     tip: &str,
     key: &str,
@@ -149,7 +152,10 @@ fn check_proof<C: MarfConnection<StacksBlockId>>(
 }
 
 /// Read-side ops that work on anything implementing `MarfConnection`.
-fn read_op<C: MarfConnection<StacksBlockId>>(c: &mut C, op: &Op) -> Option<Observation> {
+fn read_op<C: MarfConnection<StacksBlockId> + SqliteAccess>(
+    c: &mut C,
+    op: &Op,
+) -> Option<Observation> {
     Some(match op {
         Op::Get { tip, key } => obs(c.get(&bid(tip), key), |v| {
             Observation::Value(v.map(|m| to_hex(m.as_bytes())))

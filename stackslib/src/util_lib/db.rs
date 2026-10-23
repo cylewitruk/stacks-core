@@ -35,6 +35,7 @@ pub use stacks_common::util::db::{
 use stacks_common::util::hash::to_hex;
 use stacks_common::util::secp256k1::{Secp256k1PrivateKey, Secp256k1PublicKey};
 use stacks_marf::marf::{MarfConnection, MarfTransaction, MARF};
+use stacks_marf::sqlite::SqliteAccess;
 use stacks_marf::{Error as MARFError, MARFValue, MarfTrieId};
 
 pub type DBConn = rusqlite::Connection;
@@ -698,7 +699,7 @@ fn load_indexed(conn: &DBConn, marf_value: &MARFValue) -> Result<Option<String>,
 }
 
 /// Get a value from the fork index
-fn get_indexed<T: MarfTrieId, M: MarfConnection<T>>(
+fn get_indexed<T: MarfTrieId, M: MarfConnection<T> + SqliteAccess>(
     index: &mut M,
     header_hash: &T,
     key: &str,

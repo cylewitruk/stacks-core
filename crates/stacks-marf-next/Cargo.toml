@@ -10,23 +10,21 @@ name = "stacks_marf_next"
 path = "src/lib.rs"
 
 [dependencies]
-memmap2 = "0.9"
+marf-core = {path="../marf-core"}
+marf-proofs = {path="../marf-proofs"}
+marf-pruning = {path="../marf-pruning"}
+serde_json = {workspace=true}
 rusqlite = { workspace = true }
-serde = { workspace = true }
-serde_derive = { workspace = true }
 slog = { workspace = true }
 stacks-common = { path = "../../stacks-common", default-features = false, features = [
     "rusqlite",
 ] }
 stacks-profiler = { workspace = true, optional = true }
 
-[target.'cfg(all(any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64"), not(any(target_os="windows"))))'.dependencies]
-sha2 = { version = "0.10.9", features = ["asm"] }
-
-[target.'cfg(any(not(any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64")), any(target_os = "windows")))'.dependencies]
-sha2 = { version = "0.10.9" }
-
 [dev-dependencies]
+# Enable test helpers for this package's integration tests only.
+stacks-marf-next = {path=".",features=["testing"]}
+clarity = {path="../../clarity"}
 stacks-common = { path = "../../stacks-common", features = [
     "default",
     "testing",
@@ -36,12 +34,12 @@ tempfile = "3"
 [features]
 default = []
 # Expose the MARF's test-only helpers to other crates' test suites.
-testing = ["stacks-common/testing"]
-# Accepted for parity with `stacks-marf`; SQLite profiling lives in stacks-common.
-profile-sqlite = ["stacks-common/profile-sqlite"]
+testing = ["stacks-common/testing", "marf-core/testing"]
+# SQL timing is observed in core and formatted by this integration.
+profile-sqlite = ["stacks-common/profile-sqlite", "marf-core/profile-sqlite"]
 # Per-thread operation counters (`stats`) for benchmark experiments; every
 # hook compiles to nothing without it.
-counters = []
+counters = ["marf-core/counters"]
 # `stacks-profiler` spans and records on the same logical operations the
 # original MARF instrumented (reads, walks, inserts, seal, flush/commit,
 # block-id and record I/O), with the same sampling; `profiler::flags` holds

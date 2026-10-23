@@ -1,13 +1,13 @@
 # MARF rewrite: status
 
-Branch: `claude/awesome-brown-xj309n`.
+Branch: `refactor/marf-crate-split`; split baseline: `e59971d697`.
 Compatibility baseline: upstream `stacks-network/stacks-core` `main` at
 `ad5c57786bb51b58d4bdb4992ad534f762d8cf03`; `stacks-marf/` at that commit is
 the behavioural and storage oracle and is unchanged in this tree.
 Optimization reference: `29ef093da5dd58c1fa484624d94a9d972356c629` (tag
 `optimized-ref`, merge-base = the pinned upstream commit); used for ideas
 and benchmarked against separately, not a compatibility requirement.
-Rewrite: `crates/stacks-marf-next/` (crate `stacks-marf-next`).
+Rewrite: `crates/{marf-core,marf-proofs,marf-pruning,stacks-marf-next}/`.
 
 Documents: `ANALYSIS.md` (behavioural contract and accidental complexity of
 the original), `COMPAT.md` (what is read/written; the reference's storage
@@ -16,45 +16,48 @@ optimization classified implemented / applicable / deferred),
 `DECISIONS.md` (architecture log), `FUTURE.md` (format-changing
 optimizations and where they plug in).
 
-## Where things live
+## Four-package boundary
 
-* `crates/stacks-marf-next/src/`: `lib` (ids, values, errors), `node`
-  (logical nodes), `codec` (legacy encodings, borrowed record views), `hash`
-  (consensus hashing), `trie` (arena for the trie being built, hashing,
-  serialization), `storage` (SQLite + blobs file, memory map, caches), `marf`
-  (forest API, views, transactions), `proofs`, `pruning` (`Prune` trait),
-  `compat` (names other crates still import).
-* `contrib/marf-differential/`: the behavioural oracle. Operation DSL,
-  adapters calling the real APIs of both crates, seeded generators, 22
-  recorded fixtures, replay and hand-off tests, the `alloc` measurement, CLI.
+* `marf-core`: fixed-width IDs/hashes/values, borrowed codec and traversal,
+  trie/forest lifecycle, coordinated caches, and the existing SQLite/mmap/blob
+  implementation. `sqlite::SqliteAccess` explicitly exposes native integration.
+* `marf-proofs`: neutral proof data, generation through `AuthenticatedRead`, pure
+  verification, and explicit `ProofCodec` transport. `LegacyCodec` preserves the
+  old bytes and 16,778,054-byte per-vector allocation guard.
+* `marf-pruning`: capability-based collection, file-backed staging, remapping,
+  hashing and streaming. Path factories and Stacks diagnostics stay outside it.
+* `stacks-marf-next`: `Id<T>`, Stacks hashes/codecs, native transaction integration,
+  compatibility names, profiler controls and the existing `pruning::Prune` trait.
 
-## Module restructuring
+The three domain packages have no Stacks/Clarity/profiler production dependency.
+Proofs and pruning transitively include SQLite through core; this split does not
+provide interchangeable persistence. Clarity still shares the concrete MARF SQL
+transaction for atomic side-store and trie publication.
 
-The integration branch splits the six large implementation files into
-subdomain modules. `access` and `archive` define extension capabilities;
-proofs and pruning use those contracts without reaching into MARF or
-storage fields. See ADR-23 in `DECISIONS.md`.
+`tests/extraction.rs` now exercises real packages instead of source inclusion.
+The former domain unit tests live in their owning packages; the pruning blob-size
+regression lives in facade integration tests. CI checks default/all-feature
+normal/build graphs with `.github/scripts/check-marf-boundaries.py`.
 
-The refactor has 45 source files, 9,441 total physical lines (including
-license headers, comments and tests), and a largest file of 668 lines. These
-are physical sizes, not the production-line metric below. Related borrowed
-codec decoding and storage patch resolution are colocated. MARF traversal,
-ancestry and authenticated reads share a private operations scope; writes
-and transaction completion live beneath it, keeping lifecycle helpers private.
-Responsibility comes first, with roughly 1,000 lines as a soft review threshold.
-Restricted visibility modifiers (`pub(crate)`, `pub(super)`) remain absent;
-`StorageContext` and `TrieIdentity` remain capability contracts.
-The extraction guard limits algorithm-facing
-facades to configuration and format constants, while running the included
-domain tests against direct backend imports.
+Native handles must not be replaced, used for transaction control, or used to
+mutate MARF-owned records. Commit detects an externally ended transaction and
+invalidates caches, but cannot undo an external commit or protect intervening
+reads after external rollback. Ordinary side-table operations remain supported.
 
-Run the extraction guard with:
+Checked persisted height/ID padding now returns corruption instead of panicking.
+Core IDs have no SQL or Stacks codec bounds. The facade retains those bounds but
+removes the unused foreign `From<MARFValue>` conversions; use checked `decode_id`
+with `Id<T>` or `decode_height`. Direct `MARFValue` remains a core reexport.
+Proof components now contain `Id<T>` and neutral hashes; the local whole-proof
+wrapper preserves Stacks transport without cloning its vector. Verification
+adapts the caller's root-to-block map at the compatibility boundary.
 
-```sh
-cargo nextest run -p stacks-marf-next --test extraction
-```
+The approximately 1,000-line guideline remains a soft review threshold, after
+responsibility and private helper scope. Core SQLite storage and cache machinery
+stay together; no generic backend parameter was introduced. Full node execution
+and representative SBGH workloads remain separate acceptance evidence.
 
-### Refactor validation and compression controls
+## Refactor validation and compression controls
 
 The refactor passed 25 crate/differential tests with all features, 68
 pruning/Clarity consumer tests, and all 132 hand-off boundaries in each

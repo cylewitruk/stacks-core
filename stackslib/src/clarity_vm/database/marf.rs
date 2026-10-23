@@ -32,6 +32,7 @@ use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash}
 use stacks_marf::marf::{
     test_override_marf_compression, MARFOpenOpts, MarfConnection, MarfTransaction, MARF,
 };
+use stacks_marf::sqlite::SqliteAccess;
 use stacks_marf::storage::{TrieFileStorage, TrieHashCalculationMode};
 use stacks_marf::{ClarityMarfTrieId, Error, MARFValue};
 
@@ -1284,3 +1285,7 @@ impl<'a> ClarityBackingStore for Box<dyn WritableMarfStore + 'a> {
 
 impl<'a> ClarityMarfStore for Box<dyn WritableMarfStore + 'a> {}
 impl<'a> WritableMarfStore for Box<dyn WritableMarfStore + 'a> {}
+
+#[cfg(test)]
+#[path = "proof_boundary_tests.rs"]
+mod proof_boundary_tests;

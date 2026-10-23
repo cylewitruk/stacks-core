@@ -309,3 +309,22 @@ the existing MARF proof convenience API lives.
 
 The codecs, consensus algorithms, streaming buffers and sampling rates
 are unchanged. Profiler context labels follow the new module paths.
+
+## ADR-24: Four packages with a Stacks integration facade
+
+Separate core, proofs and pruning from `stacks-marf-next`. Core retains concrete
+SQLite persistence and coordinated caches. Neutral fixed-size IDs/hashes, borrowed
+read capabilities, typed source errors and owned observer spans cross package
+boundaries; native SQL is an explicit integration capability. Proof transport is
+selected with `ProofCodec`, independently of authenticated hashing.
+
+The facade uses `Id<T>` and fixed-size hash copies, retains shared Clarity SQL
+transactions and owns compatibility pruning factories. A local proof wrapper
+reuses the neutral component vector. Its map adaptation during verification is a
+bounded compatibility allocation. The unused foreign value conversion bound is
+removed; persisted ancestry values use checked ID/height padding decoders.
+
+Archive callback errors remain distinct from destination errors. Collection and
+hashing precede lazy destination creation; streaming completes and syncs before
+metadata publication. Backend substitution remains deferred. Observer operation
+names/sampling and capture payloads remain, with integration-owned context labels.

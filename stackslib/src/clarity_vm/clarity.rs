@@ -2596,7 +2596,8 @@ mod tests {
     use stacks_common::consts::CHAIN_ID_TESTNET;
     use stacks_common::types::chainstate::ConsensusHash;
     use stacks_common::types::sqlite::NO_PARAMS;
-    use stacks_marf::marf::{MARFOpenOpts, MarfConnection as _};
+    use stacks_marf::marf::MARFOpenOpts;
+    use stacks_marf::sqlite::SqliteAccess;
     use stacks_marf::ClarityMarfTrieId;
 
     use super::*;

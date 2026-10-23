@@ -182,9 +182,13 @@ static LOCK_TABLE_TIMER: LazyLock<Instant> = LazyLock::new(Instant::now);
 /// Call when using an operation which locks a database
 /// Updates `LOCK_TABLE`
 pub fn update_lock_table(conn: &Connection) {
+    update_lock_table_formatted(format_args!("{conn:?}"));
+}
+
+/// Record a connection debug key in the node-wide lock diagnostics table.
+pub fn update_lock_table_formatted(connection: fmt::Arguments<'_>) {
     let timestamp = LOCK_TABLE_TIMER.elapsed().as_millis();
-    // The debug format for `Connection` includes the path
-    let k = format!("{conn:?}");
+    let k = connection.to_string();
     let v = format!("{:?}@{timestamp}", thread::current().name());
     LOCK_TABLE.lock().unwrap().insert(k, v);
 }
@@ -194,12 +198,25 @@ pub fn update_lock_table(conn: &Connection) {
 pub fn tx_busy_handler(run_count: i32) -> bool {
     const AVG_SLEEP_TIME_MS: u64 = 100;
 
-    // Every ~5min, report an error with a backtrace
-    //   5min * 60s/min * 1_000ms/s / 100ms
-    const ERROR_COUNT: u32 = 3_000;
-
-    // First, check if this is taking unreasonably long. If so, it's probably a deadlock
     let run_count = run_count.unsigned_abs();
+    let mut sleep_time_ms = 2u64.saturating_pow(run_count);
+    sleep_time_ms = sleep_time_ms.saturating_add(thread_rng().gen_range(0..sleep_time_ms));
+
+    if sleep_time_ms > AVG_SLEEP_TIME_MS {
+        let jitter = 10;
+        sleep_time_ms =
+            thread_rng().gen_range((AVG_SLEEP_TIME_MS - jitter)..(AVG_SLEEP_TIME_MS + jitter));
+    }
+
+    log_sqlite_busy(run_count, sleep_time_ms);
+    sleep_ms(sleep_time_ms);
+    true
+}
+
+/// Log a busy retry and periodically dump the shared node-wide lock table.
+pub fn log_sqlite_busy(run_count: u32, sleep_time_ms: u64) {
+    // Every ~5min at the capped average 100ms retry interval.
+    const ERROR_COUNT: u32 = 3_000;
     if run_count > 0 && run_count.is_multiple_of(ERROR_COUNT) {
         error!("Deadlock detected. Waited 5 minutes (estimated) for database lock.";
             "run_count" => run_count,
@@ -208,15 +225,6 @@ pub fn tx_busy_handler(run_count: i32) -> bool {
         for (k, v) in LOCK_TABLE.lock().unwrap().iter() {
             error!("Database '{k}' last locked by {v}");
         }
-    }
-
-    let mut sleep_time_ms = 2u64.saturating_pow(run_count);
-    sleep_time_ms = sleep_time_ms.saturating_add(thread_rng().gen_range(0..sleep_time_ms));
-
-    if sleep_time_ms > AVG_SLEEP_TIME_MS {
-        let jitter = 10;
-        sleep_time_ms =
-            thread_rng().gen_range((AVG_SLEEP_TIME_MS - jitter)..(AVG_SLEEP_TIME_MS + jitter));
     }
 
     let msg = format!("Database is locked; sleeping {sleep_time_ms}ms and trying again");
@@ -228,9 +236,6 @@ pub fn tx_busy_handler(run_count: i32) -> bool {
     } else {
         debug!("{msg}");
     }
-
-    sleep_ms(sleep_time_ms);
-    true
 }
 
 /// Run a PRAGMA statement.  This can't always be done via execute(), because it may return a result (and

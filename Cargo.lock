@@ -2814,6 +2814,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "marf-core"
+version = "4.0.5"
+dependencies = [
+ "marf-core",
+ "memmap2",
+ "rand 0.8.5",
+ "rusqlite",
+ "serde",
+ "sha2 0.10.9",
+ "tempfile",
+]
+
+[[package]]
 name = "marf-differential"
 version = "0.1.0"
 dependencies = [
@@ -2825,6 +2838,22 @@ dependencies = [
  "stacks-common 4.0.5",
  "stacks-marf",
  "stacks-marf-next",
+ "tempfile",
+]
+
+[[package]]
+name = "marf-proofs"
+version = "4.0.5"
+dependencies = [
+ "marf-core",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "marf-pruning"
+version = "4.0.5"
+dependencies = [
+ "marf-core",
  "tempfile",
 ]
 
@@ -4974,13 +5003,15 @@ dependencies = [
 name = "stacks-marf-next"
 version = "4.0.5"
 dependencies = [
- "memmap2",
+ "clarity 0.0.1",
+ "marf-core",
+ "marf-proofs",
+ "marf-pruning",
  "rusqlite",
- "serde",
- "serde_derive",
- "sha2 0.10.9",
+ "serde_json",
  "slog",
  "stacks-common 4.0.5",
+ "stacks-marf-next",
  "stacks-profiler",
  "tempfile",
 ]

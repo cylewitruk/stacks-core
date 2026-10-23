@@ -25,6 +25,7 @@ use std::time::Instant;
 
 use rusqlite::{params, Connection};
 use stacks_marf::marf::{MARFOpenOpts, MarfConnection, MARF};
+use stacks_marf::sqlite::SqliteAccess;
 use stacks_marf::storage::{TrieFileStorage, TrieHashCalculationMode};
 use stacks_marf::{trie_sql, Error, MARFValue, MarfTrieId};
 

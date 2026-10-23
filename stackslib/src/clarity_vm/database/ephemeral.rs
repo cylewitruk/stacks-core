@@ -28,6 +28,7 @@ use stacks_common::codec::StacksMessageCodec;
 use stacks_common::types::chainstate::{BlockHeaderHash, StacksBlockId, TrieHash};
 use stacks_common::types::sqlite::NO_PARAMS;
 use stacks_marf::marf::{MarfConnection, MarfTransaction, MARF};
+use stacks_marf::sqlite::SqliteAccess;
 use stacks_marf::{Error, MARFValue};
 
 use crate::clarity_vm::clarity::{

@@ -6,7 +6,7 @@
 #   1. a detached git worktree of the reference commit at $WORKTREE
 #      (default target/reference-worktree), created if missing, reset to the
 #      committed state otherwise, and verified to be at the reference revision;
-#   2. the current tree's crates/stacks-marf-next and contrib/marf-differential
+#   2. the current tree's four MARF crates and contrib/marf-differential
 #      copied in (directories created) and registered as workspace members;
 #   3. the checked-in overlays applied: reference/harness.patch (adapter
 #      differences, production options, counters) and reference/reference.patch
@@ -51,10 +51,16 @@ git -C "$WORKTREE" clean -fdq -e target
 actual=$(git -C "$WORKTREE" rev-parse HEAD)
 [ "$actual" = "$REF_REV" ] || { echo "worktree is at $actual, expected $REF_REV" >&2; exit 1; }
 
-# 2. copy the harness and the rewrite in, register them
-mkdir -p "$WORKTREE/crates/stacks-marf-next" "$WORKTREE/contrib/marf-differential"
-cp -r "$TREE/crates/stacks-marf-next/src" "$WORKTREE/crates/stacks-marf-next/src"
-cp "$TREE/crates/stacks-marf-next/Cargo.toml" "$WORKTREE/crates/stacks-marf-next/Cargo.toml"
+# 2. Copy all four packages and the harness, including test support.
+mkdir -p "$WORKTREE/contrib/marf-differential"
+for crate in marf-core marf-proofs marf-pruning stacks-marf-next; do
+  mkdir -p "$WORKTREE/crates/$crate"
+  cp -r "$TREE/crates/$crate/src" "$WORKTREE/crates/$crate/src"
+  cp "$TREE/crates/$crate/Cargo.toml" "$WORKTREE/crates/$crate/Cargo.toml"
+  if [ -d "$TREE/crates/$crate/tests" ]; then
+    cp -r "$TREE/crates/$crate/tests" "$WORKTREE/crates/$crate/tests"
+  fi
+done
 cp -r "$TREE/contrib/marf-differential/src" "$WORKTREE/contrib/marf-differential/src"
 cp -r "$TREE/contrib/marf-differential/tests" "$WORKTREE/contrib/marf-differential/tests"
 cp -r "$TREE/contrib/marf-differential/fixtures" "$WORKTREE/contrib/marf-differential/fixtures"
@@ -62,7 +68,7 @@ cp "$TREE/contrib/marf-differential/Cargo.toml" "$WORKTREE/contrib/marf-differen
 python3 - "$WORKTREE/Cargo.toml" <<'PY'
 import sys
 p=sys.argv[1]; s=open(p).read()
-for m in ['crates/stacks-marf-next','contrib/marf-differential']:
+for m in ['crates/marf-core','crates/marf-proofs','crates/marf-pruning','crates/stacks-marf-next','contrib/marf-differential']:
     if f'"{m}"' not in s:
         s=s.replace('members = [\n', f'members = [\n    "{m}",\n', 1)
 open(p,'w').write(s)

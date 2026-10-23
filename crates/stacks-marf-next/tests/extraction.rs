@@ -13,48 +13,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Extraction guard: compile the real domains as part of a separate crate.
-//! The domains and their portable I/O helper depend only on public core APIs.
-//! Included domain unit tests deliberately run here too, so their backend setup
-//! imports the concrete crate directly without broadening algorithm facades.
-#![allow(dead_code)]
-#[macro_use]
-extern crate stacks_common;
-#[macro_use]
-extern crate serde_derive;
-#[allow(unused_imports)]
-#[macro_use(o, slog_log, slog_trace, slog_debug, slog_info, slog_warn, slog_error)]
-extern crate slog;
-
-pub use stacks_marf_next::{
-    ClarityMarfTrieId, Error, MARFValue, MarfTrieId, access, archive, codec, corrupt, hash, node,
-};
-// These facades contain only configuration and format vocabulary. Backend
-// types stay unavailable through the paths used by the included algorithms.
-mod marf {
-    pub use stacks_marf_next::marf::MARFOpenOpts;
-}
-mod trie {
-    pub use stacks_marf_next::trie::{HEADER_LEN, ROOT_OFFSET};
-}
-#[path = "../src/positioned_io.rs"]
-mod positioned_io;
-#[path = "../src/proofs/mod.rs"]
-pub mod proofs;
-#[path = "../src/pruning/mod.rs"]
-pub mod pruning;
-
+//! Real package proof generation agrees with facade conveniences.
 /// The extracted proof encoder must match the built-in convenience API.
 #[test]
 fn extracted_proofs_match_core_on_building_and_committed_tries() {
-    use proofs::Prove;
     use stacks_common::codec::StacksMessageCodec;
     use stacks_common::types::chainstate::{StacksBlockId, TrieHash};
+    use stacks_marf_next::ClarityMarfTrieId;
     use stacks_marf_next::marf::{MARF, MARFOpenOpts, MarfConnection};
+    use stacks_marf_next::proofs::Prove;
     let mut marf = MARF::<StacksBlockId>::from_path(":memory:", MARFOpenOpts::default()).unwrap();
     let tip = StacksBlockId([7; 32]);
     marf.begin(&StacksBlockId::sentinel(), &tip).unwrap();
-    let value = MARFValue([9; 40]);
+    let value = stacks_marf_next::MARFValue([9; 40]);
     marf.insert("test", value.clone()).unwrap();
     for committed in [false, true] {
         if committed {

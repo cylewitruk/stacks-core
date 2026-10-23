@@ -13,103 +13,102 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Historical reads and transactional archive construction capabilities.
-//!
-//! Implementations own persistence and transaction policy. Archive algorithms
-//! own traversal, staging and byte layout, and never receive a database handle.
+//! Compatibility factories; archive algorithms consume neutral core capabilities.
 use std::path::{Path, PathBuf};
 
+use marf_core::archive::{ArchiveDestination, ArchiveSource};
+use rusqlite::Connection;
 use stacks_common::types::chainstate::TrieHash;
 
-use crate::marf::MARFOpenOpts;
-use crate::node::{Node, Ptr};
-use crate::{Error, MarfTrieId};
-
-/// Metadata of a pruned MARF, cached at open time.
+use crate::marf::{MARF, MARFOpenOpts, TrieHashCalculationMode};
+use crate::observer::IntegrationObserver;
+use crate::sqlite::SqliteAccess;
+use crate::{Error, Id, MarfTrieId, stacks_hash};
+/// Cached archival boundary using Stacks hash types.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PruneInfo {
-    /// Archival MARF root hash committed to the chain at the prune boundary.
     pub archival_marf_root_hash: TrieHash,
-    /// Root node hash of the pruned trie.
     pub prune_root_node_hash: TrieHash,
-    /// MARF height at the prune boundary.
     pub prune_height: u32,
 }
-
-/// Positioned writes into an archive blob; durability belongs to the transaction.
-pub trait ArchiveBlob {
-    /// Write bytes without syncing; the enclosing blob operation syncs once.
-    fn write_at_unsynced(&self, offset: u64, bytes: &[u8]) -> Result<(), Error>;
+impl From<&marf_core::archive::PruneInfo> for PruneInfo {
+    fn from(p: &marf_core::archive::PruneInfo) -> Self {
+        Self {
+            archival_marf_root_hash: stacks_hash(p.archival_marf_root_hash),
+            prune_root_node_hash: stacks_hash(p.prune_root_node_hash),
+            prune_height: p.prune_height,
+        }
+    }
 }
-
-/// Historical state needed to construct a pruned archive.
-pub trait ArchiveSource<T: MarfTrieId> {
-    /// The existing prune boundary, if any.
-    fn prune_height(&self) -> Option<u32>;
-    /// Locate the block on the selected fork.
-    fn block_at_height(&mut self, height: u32, tip: &T) -> Result<Option<T>, Error>;
-    /// Resolve consensus identity to the local id used by node pointers.
-    fn block_id(&mut self, block: &T) -> Result<u32, Error>;
-    /// Read the archival root hash and parent identity of a block.
-    fn block_metadata(&mut self, block: u32) -> Result<(TrieHash, T), Error>;
-    /// Existing historical metadata, in height order.
-    fn pruned_blocks(&mut self) -> Result<Vec<(u32, T, TrieHash)>, Error>;
-    /// Materialize one reachable node, retaining its pointer annotations.
-    fn read_node(&mut self, block: u32, ptr: &Ptr) -> Result<Node, Error>;
-    /// Enumerate confirmed block identities and their local ids.
-    fn confirmed_blocks(&mut self) -> Result<Vec<(u32, T)>, Error>;
+/// Native archival metadata translated at the Stacks boundary.
+pub trait ArchiveMetadata {
+    fn read_prune_info(&self) -> Result<Option<PruneInfo>, Error>;
 }
-
-/// A destination transaction; dropping it without [`commit_archive`](Self::commit_archive)
-/// rolls back metadata.
-pub trait ArchiveTransaction<T: MarfTrieId>: Sized {
-    /// Blob writer used inside a single durable shared-blob operation.
-    type Blob: ArchiveBlob;
-    /// Reserve a historical block row and return its destination-local id.
-    fn insert_placeholder(&mut self, block: &T) -> Result<u32, Error>;
-    /// Stream one blob, sync it, and associate all reserved rows with it.
-    fn write_shared_blob_with(
-        &mut self,
-        write: impl FnOnce(&Self::Blob, u64) -> Result<u64, Error>,
-    ) -> Result<(u64, u64), Error>;
-    /// Record the archive boundary and per-height consensus roots.
-    fn write_metadata(
-        &mut self,
-        info: &PruneInfo,
-        blocks: &[(u32, T, TrieHash)],
-    ) -> Result<(), Error>;
-    /// Commit metadata after the shared blob and its side tables are complete.
-    fn commit_archive(self) -> Result<(), Error>;
+impl ArchiveMetadata for Connection {
+    fn read_prune_info(&self) -> Result<Option<PruneInfo>, Error> {
+        marf_core::archive::ArchiveMetadata::read_prune_info(self)
+            .map(|p| p.as_ref().map(PruneInfo::from))
+    }
 }
-
-/// A new archive destination, including its offline write/finalization policy.
-pub trait ArchiveDestination<T: MarfTrieId> {
-    /// Transaction borrowing this destination.
-    type Transaction<'a>: ArchiveTransaction<T>
-    where
-        Self: 'a;
-    /// Begin a metadata transaction for the shared blob.
-    fn begin_archive(&mut self) -> Result<Self::Transaction<'_>, Error>;
-    /// Restore the normal persistence policy after a successful commit.
-    fn finalize(&mut self) -> Result<(), Error>;
-}
-
-/// Open archival sources and new destinations without exposing their backends.
+/// Factory policy kept outside the pruning algorithm.
 pub trait Archive<T: MarfTrieId> {
-    /// Historical source opened read-only.
-    type Source: ArchiveSource<T>;
-    /// New offline archive destination.
-    type Destination: ArchiveDestination<T>;
-    /// Determine the destination's external blob path before creating files.
+    type Source: ArchiveSource<Id<T>, Error = Error>;
+    type Destination: ArchiveDestination<Id<T>, Error = Error>;
     fn blobs_path(path: &Path) -> PathBuf;
-    /// Open the source without migrating or mutating it.
-    fn open_archive_source(path: &Path, options: MARFOpenOpts) -> Result<Self::Source, Error>;
-    /// Create the destination with external blobs and the archive write policy.
+    fn open_archive_source(path: &Path, opts: MARFOpenOpts) -> Result<Self::Source, Error>;
     fn create_archive_destination(path: &Path) -> Result<Self::Destination, Error>;
 }
-
-/// Read archival boundary metadata without exposing storage internals.
-pub trait ArchiveMetadata {
-    /// Return the completed prune boundary, rejecting incomplete metadata.
-    fn read_prune_info(&self) -> Result<Option<PruneInfo>, Error>;
+/// Lazily open the native destination at the algorithm's publication phase.
+/// No destination files are created while source collection/hashing can fail.
+pub struct ArchiveTarget<T: MarfTrieId> {
+    path: PathBuf,
+    engine: Option<marf_core::MARF<Id<T>, IntegrationObserver>>,
+}
+impl<T: MarfTrieId> Archive<T> for MARF<T> {
+    type Source = marf_core::MARF<Id<T>, IntegrationObserver>;
+    type Destination = ArchiveTarget<T>;
+    fn blobs_path(path: &Path) -> PathBuf {
+        marf_core::storage::Blobs::path_for(path)
+    }
+    fn open_archive_source(path: &Path, opts: MARFOpenOpts) -> Result<Self::Source, Error> {
+        crate::sqlite::configure_vfs()?;
+        Ok(marf_core::MARF::from_storage(
+            marf_core::marf::TrieFileStorage::open_readonly(path, opts)?,
+        ))
+    }
+    fn create_archive_destination(path: &Path) -> Result<Self::Destination, Error> {
+        Ok(ArchiveTarget {
+            path: path.to_owned(),
+            engine: None,
+        })
+    }
+}
+impl<T: MarfTrieId> ArchiveDestination<Id<T>> for ArchiveTarget<T> {
+    type Error = Error;
+    type Transaction<'a>
+        = marf_core::MarfTransaction<'a, Id<T>, IntegrationObserver>
+    where
+        Self: 'a;
+    fn begin_archive(&mut self) -> Result<Self::Transaction<'_>, Error> {
+        if self.engine.is_none() {
+            crate::sqlite::configure_vfs()?;
+            let e = marf_core::MARF::from_path(
+                &self.path,
+                MARFOpenOpts::new(TrieHashCalculationMode::Deferred, true),
+            )?;
+            e.sqlite_conn().pragma_update(None, "journal_mode", "OFF")?;
+            e.sqlite_conn().pragma_update(None, "synchronous", "OFF")?;
+            self.engine = Some(e);
+        }
+        self.engine
+            .as_mut()
+            .expect("destination initialized")
+            .begin_archive()
+    }
+    fn finalize(&mut self) -> Result<(), Error> {
+        self.engine
+            .as_mut()
+            .expect("archive transaction completed")
+            .finalize()
+    }
 }

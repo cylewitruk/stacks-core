@@ -1,0 +1,10 @@
+[package]
+name = "marf-pruning"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Capability-based MARF archive pruning and bounded file-backed staging"
+[dependencies]
+marf-core = { path = "../marf-core" }
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,9 @@
+[package]
+name = "marf-proofs"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Capability-based MARF inclusion proofs and explicit transport codecs"
+[dependencies]
+marf-core = { path = "../marf-core" }
+sha2 = "0.10.9"
