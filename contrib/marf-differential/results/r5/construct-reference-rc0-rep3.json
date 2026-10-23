@@ -1,0 +1,706 @@
+{
+  "manifest": {
+    "harness": "marf-differential",
+    "experiment": "construct",
+    "args": [
+      "construct",
+      "baseline",
+      "result-cache",
+      "off"
+    ],
+    "tree_rev": "d6fd444c54baabf6cb937493f452efce1ff3b89d",
+    "oracle": "reference stacks-marf 29ef093da5dd58c1fa484624d94a9d972356c629",
+    "binary_sha256": "0677ca5eb54de9aff0f51a6ba89fa9607dc200b36f9ed6c45c14d864c85ac76c",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "profile": "release",
+    "counters": false,
+    "alloc_count": false,
+    "reference_lateprobe": false,
+    "repeat": 1,
+    "env": "env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1",
+    "started": "2026-10-20T20:16:37Z"
+  },
+  "provider": "base",
+  "config": {
+    "blocks": 20,
+    "inserts": 2000,
+    "reads": 5000,
+    "external": true,
+    "compress": true,
+    "result_cache": 0,
+    "seed": 31
+  },
+  "describe": "reference stacks-marf (29ef093d): external=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=0",
+  "phases": [
+    {
+      "phase": "begin",
+      "kind": "write",
+      "ops": 1,
+      "ns": [
+        740602
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "inherited hot64 (cycled)",
+      "kind": "read",
+      "ops": 4992,
+      "ns": [
+        13036518
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "a65edbc000640fd4"
+    },
+    {
+      "phase": "inherited wide (distinct once)",
+      "kind": "read",
+      "ops": 5000,
+      "ns": [
+        56091100
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "d0c1c6b0a9c42675"
+    },
+    {
+      "phase": "insert 500 new",
+      "kind": "write",
+      "ops": 500,
+      "ns": [
+        7863893
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "inserted hot64 (cycled)",
+      "kind": "read",
+      "ops": 4992,
+      "ns": [
+        6609235
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "8bcf494ed87c9704"
+    },
+    {
+      "phase": "inserted all 500 (x10)",
+      "kind": "read",
+      "ops": 5000,
+      "ns": [
+        8039379
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "dd05b6321b8720b0"
+    },
+    {
+      "phase": "update 200 inherited",
+      "kind": "write",
+      "ops": 200,
+      "ns": [
+        2561397
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "updated 200 (x25)",
+      "kind": "read",
+      "ops": 5000,
+      "ns": [
+        5796901
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "f4bad15b321f28b9"
+    },
+    {
+      "phase": "misses 500 (x10)",
+      "kind": "read",
+      "ops": 5000,
+      "ns": [
+        5829721
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "d6ae3d0e12b823d8"
+    },
+    {
+      "phase": "insert the 500 missed",
+      "kind": "write",
+      "ops": 500,
+      "ns": [
+        3690752
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "formerly missed 500 (x10)",
+      "kind": "read",
+      "ops": 5000,
+      "ns": [
+        5112124
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "3500f4c42ecd0794"
+    },
+    {
+      "phase": "successive updates x100: writes",
+      "kind": "write",
+      "ops": 100,
+      "ns": [
+        1695812
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "successive updates x100: reads",
+      "kind": "read",
+      "ops": 100,
+      "ns": [
+        107648
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "ancestor reads: parent tip 2000",
+      "kind": "read",
+      "ops": 2000,
+      "ns": [
+        19392197
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "3dfc344c795499f4"
+    },
+    {
+      "phase": "ancestor reads: block-10 tip 2000",
+      "kind": "read",
+      "ops": 2000,
+      "ns": [
+        13904240
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "dee3a3ad972b6b03"
+    },
+    {
+      "phase": "inherited hot64 after ancestor reads",
+      "kind": "read",
+      "ops": 4992,
+      "ns": [
+        6985495
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "6de2073118c972e4"
+    },
+    {
+      "phase": "seal",
+      "kind": "write",
+      "ops": 1,
+      "ns": [
+        22044210
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "commit",
+      "kind": "write",
+      "ops": 1,
+      "ns": [
+        6898604
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "whole construction (begin..commit)",
+      "kind": "total",
+      "ops": 1,
+      "ns": [
+        198567045
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "after commit: updated 200",
+      "kind": "read",
+      "ops": 200,
+      "ns": [
+        3165393
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "c0807fff9bcd2959"
+    },
+    {
+      "phase": "rollback: reads before drop",
+      "kind": "read",
+      "ops": 500,
+      "ns": [
+        621511
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "df86f9c3edd597ff"
+    },
+    {
+      "phase": "rollback: begin+insert+drop",
+      "kind": "write",
+      "ops": 500,
+      "ns": [
+        9452669
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": ""
+    },
+    {
+      "phase": "rebuilt after rollback: reads",
+      "kind": "read",
+      "ops": 500,
+      "ns": [
+        3564857
+      ],
+      "counters_first_rep": {
+        "available": false,
+        "node_visits": null,
+        "backptr_follows": null,
+        "record_reads": null,
+        "patch_cache_probes": null,
+        "patch_cache_hits": null,
+        "patch_cache_probe_miss_plain": null,
+        "patch_cache_admissions": null,
+        "patch_cache_clears": null,
+        "patch_resolutions": null,
+        "patch_applications": null,
+        "owned_materializations": null,
+        "location_sql": null,
+        "block_id_sql": null,
+        "result_cache_hits": null,
+        "result_cache_misses": null,
+        "result_cache_invalidations": null,
+        "cache_occupancy": null
+      },
+      "digest": "df86f9c3edd597ff"
+    }
+  ],
+  "root_child": "05963d25b7d19184cab31e3f9fcde64a6ee276d727091c0a61ead4f650be31bd",
+  "root_rebuilt": "a9acf74af85d68899fa90377e6d5f0200250823d3adbd085f7a0d14086007f84",
+  "failed_begin_checked": true
+}

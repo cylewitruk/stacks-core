@@ -1,0 +1,40 @@
+== ONLY=rewrite REPEAT=1 /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/bin/marf-differential-before alloc external compressed 50 4000 5000
+storage: external blobs, compressed; 50 blocks x 4000 inserts, 8 patch blocks x 50 rewrites, 5000 reads/phase
+phase                                                             ops | next alloc/op    next B/op next us/op next peakKB
+insert                                                         200000 |         1.50         1916       3.28        5547
+seal                                                               50 |        21.12        18744   28808.89          16
+commit                                                             50 |      2302.36      1826734   15404.69        2400
+warm_get                                                         5000 |         0.03            3       4.79          14
+miss_get                                                         5000 |         0.18           18       2.98          85
+patched_get                                                      5000 |         0.09           11       1.97          52
+get@bulk hops=0 patch=3-4 ~4.0nodes hot64                        5000 |         0.00            0       1.79           0
+get@bulk hops=0 patch=3-4 ~4.0nodes fit(n=1024)                  5000 |         0.00            0       2.99           0
+get@bulk hops=0 patch=3-4 ~4.0nodes overflow(n=4621)             9242 |         0.22           42       2.92         304
+get@bulk hops=1 patch=3-4 ~3.9nodes hot64                        5000 |         0.00            0       1.13           0
+get@bulk hops=1 patch=3-4 ~3.9nodes fit(n=1024)                  5000 |         0.00            0       2.00           0
+get@bulk hops=1 patch=3-4 ~3.9nodes overflow(n=85536)           85536 |         0.53          228       2.60         346
+get@bulk hops=2 patch=3-4 ~4.0nodes hot64                        5000 |         0.00            0       1.55           0
+get@bulk hops=2 patch=3-4 ~4.0nodes fit(n=1024)                  5000 |         0.00            0       2.91           0
+get@bulk hops=2 patch=3-4 ~4.0nodes overflow(n=109679)         109679 |         0.92          413       3.91         147
+get@bulk hops=3+ patch=3-4 ~5.0nodes hot64                       5000 |         0.00            0       1.35           0
+get@bulk hops=3+ patch=3-4 ~5.0nodes fit(n=164)                  5000 |         0.00            0       1.20           0
+get@patched hops=1 patch=1-2 ~3.9nodes hot64                     5000 |         0.00            0       1.26           0
+get@patched hops=1 patch=1-2 ~3.9nodes fit(n=1024)               5000 |         0.00            0       1.51           0
+get@patched hops=1 patch=1-2 ~3.9nodes overflow(n=9641)          9641 |         0.41           73       2.40         528
+get@patched hops=1 patch=3-4 ~3.9nodes hot64                     5000 |         0.05           63       1.07         160
+get@patched hops=1 patch=3-4 ~3.9nodes fit(n=1024)               5000 |         0.00            0       1.56           0
+get@patched hops=1 patch=3-4 ~3.9nodes overflow(n=7186)          7186 |         0.00            0       1.72           0
+get@patched hops=2 patch=1-2 ~3.9nodes hot64                     5000 |         0.00            0       1.30           0
+get@patched hops=2 patch=1-2 ~3.9nodes fit(n=1024)               5000 |         0.00            0       1.52           0
+get@patched hops=2 patch=1-2 ~3.9nodes overflow(n=54218)        54218 |         0.51          158       3.10         131
+get@patched hops=2 patch=3-4 ~3.9nodes hot64                     5000 |         0.00            0       1.07           0
+get@patched hops=2 patch=3-4 ~3.9nodes fit(n=1024)               5000 |         0.00            0       1.20           0
+get@patched hops=2 patch=3-4 ~3.9nodes overflow(n=34823)        34823 |         0.55          222       2.35         360
+get@patched hops=3+ patch=1-2 ~4.0nodes hot64                    5000 |         0.00            0       1.25           0
+get@patched hops=3+ patch=1-2 ~4.0nodes fit(n=1024)              5000 |         0.00            0       1.39           0
+get@patched hops=3+ patch=1-2 ~4.0nodes overflow(n=56895)       56895 |         0.76          231       3.21          47
+get@patched hops=3+ patch=3-4 ~4.0nodes hot64                    5000 |         0.00            0       1.15           0
+get@patched hops=3+ patch=3-4 ~4.0nodes fit(n=1024)              5000 |         0.00            0       1.87           0
+get@patched hops=3+ patch=3-4 ~4.0nodes overflow(n=37185)       37185 |         0.73          271       3.18         608
+proof                                                             500 |       162.37       665963     710.48        2537
+prune                                                          254505 |         0.34          644       3.45       81573

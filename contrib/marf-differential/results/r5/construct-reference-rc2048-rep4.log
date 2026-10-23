@@ -1,0 +1,32 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+construction workload: 20 blocks x 2000 inserts base chain, 5000 reads per read phase, external=true compress=true result_cache=Some(2048)
+impl base: reference stacks-marf (29ef093d): external=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=2048
+ERRO [1792527400.913963] [stacks-marf/src/marf.rs:1043] [main] Block data already exists: 0000138800000000000000000000000000000000000000000000000000000001
+final roots: child=05963d25b7d19184cab31e3f9fcde64a6ee276d727091c0a61ead4f650be31bd rollback-rebuilt=a9acf74af85d68899fa90377e6d5f0200250823d3adbd085f7a0d14086007f84
+
+phase                                     kind      ops | median us/op       min-max us/op    median ms
+begin                                    write        1 |       660.26       660.26-660.26        0.660
+inherited hot64 (cycled)                  read     4992 |         0.98           0.98-0.98        4.889
+inherited wide (distinct once)            read     5000 |        14.66         14.66-14.66       73.287
+insert 500 new                           write      500 |        23.45         23.45-23.45       11.725
+inserted hot64 (cycled)                   read     4992 |         0.79           0.79-0.79        3.922
+inserted all 500 (x10)                    read     5000 |         1.08           1.08-1.08        5.410
+update 200 inherited                     write      200 |        17.56         17.56-17.56        3.512
+updated 200 (x25)                         read     5000 |         0.87           0.87-0.87        4.338
+misses 500 (x10)                          read     5000 |         1.16           1.16-1.16        5.819
+insert the 500 missed                    write      500 |        13.47         13.47-13.47        6.733
+formerly missed 500 (x10)                 read     5000 |         1.05           1.05-1.05        5.247
+successive updates x100: writes          write      100 |        34.08         34.08-34.08        3.408
+successive updates x100: reads            read      100 |         2.78           2.78-2.78        0.278
+ancestor reads: parent tip 2000           read     2000 |        14.51         14.51-14.51       29.024
+ancestor reads: block-10 tip 2000         read     2000 |         6.69           6.69-6.69       13.376
+inherited hot64 after ancestor reads      read     4992 |         0.58           0.58-0.58        2.919
+seal                                     write        1 |     17348.92   17348.92-17348.92       17.349
+commit                                   write        1 |      6824.09     6824.09-6824.09        6.824
+whole construction (begin..commit)       total        1 |    216331.49 216331.49-216331.49      216.331
+after commit: updated 200                 read      200 |        12.05         12.05-12.05        2.409
+rollback: reads before drop               read      500 |         1.55           1.55-1.55        0.774
+rollback: begin+insert+drop              write      500 |        15.10         15.10-15.10        7.548
+rebuilt after rollback: reads             read      500 |         7.47           7.47-7.47        3.737
+sum of medians: reads 155.430 ms, writes 57.760 ms (whole construction above includes both)
+[json] wrote contrib/marf-differential/results/r5/construct-reference-rc2048-rep4.json

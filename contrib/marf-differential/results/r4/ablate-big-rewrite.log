@@ -1,0 +1,58 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=5
+workload big (250 blocks x 4000 inserts, 40 patch blocks x 500 rewrites, compressed): built in 23.5s, 1000000 keys
+impl next: rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+key sets (walk shape from the rewrite's profiler; identical trie for every implementation):
+  patchfree@tip1               n=4000   distinct patched nodes=0      avg hops=0.00 avg patched/walk=0.00 avg depth=0.00
+  bulk tip (random keys)       n=5000   distinct patched nodes=3770   avg hops=1.87 avg patched/walk=2.60 avg depth=4.00
+  tip hops=2 depth=3-4         n=5000   distinct patched nodes=3846   avg hops=2.00 avg patched/walk=2.57 avg depth=4.00
+  tip hops=3+ depth=3-4        n=5000   distinct patched nodes=2745   avg hops=3.00 avg patched/walk=2.62 avg depth=4.00
+  tip hops=1 depth=3-4         n=5000   distinct patched nodes=3970   avg hops=1.00 avg patched/walk=2.61 avg depth=4.00
+  patched(nodes<=32)           n=8192   distinct patched nodes=32     avg hops=2.03 avg patched/walk=1.26 avg depth=4.00
+  patched(nodes<=64)           n=8192   distinct patched nodes=64     avg hops=2.03 avg patched/walk=1.44 avg depth=4.00
+  patched(nodes<=1024)         n=8192   distinct patched nodes=1024   avg hops=2.01 avg patched/walk=1.95 avg depth=4.00
+  patched(nodes<=4096)         n=8192   distinct patched nodes=4096   avg hops=2.02 avg patched/walk=2.38 avg depth=4.00
+  patched all(nodes<=18446744073709551615) n=8192   distinct patched nodes=6200   avg hops=2.02 avg patched/walk=2.59 avg depth=4.00
+capacities: ["0", "64", "4096", "prod"] -> e.g. rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=0 result_cache=none; cold = fresh open (process caches empty), OS page cache warm
+
+set                               n capacity |   cold us/op   warm us/op        warm min-max
+patchfree@tip1                 4000        0 |         2.36         2.25           2.08-3.13
+patchfree@tip1                 4000       64 |         2.29         2.22           2.02-3.24
+patchfree@tip1                 4000     4096 |         2.41         2.21           2.02-3.00
+patchfree@tip1                 4000     prod |         2.35         2.31           2.08-4.47
+bulk tip (random keys)         5000        0 |        42.33        42.29         38.24-57.95
+bulk tip (random keys)         5000       64 |        10.71         9.07          8.48-12.34
+bulk tip (random keys)         5000     4096 |         6.18         2.61           2.37-3.40
+bulk tip (random keys)         5000     prod |         6.10         2.75           2.36-3.58
+tip hops=2 depth=3-4           5000        0 |        40.56        39.98         36.38-55.73
+tip hops=2 depth=3-4           5000       64 |        10.75         8.04          7.82-13.00
+tip hops=2 depth=3-4           5000     4096 |         5.36         2.60           2.34-3.30
+tip hops=2 depth=3-4           5000     prod |         5.74         2.66           2.39-3.56
+tip hops=3+ depth=3-4          5000        0 |        40.41        39.61         35.88-50.50
+tip hops=3+ depth=3-4          5000       64 |         5.72         5.45           5.11-8.29
+tip hops=3+ depth=3-4          5000     4096 |         3.87         2.18           1.92-2.93
+tip hops=3+ depth=3-4          5000     prod |         3.81         2.35           2.10-3.08
+tip hops=1 depth=3-4           5000        0 |        38.39        39.21         36.10-46.76
+tip hops=1 depth=3-4           5000       64 |         8.82         7.90          7.50-12.91
+tip hops=1 depth=3-4           5000     4096 |         4.90         2.45           2.21-3.63
+tip hops=1 depth=3-4           5000     prod |         4.68         2.49           2.33-4.27
+patched(nodes<=32)             8192        0 |        34.47        37.39         32.39-43.15
+patched(nodes<=32)             8192       64 |         2.89         2.88           2.69-4.05
+patched(nodes<=32)             8192     4096 |         3.44         3.43           2.81-4.72
+patched(nodes<=32)             8192     prod |         3.25         3.12           2.77-3.90
+patched(nodes<=64)             8192        0 |        34.57        38.27         33.87-51.96
+patched(nodes<=64)             8192       64 |         2.85         2.88           2.66-3.70
+patched(nodes<=64)             8192     4096 |         2.98         2.81           2.65-4.56
+patched(nodes<=64)             8192     prod |         3.08         2.83           2.67-3.94
+patched(nodes<=1024)           8192        0 |        41.44        40.04         36.72-55.30
+patched(nodes<=1024)           8192       64 |         8.05         7.24           6.56-8.75
+patched(nodes<=1024)           8192     4096 |         3.38         2.64           2.48-2.92
+patched(nodes<=1024)           8192     prod |         3.42         2.87           2.60-3.92
+patched(nodes<=4096)           8192        0 |        40.18        39.67         36.09-47.83
+patched(nodes<=4096)           8192       64 |         8.31         8.04          7.52-12.88
+patched(nodes<=4096)           8192     4096 |         4.07         4.37           3.71-6.41
+patched(nodes<=4096)           8192     prod |         4.16         4.34           3.83-5.18
+patched all(nodes<=18446744073709551615)   8192        0 |        40.97        40.89         37.95-47.11
+patched all(nodes<=18446744073709551615)   8192       64 |         9.07         8.59          8.00-13.72
+patched all(nodes<=18446744073709551615)   8192     4096 |         4.63         4.83           4.30-5.64
+patched all(nodes<=18446744073709551615)   8192     prod |         4.89         4.78           4.28-6.45
+(no read counters in this build; use --features counters for the counter run)

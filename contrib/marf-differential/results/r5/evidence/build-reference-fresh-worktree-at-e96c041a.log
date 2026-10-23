@@ -1,0 +1,6 @@
+tree rev e96c041a950f8577c9bcc7a7fbefa4ad56b76764 (e96c041a95); reference 29ef093da5dd58c1fa484624d94a9d972356c629; rustc 1.98.0 (88d9e12ae 2026-08-18)
+Preparing worktree (detached HEAD 29ef093da5)
+Updating files:  97% (1855/1905)Updating files:  98% (1867/1905)Updating files:  99% (1886/1905)Updating files: 100% (1905/1905)Updating files: 100% (1905/1905), done.
+HEAD is now at 29ef093da5 Merge upstream/main into perf/optimized-stacks-bench-integration
+cp: cannot create directory '/tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/fresh-e96c-ref/crates/stacks-marf-next/src': No such file or directory
+EXIT 1

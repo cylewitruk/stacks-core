@@ -1,0 +1,146 @@
+--- a/contrib/marf-differential/Cargo.toml
++++ b/contrib/marf-differential/Cargo.toml
+@@ -24,12 +24,12 @@
+ alloc-count = []
+ # Read-path operation counters in the implementations (separate build from
+ # timing runs).
+-counters = ["stacks-marf-next/counters"]
++counters = ["stacks-marf-next/counters", "stacks-marf/marf-read-bench-counters"]
+ # Diagnostic control for the reference overlay (reference/README.md): the
+ # reference probes its patch cache only after a borrowed read says the record
+ # is a patch. A no-op against upstream; the overlay patch wires it to the
+ # reference's feature.
+-reference-lateprobe = []
++reference-lateprobe = ["stacks-marf/marf-diag-late-probe"]
+ 
+ [[bin]]
+ name = "marf-differential"
+--- a/contrib/marf-differential/src/alloc.rs
++++ b/contrib/marf-differential/src/alloc.rs
+@@ -246,31 +246,91 @@
+ 
+ pub struct Baseline(stacks_marf::MARF<StacksBlockId>);
+ 
+-/// Upstream's open options for `opts`. (The reference overlay replaces this
+-/// to set its mmap, root-cache, patch-cache and result-cache options.)
++/// The optimization reference's open options for `opts`: its production
++/// settings (`Config::get_marf_opts` on the reference branch: mmap on, root
++/// node cache off, resolved-patch cache 64, result cache 2,048) unless an
++/// experiment asks for other capacities. (Reference overlay of the upstream
++/// function.)
+ fn baseline_open_opts(opts: &Opts) -> stacks_marf::MARFOpenOpts {
+     use stacks_marf::storage::TrieHashCalculationMode;
+-    stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
++    let mut o = stacks_marf::MARFOpenOpts::new(TrieHashCalculationMode::Deferred, opts.external)
+         .with_compression(opts.compress)
++        .with_mmap(true);
++    o.root_node_cache = false;
++    o.resolved_patch_cache_capacity = opts.patch_cache_capacity.unwrap_or(64);
++    o.result_cache_capacity = opts.result_cache_capacity.unwrap_or(2048);
++    o
+ }
+ 
+ fn baseline_describe(opts: &Opts) -> String {
++    let o = baseline_open_opts(opts);
+     format!(
+-        "upstream stacks-marf: external={} compress={} (no mmap, no caches; requested patch_cache={:?} result_cache={:?} not applicable)",
+-        opts.external, opts.compress, opts.patch_cache_capacity, opts.result_cache_capacity
++        "reference stacks-marf (29ef093d): external={} compress={} mmap={} root_node_cache={} resolved_patch_cache={} result_cache={}{}",
++        o.external_blobs,
++        o.compress,
++        o.mmap,
++        o.root_node_cache,
++        o.resolved_patch_cache_capacity,
++        o.result_cache_capacity,
++        if cfg!(feature = "reference-lateprobe") {
++            " [diagnostic: late patch-cache probe]"
++        } else {
++            ""
++        }
+     )
+ }
+ 
+-/// Upstream has no read counters.
++/// The reference's `read_bench` counters (its `marf-read-bench-counters`
++/// feature, switched on by this harness's `counters` feature) plus the
++/// counters the overlay adds (probes, plain-record misses, actual
++/// resolutions and materializations, result cache, occupancy). Not
++/// measured by the reference: cache clears (it evicts one entry at a time),
++/// location and block-id SQL lookups.
++#[cfg(not(feature = "counters"))]
+ fn baseline_counters(_occupancy: Option<u64>) -> Counters {
+     Counters::default()
+ }
+ 
+-/// Upstream has no patch cache.
++#[cfg(feature = "counters")]
++fn baseline_counters(occupancy: Option<u64>) -> Counters {
++    let c = stacks_marf::read_bench::take();
++    Counters {
++        available: true,
++        node_visits: Some(c.cursor_steps),
++        backptr_follows: Some(c.backpointer_follows),
++        record_reads: Some(c.resolved_item_reads + c.mmap_node_returns),
++        patch_cache_probes: Some(c.patch_cache_probes),
++        patch_cache_hits: Some(c.resolved_patch_cache_hits),
++        patch_cache_probe_miss_plain: Some(c.patch_cache_probe_miss_plain),
++        patch_cache_admissions: Some(c.resolved_patch_cache_misses),
++        patch_cache_clears: None,
++        patch_resolutions: Some(c.patch_resolutions),
++        patch_applications: Some(c.patch_records),
++        owned_materializations: Some(c.owned_materializations),
++        location_sql: None,
++        block_id_sql: None,
++        result_cache_hits: Some(c.result_cache_hits),
++        result_cache_misses: Some(c.result_cache_misses),
++        result_cache_invalidations: Some(c.result_cache_invalidations),
++        late_probe_extra_parses: if cfg!(feature = "reference-lateprobe") {
++            Some(c.late_probe_after_patch_parse)
++        } else {
++            None
++        },
++        cache_occupancy: occupancy,
++    }
++}
++
++#[cfg(not(feature = "counters"))]
+ fn baseline_occupancy(_m: &mut stacks_marf::MARF<StacksBlockId>) -> Option<u64> {
+     None
+ }
+ 
++#[cfg(feature = "counters")]
++fn baseline_occupancy(m: &mut stacks_marf::MARF<StacksBlockId>) -> Option<u64> {
++    Some(m.patch_cache_len() as u64)
++}
++
+ impl Direct for Baseline {
+     const NAME: &'static str = "base";
+     fn open(path: &Path, opts: &Opts) -> Self {
+@@ -313,6 +373,7 @@
+         self.0.get(tip, key).unwrap().map(|v| v.0)
+     }
+     fn get_with_proof(&mut self, tip: &StacksBlockId, key: &str) -> bool {
++        use stacks_marf::marf::MarfConnection;
+         self.0.get_with_proof(tip, key).unwrap().is_some()
+     }
+     fn root_hash(&mut self, tip: &StacksBlockId) -> Option<[u8; 32]> {
+--- a/contrib/marf-differential/src/baseline.rs
++++ b/contrib/marf-differential/src/baseline.rs
+@@ -55,7 +55,7 @@
+         Error::RestoreMarfBlockError(_) => "RestoreMarfBlock",
+         Error::NonMatchingForks(..) => "NonMatchingForks",
+         Error::OverflowError => "Overflow",
+-        Error::Patch(..) => "Patch",
++        Error::Patch(_) => "Patch",
+         Error::NodeTooDeep => "NodeTooDeep",
+         Error::HistoricalReadInSquashedRange { .. } => "HistoricalReadInPrunedRange",
+         Error::UnsupportedOnSquashedMarf(_) => "UnsupportedOnPrunedMarf",
+@@ -173,7 +173,7 @@
+             c.get_block_height(&bid(block), &bid(tip)),
+             Observation::Height,
+         ),
+-        Op::CheckAncestor { tip, block } => match c.with_conn(|s| s.open_block(&bid(tip))) {
++        Op::CheckAncestor { tip, block } => match c.open_block(&bid(tip), None) {
+             Err(e) => Observation::Err(error_kind(&e)),
+             Ok(()) => unit(c.check_ancestor_block_hash(&bid(block))),
+         },

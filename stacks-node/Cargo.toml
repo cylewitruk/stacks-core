@@ -11,7 +11,7 @@ serde = "1"
 serde_derive = "1"
 serde_json = { version = "1.0", features = ["arbitrary_precision", "raw_value"] }
 stacks = { package = "stackslib", path = "../stackslib" }
-stacks-marf = { path = "../stacks-marf" }
+stacks-marf = { package = "stacks-marf-next", path = "../crates/stacks-marf-next" }
 stx-genesis = { path = "../stx-genesis"}
 base64 = "0.12.0"
 backtrace = "0.3.50"

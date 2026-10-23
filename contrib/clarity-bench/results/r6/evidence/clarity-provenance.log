@@ -1,0 +1,172 @@
+# Clarity variant builder from a fresh clone into a new empty WORK (requirement 5 of the sixth review)
+# First invocation: fresh single-branch clone, WORK created empty; the rewrite and upstream variants built, the optmarf variant failed when the
+# session's disk allowance ran out (other build directories on the machine). Second invocation (appended below): same clone, same WORK,
+# after freeing unrelated build directories; the rewrite and upstream targets were reused by cargo, the optmarf target resumed.
+# Dependency caching: the shared ~/.cargo registry; every target/ directory under the clone and WORK was new at the first invocation.
+
+fresh clone of cylewitruk/stacks-core claude/awesome-brown-xj309n at 2026-10-21T03:54:26Z
+tip e745a61b70e4b81c1c8e81030374636b179750f1
+WORK=/tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work (new, empty): 0 entries
+upstream commit present before build? yes; reference? no
+== build-variants.sh 03:54:50
+From https://github.com/cylewitruk/stacks-core
+ * branch                  29ef093da5dd58c1fa484624d94a9d972356c629 -> FETCH_HEAD
+tree e745a61b70e4b81c1c8e81030374636b179750f1 (2.05.0.2.2-17042-ge745a61b70); rustc 1.98.0 (88d9e12ae 2026-08-18)
+    Finished `release` profile [optimized + debuginfo] target(s) in 9m 45s
+Preparing worktree (detached HEAD ad5c57786b)
+HEAD is now at ad5c57786b refactor: re-export the core MARF types at the stacks-marf root (#7752)
+worktree /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/upstream at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+    Finished `release` profile [optimized + debuginfo] target(s) in 9m 46s
+Preparing worktree (detached HEAD ad5c57786b)
+HEAD is now at ad5c57786b refactor: re-export the core MARF types at the stacks-marf root (#7752)
+worktree /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/optmarf at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+Preparing worktree (detached HEAD 29ef093da5)
+HEAD is now at 29ef093da5 Merge upstream/main into perf/optimized-stacks-bench-integration
+worktree /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/refsrc at 29ef093da5dd58c1fa484624d94a9d972356c629
+optmarf worktree prepared
+error: failed to run custom build command for `libsqlite3-sys v0.28.0`
+note: To improve backtraces for build dependencies, set the CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true environment variable to enable debug information generation.
+Caused by:
+  process didn't exit successfully: `/tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/optmarf/target/release/build/libsqlite3-sys-132acb1109c16b18/build-script-build` (exit status: 1)
+  --- stdout
+  cargo:rerun-if-env-changed=LIBSQLITE3_SYS_USE_PKG_CONFIG
+  cargo:include=/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libsqlite3-sys-0.28.0/sqlite3
+  cargo:rerun-if-changed=sqlite3/sqlite3.c
+  cargo:rerun-if-changed=sqlite3/wasm32-wasi-vfs.c
+  cargo:rerun-if-env-changed=SQLITE_MAX_VARIABLE_NUMBER
+  cargo:rerun-if-env-changed=SQLITE_MAX_EXPR_DEPTH
+  cargo:rerun-if-env-changed=SQLITE_MAX_COLUMN
+  cargo:rerun-if-env-changed=LIBSQLITE3_FLAGS
+  TARGET = Some("x86_64-unknown-linux-gnu")
+  OPT_LEVEL = Some("3")
+  HOST = Some("x86_64-unknown-linux-gnu")
+  cargo:rerun-if-env-changed=CC_x86_64-unknown-linux-gnu
+  CC_x86_64-unknown-linux-gnu = None
+  cargo:rerun-if-env-changed=CC_x86_64_unknown_linux_gnu
+  CC_x86_64_unknown_linux_gnu = None
+  cargo:rerun-if-env-changed=HOST_CC
+  HOST_CC = None
+  cargo:rerun-if-env-changed=CC
+  CC = None
+  cargo:rerun-if-env-changed=CRATE_CC_NO_DEFAULTS
+  CRATE_CC_NO_DEFAULTS = None
+  DEBUG = Some("true")
+  CARGO_CFG_TARGET_FEATURE = Some("fxsr,sse,sse2")
+  cargo:rerun-if-env-changed=CFLAGS_x86_64-unknown-linux-gnu
+  CFLAGS_x86_64-unknown-linux-gnu = None
+  cargo:rerun-if-env-changed=CFLAGS_x86_64_unknown_linux_gnu
+  CFLAGS_x86_64_unknown_linux_gnu = None
+  cargo:rerun-if-env-changed=HOST_CFLAGS
+  HOST_CFLAGS = None
+  cargo:rerun-if-env-changed=CFLAGS
+  CFLAGS = None
+  running: "cc" "-O3" "-ffunction-sections" "-fdata-sections" "-fPIC" "-gdwarf-4" "-fno-omit-frame-pointer" "-m64" "-DSQLITE_CORE" "-DSQLITE_DEFAULT_FOREIGN_KEYS=1" "-DSQLITE_ENABLE_API_ARMOR" "-DSQLITE_ENABLE_COLUMN_METADATA" "-DSQLITE_ENABLE_DBSTAT_VTAB" "-DSQLITE_ENABLE_FTS3" "-DSQLITE_ENABLE_FTS3_PARENTHESIS" "-DSQLITE_ENABLE_FTS5" "-DSQLITE_ENABLE_JSON1" "-DSQLITE_ENABLE_LOAD_EXTENSION=1" "-DSQLITE_ENABLE_MEMORY_MANAGEMENT" "-DSQLITE_ENABLE_RTREE" "-DSQLITE_ENABLE_STAT2" "-DSQLITE_ENABLE_STAT4" "-DSQLITE_SOUNDEX" "-DSQLITE_THREADSAFE=1" "-DSQLITE_USE_URI" "-DHAVE_USLEEP=1" "-D_POSIX_THREAD_SAFE_FUNCTIONS" "-DHAVE_ISNAN" "-DHAVE_LOCALTIME_R" "-o" "/tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/optmarf/target/release/build/libsqlite3-sys-090e98de318fa928/out/sqlite3/sqlite3.o" "-c" "sqlite3/sqlite3.c"
+  cargo:warning=sqlite3/sqlite3.c:255635:1: fatal error: error writing to /tmp/cchez297.s: No space left on device
+  cargo:warning=255635 | SQLITE_API const char *sqlite3_sourceid(void){ return SQLITE_SOURCE_ID; }
+  cargo:warning=       | ^~~~~~~~~~
+  cargo:warning=compilation terminated.
+  exit status: 1
+  --- stderr
+  error occurred: Command "cc" "-O3" "-ffunction-sections" "-fdata-sections" "-fPIC" "-gdwarf-4" "-fno-omit-frame-pointer" "-m64" "-DSQLITE_CORE" "-DSQLITE_DEFAULT_FOREIGN_KEYS=1" "-DSQLITE_ENABLE_API_ARMOR" "-DSQLITE_ENABLE_COLUMN_METADATA" "-DSQLITE_ENABLE_DBSTAT_VTAB" "-DSQLITE_ENABLE_FTS3" "-DSQLITE_ENABLE_FTS3_PARENTHESIS" "-DSQLITE_ENABLE_FTS5" "-DSQLITE_ENABLE_JSON1" "-DSQLITE_ENABLE_LOAD_EXTENSION=1" "-DSQLITE_ENABLE_MEMORY_MANAGEMENT" "-DSQLITE_ENABLE_RTREE" "-DSQLITE_ENABLE_STAT2" "-DSQLITE_ENABLE_STAT4" "-DSQLITE_SOUNDEX" "-DSQLITE_THREADSAFE=1" "-DSQLITE_USE_URI" "-DHAVE_USLEEP=1" "-D_POSIX_THREAD_SAFE_FUNCTIONS" "-DHAVE_ISNAN" "-DHAVE_LOCALTIME_R" "-o" "/tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/optmarf/target/release/build/libsqlite3-sys-090e98de318fa928/out/sqlite3/sqlite3.o" "-c" "sqlite3/sqlite3.c" with args "cc" did not execute successfully (status code exit status: 1).
+exit=101 04:16:05
+== manifest
+cat: target/bench-bin/MANIFEST.clarity: No such file or directory
+== worktree revisions (independent check)
+upstream ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+optmarf ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+refsrc 29ef093da5dd58c1fa484624d94a9d972356c629
+== binaries
+ce1839976a01f0068b09f1da244ad85093f8cd3ec35e63d9fc841211c04109b9  target/bench-bin/clarity-bench-rewrite
+ed40e3756e8c64087be879b6a3ec79cee4ec3fcee00b8fde0a614ac36c2c1968  target/bench-bin/clarity-bench-upstream
+== smoke: each variant prints its build line
+-- rewrite
+clarity-bench: stacks-marf package of this workspace: external_blobs=true compress=true (rewrite: mmap always, patch cache 4096; upstream: no caches) | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 5 | 20000 keys, 1 timed blocks per workload
+populate (40 blocks, 20000 keys, untimed setup): median 1193.5 ms
+
+-- upstream
+clarity-bench: stacks-marf package of this workspace: external_blobs=true compress=true (rewrite: mmap always, patch cache 4096; upstream: no caches) | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 5 | 20000 keys, 1 timed blocks per workload
+INFO [1792556173.868395] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpyyTy2C/marf.sqlite.blobs
+INFO [1792556173.868460] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+-- optmarf
+timeout: failed to run command 'target/bench-bin/clarity-bench-optmarf': No such file or directory
+CLARITY-PROVENANCE-DONE 04:16:29
+
+== second invocation after freeing disk space (same fresh clone, same WORK; the upstream variant's target directory is reused, the optmarf one resumes the interrupted build) 2026-10-21T04:17:44Z
+free space before: /dev/vda        252G   33G  6.2G  85% /
+tree e745a61b70e4b81c1c8e81030374636b179750f1 (2.05.0.2.2-17042-ge745a61b70); rustc 1.98.0 (88d9e12ae 2026-08-18)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.29s
+worktree /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/upstream at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+    Finished `release` profile [optimized + debuginfo] target(s) in 2m 11s
+worktree /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/optmarf at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+worktree /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work/refsrc at 29ef093da5dd58c1fa484624d94a9d972356c629
+optmarf worktree prepared
+    Finished `release` profile [optimized + debuginfo] target(s) in 9m 22s
+ Cargo.toml                                     | 4 ++++
+ stackslib/src/clarity_vm/database/ephemeral.rs | 2 +-
+ stackslib/src/clarity_vm/database/marf.rs      | 1 +
+ stackslib/src/util_lib/db.rs                   | 2 +-
+ 4 files changed, 7 insertions(+), 2 deletions(-)
+built 2026-10-21T04:29:21Z
+tree_rev e745a61b70e4b81c1c8e81030374636b179750f1 2.05.0.2.2-17042-ge745a61b70
+upstream_rev ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+reference_rev 29ef093da5dd58c1fa484624d94a9d972356c629
+work_dir /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work
+worktree upstream at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+worktree optmarf at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+worktree refsrc at 29ef093da5dd58c1fa484624d94a9d972356c629
+toolchain rustc 1.98.0 (88d9e12ae 2026-08-18)
+binary clarity-bench-rewrite sha256 ce1839976a01f0068b09f1da244ad85093f8cd3ec35e63d9fc841211c04109b9
+binary clarity-bench-upstream sha256 ed40e3756e8c64087be879b6a3ec79cee4ec3fcee00b8fde0a614ac36c2c1968
+binary clarity-bench-optmarf sha256 3d4067597c2f940d3aa2f30d14ffbd274c4e2f6099fb73786f936a15fd0f3078
+optmarf worktree changes vs ad5c57786bb51b58d4bdb4992ad534f762d8cf03:
+ Cargo.toml                                     | 4 ++++
+ stackslib/src/clarity_vm/database/ephemeral.rs | 2 +-
+ stackslib/src/clarity_vm/database/marf.rs      | 1 +
+ stackslib/src/util_lib/db.rs                   | 2 +-
+ 4 files changed, 7 insertions(+), 2 deletions(-)
+total 253104
+drwxr-xr-x 2 root root     4096 Oct 21 04:29 .
+drwxr-xr-x 4 root root     4096 Oct 21 03:54 ..
+-rw-r--r-- 1 root root     1202 Oct 21 04:29 MANIFEST.clarity
+-rwxr-xr-x 1 root root 89497504 Oct 21 04:29 clarity-bench-optmarf
+-rwxr-xr-x 1 root root 83674184 Oct 21 04:17 clarity-bench-rewrite
+-rwxr-xr-x 1 root root 85988096 Oct 21 04:19 clarity-bench-upstream
+exit=0 04:29:22
+== manifest
+built 2026-10-21T04:29:21Z
+tree_rev e745a61b70e4b81c1c8e81030374636b179750f1 2.05.0.2.2-17042-ge745a61b70
+upstream_rev ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+reference_rev 29ef093da5dd58c1fa484624d94a9d972356c629
+work_dir /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/clarity-fresh-work
+worktree upstream at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+worktree optmarf at ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+worktree refsrc at 29ef093da5dd58c1fa484624d94a9d972356c629
+toolchain rustc 1.98.0 (88d9e12ae 2026-08-18)
+binary clarity-bench-rewrite sha256 ce1839976a01f0068b09f1da244ad85093f8cd3ec35e63d9fc841211c04109b9
+binary clarity-bench-upstream sha256 ed40e3756e8c64087be879b6a3ec79cee4ec3fcee00b8fde0a614ac36c2c1968
+binary clarity-bench-optmarf sha256 3d4067597c2f940d3aa2f30d14ffbd274c4e2f6099fb73786f936a15fd0f3078
+optmarf worktree changes vs ad5c57786bb51b58d4bdb4992ad534f762d8cf03:
+ Cargo.toml                                     | 4 ++++
+ stackslib/src/clarity_vm/database/ephemeral.rs | 2 +-
+ stackslib/src/clarity_vm/database/marf.rs      | 1 +
+ stackslib/src/util_lib/db.rs                   | 2 +-
+ 4 files changed, 7 insertions(+), 2 deletions(-)
+== worktree revisions (independent check)
+upstream ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+optmarf ad5c57786bb51b58d4bdb4992ad534f762d8cf03
+refsrc 29ef093da5dd58c1fa484624d94a9d972356c629
+== binaries
+3d4067597c2f940d3aa2f30d14ffbd274c4e2f6099fb73786f936a15fd0f3078  target/bench-bin/clarity-bench-optmarf
+ce1839976a01f0068b09f1da244ad85093f8cd3ec35e63d9fc841211c04109b9  target/bench-bin/clarity-bench-rewrite
+ed40e3756e8c64087be879b6a3ec79cee4ec3fcee00b8fde0a614ac36c2c1968  target/bench-bin/clarity-bench-upstream
+== smoke: each variant prints its build line
+-- rewrite
+clarity-bench: stacks-marf package of this workspace: external_blobs=true compress=true (rewrite: mmap always, patch cache 4096; upstream: no caches) | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 5 | 20000 keys, 1 timed blocks per workload
+populate (40 blocks, 20000 keys, untimed setup): median 1189.5 ms
+-- upstream
+clarity-bench: stacks-marf package of this workspace: external_blobs=true compress=true (rewrite: mmap always, patch cache 4096; upstream: no caches) | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 5 | 20000 keys, 1 timed blocks per workload
+INFO [1792556970.561911] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpmLb8zS/marf.sqlite.blobs
+-- optmarf
+clarity-bench: optimized stacks-marf (29ef093d): external_blobs=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=2048 | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 5 | 20000 keys, 1 timed blocks per workload
+INFO [1792556985.513063] [stacks-marf/src/file.rs:658] [main] Migrate 0 blocks to external blob storage at /tmp/.tmprAdob0/marf.sqlite.blobs
+CLARITY-PROVENANCE-RESUME-DONE 04:29:53

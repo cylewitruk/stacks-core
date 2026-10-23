@@ -1,0 +1,36 @@
+[package]
+name = "marf-differential"
+version = "0.1.0"
+edition = "2021"
+description = "Differential testing harness: replays deterministic operation sequences against the baseline MARF (stackslib) and the rewrite (stacks-marf)"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+stacks-marf = { path = "../../stacks-marf", features = ["testing"] }
+stacks-common = { path = "../../stacks-common", default-features = false, features = ["rusqlite"] }
+stacks-marf-next = { path = "../../crates/stacks-marf-next", features = ["testing"] }
+rusqlite = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+tempfile = "3"
+
+[features]
+default = []
+# Install the counting global allocator (allocations, bytes, peak live heap).
+# Off for timing runs: it adds work to every allocation.
+alloc-count = []
+# Read-path operation counters in the implementations (separate build from
+# timing runs).
+counters = ["stacks-marf-next/counters"]
+# Diagnostic control for the reference overlay (reference/README.md): the
+# reference probes its patch cache only after a borrowed read says the record
+# is a patch. A no-op against upstream; the overlay patch wires it to the
+# reference's feature.
+reference-lateprobe = []
+
+[[bin]]
+name = "marf-differential"
+path = "src/bin/main.rs"

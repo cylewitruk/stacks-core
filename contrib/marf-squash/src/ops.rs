@@ -18,6 +18,7 @@ use std::path::Path;
 
 use stacks_marf::MarfTrieId;
 use stacks_marf::marf::{MARF, MARFOpenOpts};
+use stacks_marf::pruning::Prune;
 use stackslib::chainstate::burn::db::sortdb::SortitionTipCopyBoundary;
 use stackslib::chainstate::stacks::db::snapshot::{
     copy_burnchain_db, copy_clarity_side_tables, copy_index_side_tables,
@@ -82,7 +83,7 @@ pub fn squash_and_copy_one<T: MarfTrieId + Send + Sync>(job: SquashJob<T>) {
         std::process::exit(1);
     }
 
-    let stats = match MARF::squash_to_path(
+    let stats = match MARF::prune_to_path(
         source.db.to_str().unwrap(),
         out.db.to_str().unwrap(),
         open_opts,

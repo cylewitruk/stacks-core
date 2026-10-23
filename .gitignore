@@ -69,6 +69,9 @@ net-test/mnt/chainstate-*
 net-test/mnt/*.log
 net-test/mnt/archive/*
 *.log
+# Benchmark evidence is published deliberately (raw logs and samples).
+!contrib/marf-differential/results/**
+!contrib/clarity-bench/results/**
 
 # Code Coverage files
 *.profraw

@@ -1,0 +1,50 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, compressed): built in 0.5s, 40000 keys
+impl next: rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+mode isolated: fresh handle per capacity x set x repetition, cold pass then warm passes within the cell; cold = fresh handle, OS page cache as left by building the database (process-cold)
+key sets (walk shape from the rewrite's profiler; identical trie for every implementation):
+  patchfree@tip1               n=2000   distinct patched nodes=0      avg hops=0.00 avg patched/walk=0.00 avg depth=0.00
+  bulk tip (random keys)       n=5000   distinct patched nodes=677    avg hops=1.00 avg patched/walk=2.05 avg depth=4.00
+  tip hops=2 depth=3-4         n=5000   distinct patched nodes=365    avg hops=2.00 avg patched/walk=2.05 avg depth=3.50
+  tip hops=2 depth=1-2         n=5000   distinct patched nodes=438    avg hops=2.00 avg patched/walk=1.71 avg depth=2.00
+  tip hops=1 depth=1-2         n=5000   distinct patched nodes=336    avg hops=1.00 avg patched/walk=1.63 avg depth=2.00
+  patched(nodes<=32)           n=8192   distinct patched nodes=32     avg hops=1.75 avg patched/walk=1.35 avg depth=2.21
+  patched(nodes<=64)           n=8192   distinct patched nodes=64     avg hops=1.78 avg patched/walk=1.53 avg depth=2.38
+  patched(nodes<=1024)         n=8192   distinct patched nodes=995    avg hops=1.86 avg patched/walk=1.92 avg depth=2.71
+capacities: ["0", "64", "4096", "prod"] -> e.g. rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=0 result_cache=none
+
+set                               n capacity |   cold us/op   warm us/op        warm min-max  occupancy
+patchfree@tip1                 2000        0 |         2.10         1.95           1.88-2.04        n/a
+patchfree@tip1                 2000       64 |         2.29         1.93           1.86-2.30        n/a
+patchfree@tip1                 2000     4096 |         2.13         1.90           1.83-1.97        n/a
+patchfree@tip1                 2000     prod |         2.11         1.96           1.89-2.15        n/a
+bulk tip (random keys)         5000        0 |        40.30        38.41         36.43-38.51        n/a
+bulk tip (random keys)         5000       64 |         7.81         6.76           6.47-8.26        n/a
+bulk tip (random keys)         5000     4096 |         2.04         1.56           1.49-1.60        n/a
+bulk tip (random keys)         5000     prod |         1.99         1.50           1.44-1.52        n/a
+tip hops=2 depth=3-4           5000        0 |        12.97        12.99         12.81-14.47        n/a
+tip hops=2 depth=3-4           5000       64 |         6.79         5.07           5.04-5.19        n/a
+tip hops=2 depth=3-4           5000     4096 |         1.62         1.33           1.26-1.43        n/a
+tip hops=2 depth=3-4           5000     prod |         1.71         1.31           1.20-2.29        n/a
+tip hops=2 depth=1-2           5000        0 |        10.94        10.99         10.72-11.52        n/a
+tip hops=2 depth=1-2           5000       64 |         3.54         3.35           3.20-4.00        n/a
+tip hops=2 depth=1-2           5000     4096 |         2.09         1.83           1.81-2.00        n/a
+tip hops=2 depth=1-2           5000     prod |         1.97         1.83           1.76-1.91        n/a
+tip hops=1 depth=1-2           5000        0 |        11.19        12.61         10.72-19.81        n/a
+tip hops=1 depth=1-2           5000       64 |         2.38         2.31           2.02-2.52        n/a
+tip hops=1 depth=1-2           5000     4096 |         1.94         1.60           1.52-1.61        n/a
+tip hops=1 depth=1-2           5000     prod |         1.84         1.67           1.54-1.90        n/a
+patched(nodes<=32)             8192        0 |        10.48        10.73         10.39-10.89        n/a
+patched(nodes<=32)             8192       64 |         2.50         2.41           2.23-2.58        n/a
+patched(nodes<=32)             8192     4096 |         2.47         2.18           2.16-2.28        n/a
+patched(nodes<=32)             8192     prod |         2.36         2.30           2.23-2.42        n/a
+patched(nodes<=64)             8192        0 |        11.05        11.60         11.18-15.32        n/a
+patched(nodes<=64)             8192       64 |         2.28         2.08           2.03-2.20        n/a
+patched(nodes<=64)             8192     4096 |         2.71         2.75           1.91-3.05        n/a
+patched(nodes<=64)             8192     prod |         2.13         2.05           1.99-2.15        n/a
+patched(nodes<=1024)           8192        0 |        12.03        13.74         12.60-17.69        n/a
+patched(nodes<=1024)           8192       64 |         5.16         4.96           4.91-5.01        n/a
+patched(nodes<=1024)           8192     4096 |         2.04         1.78           1.74-1.89        n/a
+patched(nodes<=1024)           8192     prod |         2.37         2.03           1.92-2.20        n/a
+(no read counters in this build; use --features counters for the counter run)
+[json] wrote contrib/marf-differential/results/r5/ablate-rewrite-std-rep4.json

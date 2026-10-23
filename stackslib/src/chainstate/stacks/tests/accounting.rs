@@ -1425,8 +1425,8 @@ fn test_coinbase_pay_to_alt_recipient_v210(pay_to_contract: bool) {
                 "principal"
             }
         ),
-        2024,
-        2025,
+        12024,
+        12025,
     );
     peer_config.chain_config.initial_balances = vec![
         (addr.to_account_principal(), 1000000000),

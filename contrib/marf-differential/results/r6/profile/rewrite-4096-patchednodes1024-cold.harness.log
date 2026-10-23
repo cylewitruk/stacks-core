@@ -1,0 +1,11 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, compressed): built in 9.0s, 40000 keys
+impl next: rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+mode isolated: fresh handle per capacity x set x repetition, cold pass then warm passes within the cell; cold = fresh handle, OS page cache as left by building the database (process-cold)
+key sets (walk shape from the rewrite's profiler; identical trie for every implementation):
+  patched(nodes<=1024)         n=8192   distinct patched nodes=995    avg hops=1.86 avg patched/walk=1.92 avg depth=2.71
+capacities: ["4096"] -> e.g. rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+
+set                               n capacity |   cold us/op   warm us/op        warm min-max  occupancy
+patched(nodes<=1024)           8192     4096 |        52.48        39.26         37.81-45.23        n/a
+(no read counters in this build; use --features counters for the counter run)

@@ -1,0 +1,19 @@
+   Compiling stacks-marf-next v4.0.5 (/home/user/stacks-core/crates/stacks-marf-next)
+    Finished `test` profile [optimized + debuginfo] target(s) in 17.18s
+────────────
+ Nextest run ID edf085a0-6f45-4cde-b1d2-cff0cde7fdb8 with nextest profile: default
+    Starting 12 tests across 1 binary
+        PASS [   0.009s] ( 1/12) stacks-marf-next codec::tests::patch_roundtrip
+        PASS [   0.023s] ( 2/12) stacks-marf-next codec::tests::rejects_wrong_type
+        PASS [   0.014s] ( 3/12) stacks-marf-next hash::tests::leaf_hash_matches_encoding
+        PASS [   0.028s] ( 4/12) stacks-marf-next hash::tests::empty_root_hash_is_stable
+        PASS [   0.031s] ( 5/12) stacks-marf-next codec::tests::roundtrip_all_kinds
+        PASS [   0.009s] ( 6/12) stacks-marf-next node::tests::slots_iterate_in_slot_order
+        PASS [   0.016s] ( 7/12) stacks-marf-next node::tests::insert_replaces_and_fills
+        PASS [   0.012s] ( 8/12) stacks-marf-next proofs::tests::trie_leaf_hash_matches_node_leaf_hash
+        PASS [   0.010s] ( 9/12) stacks-marf-next trie::tests::layout_agrees_with_emission_across_the_u32_boundary
+        PASS [   0.015s] (10/12) stacks-marf-next trie::tests::insert_lookup_roundtrip_and_reload
+        PASS [   0.045s] (11/12) stacks-marf-next storage::tests::sidecar_retirement_is_redone_after_a_rolled_back_commit
+        PASS [   0.057s] (12/12) stacks-marf-next pruning::tests::prune_stats_report_the_blob_length
+────────────
+     Summary [   0.090s] 12 tests run: 12 passed, 0 skipped

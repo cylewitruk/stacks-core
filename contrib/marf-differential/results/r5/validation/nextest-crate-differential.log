@@ -1,0 +1,26 @@
+   Compiling stacks-marf-next v4.0.5 (/home/user/stacks-core/crates/stacks-marf-next)
+   Compiling marf-differential v0.1.0 (/home/user/stacks-core/contrib/marf-differential)
+    Finished `test` profile [optimized + debuginfo] target(s) in 45.96s
+────────────
+ Nextest run ID 743c5ab4-521a-4056-bc6c-b77bfd78a10a with nextest profile: default
+    Starting 18 tests across 5 binaries
+        PASS [  14.253s] ( 1/18) marf-differential::fixtures rewrite_reproduces_fixtures
+        PASS [  14.569s] ( 2/18) marf-differential::fixtures rewrite_reproduces_supported_fixture_ops
+        PASS [   0.021s] ( 3/18) marf-differential::fixtures storage_variants_agree_on_consensus_observations
+        PASS [   0.010s] ( 4/18) stacks-marf-next codec::tests::patch_roundtrip
+        PASS [   0.010s] ( 5/18) stacks-marf-next codec::tests::rejects_wrong_type
+        PASS [   0.020s] ( 6/18) stacks-marf-next codec::tests::roundtrip_all_kinds
+        PASS [   0.024s] ( 7/18) stacks-marf-next hash::tests::empty_root_hash_is_stable
+        PASS [   0.020s] ( 8/18) stacks-marf-next hash::tests::leaf_hash_matches_encoding
+        PASS [   0.024s] ( 9/18) stacks-marf-next node::tests::insert_replaces_and_fills
+        PASS [   0.028s] (10/18) stacks-marf-next node::tests::slots_iterate_in_slot_order
+        PASS [   0.020s] (11/18) stacks-marf-next proofs::tests::trie_leaf_hash_matches_node_leaf_hash
+        PASS [   0.096s] (12/18) stacks-marf-next pruning::tests::prune_stats_report_the_blob_length
+        PASS [   0.067s] (13/18) stacks-marf-next storage::tests::sidecar_retirement_is_redone_after_a_rolled_back_commit
+        PASS [   0.016s] (14/18) stacks-marf-next trie::tests::insert_lookup_roundtrip_and_reload
+        PASS [   0.029s] (15/18) stacks-marf-next trie::tests::layout_agrees_with_emission_across_the_u32_boundary
+        PASS [  21.157s] (16/18) marf-differential::fixtures baseline_reproduces_fixtures
+        PASS [  36.045s] (17/18) marf-differential::fixtures baseline_then_rewrite_handoff
+        PASS [  44.097s] (18/18) marf-differential::fixtures rewrite_then_baseline_handoff
+────────────
+     Summary [  58.352s] 18 tests run: 18 passed, 0 skipped

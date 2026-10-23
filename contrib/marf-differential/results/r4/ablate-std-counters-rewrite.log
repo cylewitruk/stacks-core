@@ -1,0 +1,113 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=true, repeat=5
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, compressed): built in 0.6s, 40000 keys
+impl next: rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+key sets (walk shape from the rewrite's profiler; identical trie for every implementation):
+  patchfree@tip1               n=2000   distinct patched nodes=0      avg hops=0.00 avg patched/walk=0.00 avg depth=0.00
+  bulk tip (random keys)       n=5000   distinct patched nodes=677    avg hops=1.00 avg patched/walk=2.05 avg depth=4.00
+  tip hops=2 depth=3-4         n=5000   distinct patched nodes=365    avg hops=2.00 avg patched/walk=2.05 avg depth=3.50
+  tip hops=2 depth=1-2         n=5000   distinct patched nodes=438    avg hops=2.00 avg patched/walk=1.71 avg depth=2.00
+  tip hops=1 depth=1-2         n=5000   distinct patched nodes=336    avg hops=1.00 avg patched/walk=1.63 avg depth=2.00
+  patched(nodes<=32)           n=8192   distinct patched nodes=32     avg hops=1.75 avg patched/walk=1.35 avg depth=2.21
+  patched(nodes<=64)           n=8192   distinct patched nodes=64     avg hops=1.78 avg patched/walk=1.53 avg depth=2.38
+  patched(nodes<=1024)         n=8192   distinct patched nodes=995    avg hops=1.86 avg patched/walk=1.92 avg depth=2.71
+capacities: ["0", "64", "4096", "prod"] -> e.g. rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=0 result_cache=none; cold = fresh open (process caches empty), OS page cache warm
+
+set                               n capacity |   cold us/op   warm us/op        warm min-max
+patchfree@tip1                 2000        0 |         2.95         2.48           1.95-3.77
+patchfree@tip1                 2000       64 |         2.56         1.88           1.84-3.02
+patchfree@tip1                 2000     4096 |         2.46         1.97           1.83-2.68
+patchfree@tip1                 2000     prod |         2.15         1.94           1.83-3.86
+bulk tip (random keys)         5000        0 |        46.67        42.57         38.77-54.42
+bulk tip (random keys)         5000       64 |         7.91         6.36          5.93-10.50
+bulk tip (random keys)         5000     4096 |         2.03         1.49           1.38-1.96
+bulk tip (random keys)         5000     prod |         2.11         1.69           1.47-2.44
+tip hops=2 depth=3-4           5000        0 |        16.26        15.50         13.45-22.40
+tip hops=2 depth=3-4           5000       64 |         5.15         5.10           4.88-5.63
+tip hops=2 depth=3-4           5000     4096 |         1.60         1.31           1.26-2.15
+tip hops=2 depth=3-4           5000     prod |         1.76         1.33           1.24-2.17
+tip hops=2 depth=1-2           5000        0 |        12.46        13.12         11.25-19.58
+tip hops=2 depth=1-2           5000       64 |         3.31         3.26           3.11-4.87
+tip hops=2 depth=1-2           5000     4096 |         1.89         1.79           1.56-2.92
+tip hops=2 depth=1-2           5000     prod |         1.94         1.82           1.72-3.03
+tip hops=1 depth=1-2           5000        0 |        12.46        11.11         10.61-18.19
+tip hops=1 depth=1-2           5000       64 |         2.07         1.98           1.89-3.20
+tip hops=1 depth=1-2           5000     4096 |         1.82         1.79           1.54-3.79
+tip hops=1 depth=1-2           5000     prod |         2.32         1.77           1.55-3.15
+patched(nodes<=32)             8192        0 |        11.17        11.28         10.48-17.06
+patched(nodes<=32)             8192       64 |         2.11         2.10           1.98-3.21
+patched(nodes<=32)             8192     4096 |         2.25         2.22           2.01-4.98
+patched(nodes<=32)             8192     prod |         2.56         2.54           2.03-4.86
+patched(nodes<=64)             8192        0 |        12.76        13.22         11.69-17.41
+patched(nodes<=64)             8192       64 |         2.05         1.98           1.90-2.20
+patched(nodes<=64)             8192     4096 |         2.12         1.99           1.85-3.77
+patched(nodes<=64)             8192     prod |         2.12         2.36           1.90-4.69
+patched(nodes<=1024)           8192        0 |        16.30        13.67         12.44-21.94
+patched(nodes<=1024)           8192       64 |         5.05         5.13           4.98-5.43
+patched(nodes<=1024)           8192     4096 |         1.93         1.82           1.75-2.97
+patched(nodes<=1024)           8192     prod |         2.08         1.96           1.70-3.22
+
+counters per set and capacity (first repetition; cold = first pass after open, warm = 5 passes):
+  patchfree@tip1               cap=0     cold: node_visits=6058 record_reads=12116 location_sql=1 block_id_sql=1
+  patchfree@tip1               cap=0     warm: node_visits=30290 record_reads=60580
+  patchfree@tip1               cap=64    cold: node_visits=6058 record_reads=12116 patch_cache_lookups=6058 location_sql=1 block_id_sql=1
+  patchfree@tip1               cap=64    warm: node_visits=30290 record_reads=60580 patch_cache_lookups=30290
+  patchfree@tip1               cap=4096  cold: node_visits=6058 record_reads=12116 patch_cache_lookups=6058 location_sql=1 block_id_sql=1
+  patchfree@tip1               cap=4096  warm: node_visits=30290 record_reads=60580 patch_cache_lookups=30290
+  patchfree@tip1               cap=prod  cold: node_visits=6058 record_reads=12116 patch_cache_lookups=6058 location_sql=1 block_id_sql=1
+  patchfree@tip1               cap=prod  warm: node_visits=30290 record_reads=60580 patch_cache_lookups=30290
+  bulk tip (random keys)       cap=0     cold: node_visits=17288 backptr_follows=4982 record_reads=67552 patch_resolutions=10256 patch_applications=32976 owned_materializations=10256 location_sql=19 block_id_sql=1
+  bulk tip (random keys)       cap=0     warm: node_visits=86440 backptr_follows=24910 record_reads=337760 patch_resolutions=51280 patch_applications=164880 owned_materializations=51280
+  bulk tip (random keys)       cap=64    cold: node_visits=17288 backptr_follows=4982 record_reads=35304 patch_cache_lookups=17288 patch_cache_hits=5508 patch_cache_misses=4748 patch_cache_clears=74 patch_resolutions=4748 patch_applications=11744 owned_materializations=4748 location_sql=19 block_id_sql=1
+  bulk tip (random keys)       cap=64    warm: node_visits=86440 backptr_follows=24910 record_reads=176280 patch_cache_lookups=86440 patch_cache_hits=27600 patch_cache_misses=23680 patch_cache_clears=370 patch_resolutions=23680 patch_applications=58600 owned_materializations=23680
+  bulk tip (random keys)       cap=4096  cold: node_visits=17288 backptr_follows=4982 record_reads=16540 patch_cache_lookups=17288 patch_cache_hits=9579 patch_cache_misses=677 patch_resolutions=677 patch_applications=1122 owned_materializations=677 location_sql=19 block_id_sql=1
+  bulk tip (random keys)       cap=4096  warm: node_visits=86440 backptr_follows=24910 record_reads=70320 patch_cache_lookups=86440 patch_cache_hits=51280
+  bulk tip (random keys)       cap=prod  cold: node_visits=17288 backptr_follows=4982 record_reads=16540 patch_cache_lookups=17288 patch_cache_hits=9579 patch_cache_misses=677 patch_resolutions=677 patch_applications=1122 owned_materializations=677 location_sql=19 block_id_sql=1
+  bulk tip (random keys)       cap=prod  warm: node_visits=86440 backptr_follows=24910 record_reads=70320 patch_cache_lookups=86440 patch_cache_hits=51280
+  tip hops=2 depth=3-4         cap=0     cold: node_visits=17085 backptr_follows=10000 record_reads=61942 patch_resolutions=10256 patch_applications=27772 owned_materializations=10256 location_sql=8 block_id_sql=1
+  tip hops=2 depth=3-4         cap=0     warm: node_visits=85425 backptr_follows=50000 record_reads=309710 patch_resolutions=51280 patch_applications=138860 owned_materializations=51280
+  tip hops=2 depth=3-4         cap=64    cold: node_visits=17085 backptr_follows=10000 record_reads=33650 patch_cache_lookups=17085 patch_cache_hits=6490 patch_cache_misses=3766 patch_cache_clears=59 patch_resolutions=3766 patch_applications=12460 owned_materializations=3766 location_sql=8 block_id_sql=1
+  tip hops=2 depth=3-4         cap=64    warm: node_visits=85425 backptr_follows=50000 record_reads=168510 patch_cache_lookups=85425 patch_cache_hits=32400 patch_cache_misses=18880 patch_cache_clears=295 patch_resolutions=18880 patch_applications=62460 owned_materializations=18880
+  tip hops=2 depth=3-4         cap=4096  cold: node_visits=17085 backptr_follows=10000 record_reads=14796 patch_cache_lookups=17085 patch_cache_hits=9973 patch_cache_misses=283 patch_resolutions=283 patch_applications=572 owned_materializations=283 location_sql=8 block_id_sql=1
+  tip hops=2 depth=3-4         cap=4096  warm: node_visits=85425 backptr_follows=50000 record_reads=68290 patch_cache_lookups=85425 patch_cache_hits=51280
+  tip hops=2 depth=3-4         cap=prod  cold: node_visits=17085 backptr_follows=10000 record_reads=14796 patch_cache_lookups=17085 patch_cache_hits=9973 patch_cache_misses=283 patch_resolutions=283 patch_applications=572 owned_materializations=283 location_sql=8 block_id_sql=1
+  tip hops=2 depth=3-4         cap=prod  warm: node_visits=85425 backptr_follows=50000 record_reads=68290 patch_cache_lookups=85425 patch_cache_hits=51280
+  tip hops=2 depth=1-2         cap=0     cold: node_visits=17126 backptr_follows=10000 record_reads=49737 patch_resolutions=8562 patch_applications=15485 owned_materializations=8562
+  tip hops=2 depth=1-2         cap=0     warm: node_visits=85630 backptr_follows=50000 record_reads=248685 patch_resolutions=42810 patch_applications=77425 owned_materializations=42810
+  tip hops=2 depth=1-2         cap=64    cold: node_visits=17126 backptr_follows=10000 record_reads=24759 patch_cache_lookups=17126 patch_cache_hits=6389 patch_cache_misses=2173 patch_cache_clears=33 patch_resolutions=2173 patch_applications=3285 owned_materializations=2173
+  tip hops=2 depth=1-2         cap=64    warm: node_visits=85630 backptr_follows=50000 record_reads=123855 patch_cache_lookups=85630 patch_cache_hits=31930 patch_cache_misses=10880 patch_cache_clears=170 patch_resolutions=10880 patch_applications=16455 owned_materializations=10880
+  tip hops=2 depth=1-2         cap=4096  cold: node_visits=17126 backptr_follows=10000 record_reads=18149 patch_cache_lookups=17126 patch_cache_hits=8242 patch_cache_misses=320 patch_resolutions=320 patch_applications=381 owned_materializations=320
+  tip hops=2 depth=1-2         cap=4096  warm: node_visits=85630 backptr_follows=50000 record_reads=85640 patch_cache_lookups=85630 patch_cache_hits=42810
+  tip hops=2 depth=1-2         cap=prod  cold: node_visits=17126 backptr_follows=10000 record_reads=18149 patch_cache_lookups=17126 patch_cache_hits=8242 patch_cache_misses=320 patch_resolutions=320 patch_applications=381 owned_materializations=320
+  tip hops=2 depth=1-2         cap=prod  warm: node_visits=85630 backptr_follows=50000 record_reads=85640 patch_cache_lookups=85630 patch_cache_hits=42810
+  tip hops=1 depth=1-2         cap=0     cold: node_visits=17189 backptr_follows=5000 record_reads=48941 patch_resolutions=8149 patch_applications=14563 owned_materializations=8149
+  tip hops=1 depth=1-2         cap=0     warm: node_visits=85945 backptr_follows=25000 record_reads=244705 patch_resolutions=40745 patch_applications=72815 owned_materializations=40745
+  tip hops=1 depth=1-2         cap=64    cold: node_visits=17189 backptr_follows=5000 record_reads=20410 patch_cache_lookups=17189 patch_cache_hits=7466 patch_cache_misses=683 patch_cache_clears=11 patch_resolutions=683 patch_applications=964 owned_materializations=683
+  tip hops=1 depth=1-2         cap=64    warm: node_visits=85945 backptr_follows=25000 record_reads=101810 patch_cache_lookups=85945 patch_cache_hits=37399 patch_cache_misses=3346 patch_cache_clears=52 patch_resolutions=3346 patch_applications=4718 owned_materializations=3346
+  tip hops=1 depth=1-2         cap=4096  cold: node_visits=17189 backptr_follows=5000 record_reads=18376 patch_cache_lookups=17189 patch_cache_hits=8055 patch_cache_misses=94 patch_resolutions=94 patch_applications=108 owned_materializations=94
+  tip hops=1 depth=1-2         cap=4096  warm: node_visits=85945 backptr_follows=25000 record_reads=90400 patch_cache_lookups=85945 patch_cache_hits=40745
+  tip hops=1 depth=1-2         cap=prod  cold: node_visits=17189 backptr_follows=5000 record_reads=18376 patch_cache_lookups=17189 patch_cache_hits=8055 patch_cache_misses=94 patch_resolutions=94 patch_applications=108 owned_materializations=94
+  tip hops=1 depth=1-2         cap=prod  warm: node_visits=85945 backptr_follows=25000 record_reads=90400 patch_cache_lookups=85945 patch_cache_hits=40745
+  patched(nodes<=32)           cap=0     cold: node_visits=27716 backptr_follows=14335 record_reads=78393 patch_resolutions=11050 patch_applications=22961 owned_materializations=11050
+  patched(nodes<=32)           cap=0     warm: node_visits=138580 backptr_follows=71675 record_reads=391965 patch_resolutions=55250 patch_applications=114805 owned_materializations=55250
+  patched(nodes<=32)           cap=64    cold: node_visits=27716 backptr_follows=14335 record_reads=33480 patch_cache_lookups=27716 patch_cache_hits=11014 patch_cache_misses=36 patch_cache_clears=1 patch_resolutions=36 patch_applications=76 owned_materializations=36
+  patched(nodes<=32)           cap=64    warm: node_visits=138580 backptr_follows=71675 record_reads=166660 patch_cache_lookups=138580 patch_cache_hits=55250
+  patched(nodes<=32)           cap=4096  cold: node_visits=27716 backptr_follows=14335 record_reads=33332 patch_cache_lookups=27716 patch_cache_hits=11050
+  patched(nodes<=32)           cap=4096  warm: node_visits=138580 backptr_follows=71675 record_reads=166660 patch_cache_lookups=138580 patch_cache_hits=55250
+  patched(nodes<=32)           cap=prod  cold: node_visits=27716 backptr_follows=14335 record_reads=33332 patch_cache_lookups=27716 patch_cache_hits=11050
+  patched(nodes<=32)           cap=prod  warm: node_visits=138580 backptr_follows=71675 record_reads=166660 patch_cache_lookups=138580 patch_cache_hits=55250
+  patched(nodes<=64)           cap=0     cold: node_visits=27734 backptr_follows=14561 record_reads=82787 patch_resolutions=12524 patch_applications=27319 owned_materializations=12524
+  patched(nodes<=64)           cap=0     warm: node_visits=138670 backptr_follows=72805 record_reads=413935 patch_resolutions=62620 patch_applications=136595 owned_materializations=62620
+  patched(nodes<=64)           cap=64    cold: node_visits=27734 backptr_follows=14561 record_reads=31106 patch_cache_lookups=27734 patch_cache_hits=12370 patch_cache_misses=154 patch_cache_clears=2 patch_resolutions=154 patch_applications=378 owned_materializations=154
+  patched(nodes<=64)           cap=64    warm: node_visits=138670 backptr_follows=72805 record_reads=154890 patch_cache_lookups=138670 patch_cache_hits=61980 patch_cache_misses=640 patch_cache_clears=10 patch_resolutions=640 patch_applications=1510 owned_materializations=640
+  patched(nodes<=64)           cap=4096  cold: node_visits=27734 backptr_follows=14561 record_reads=30433 patch_cache_lookups=27734 patch_cache_hits=12521 patch_cache_misses=3 patch_resolutions=3 patch_applications=7 owned_materializations=3
+  patched(nodes<=64)           cap=4096  warm: node_visits=138670 backptr_follows=72805 record_reads=152100 patch_cache_lookups=138670 patch_cache_hits=62620
+  patched(nodes<=64)           cap=prod  cold: node_visits=27734 backptr_follows=14561 record_reads=30433 patch_cache_lookups=27734 patch_cache_hits=12521 patch_cache_misses=3 patch_resolutions=3 patch_applications=7 owned_materializations=3
+  patched(nodes<=64)           cap=prod  warm: node_visits=138670 backptr_follows=72805 record_reads=152100 patch_cache_lookups=138670 patch_cache_hits=62620
+  patched(nodes<=1024)         cap=0     cold: node_visits=28396 backptr_follows=15266 record_reads=92146 patch_resolutions=15763 patch_applications=35354 owned_materializations=15763
+  patched(nodes<=1024)         cap=0     warm: node_visits=141980 backptr_follows=76330 record_reads=460730 patch_resolutions=78815 patch_applications=176770 owned_materializations=78815
+  patched(nodes<=1024)         cap=64    cold: node_visits=28396 backptr_follows=15266 record_reads=55402 patch_cache_lookups=28396 patch_cache_hits=9027 patch_cache_misses=6736 patch_cache_clears=106 patch_resolutions=6736 patch_applications=16664 owned_materializations=6736
+  patched(nodes<=1024)         cap=64    warm: node_visits=141980 backptr_follows=76330 record_reads=278808 patch_cache_lookups=141980 patch_cache_hits=44726 patch_cache_misses=34089 patch_cache_clears=532 patch_resolutions=34089 patch_applications=84300 owned_materializations=34089
+  patched(nodes<=1024)         cap=4096  cold: node_visits=28396 backptr_follows=15266 record_reads=26240 patch_cache_lookups=28396 patch_cache_hits=15457 patch_cache_misses=306 patch_resolutions=306 patch_applications=362 owned_materializations=306
+  patched(nodes<=1024)         cap=4096  warm: node_visits=141980 backptr_follows=76330 record_reads=126330 patch_cache_lookups=141980 patch_cache_hits=78815
+  patched(nodes<=1024)         cap=prod  cold: node_visits=28396 backptr_follows=15266 record_reads=26240 patch_cache_lookups=28396 patch_cache_hits=15457 patch_cache_misses=306 patch_resolutions=306 patch_applications=362 owned_materializations=306
+  patched(nodes<=1024)         cap=prod  warm: node_visits=141980 backptr_follows=76330 record_reads=126330 patch_cache_lookups=141980 patch_cache_hits=78815

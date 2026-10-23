@@ -4,3 +4,5 @@ legacy/* linguist-vendored
 # - 'clarity' package, where clarity language is sensitive to line endings for .clar files
 # anyhow, setting eol for all text files to have a homogeneous management over the whole code base
 * text eol=lf
+*.xz binary
+*.callgrind.out binary

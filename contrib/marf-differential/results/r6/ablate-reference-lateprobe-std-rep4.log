@@ -1,0 +1,34 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, compressed): built in 0.6s, 40000 keys
+impl base: reference stacks-marf (29ef093d): external=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=2048 [diagnostic: late patch-cache probe]
+mode isolated: fresh handle per capacity x set x repetition, cold pass then warm passes within the cell; cold = fresh handle, OS page cache as left by building the database (process-cold)
+key sets (walk shape from the rewrite's profiler; identical trie for every implementation):
+  patchfree@tip1               n=2000   distinct patched nodes=0      avg hops=0.00 avg patched/walk=0.00 avg depth=0.00
+  bulk tip (random keys)       n=5000   distinct patched nodes=677    avg hops=1.00 avg patched/walk=2.05 avg depth=4.00
+  tip hops=2 depth=3-4         n=5000   distinct patched nodes=365    avg hops=2.00 avg patched/walk=2.05 avg depth=3.50
+  tip hops=2 depth=1-2         n=5000   distinct patched nodes=438    avg hops=2.00 avg patched/walk=1.71 avg depth=2.00
+  tip hops=1 depth=1-2         n=5000   distinct patched nodes=336    avg hops=1.00 avg patched/walk=1.63 avg depth=2.00
+  patched(nodes<=32)           n=8192   distinct patched nodes=32     avg hops=1.75 avg patched/walk=1.35 avg depth=2.21
+  patched(nodes<=64)           n=8192   distinct patched nodes=64     avg hops=1.78 avg patched/walk=1.53 avg depth=2.38
+  patched(nodes<=1024)         n=8192   distinct patched nodes=995    avg hops=1.86 avg patched/walk=1.92 avg depth=2.71
+capacities: ["64", "4096"] -> e.g. reference stacks-marf (29ef093d): external=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=2048 [diagnostic: late patch-cache probe]
+
+set                               n capacity |   cold us/op   warm us/op        warm min-max  occupancy
+patchfree@tip1                 2000       64 |         7.44         7.37           7.28-7.50        n/a
+patchfree@tip1                 2000     4096 |         7.93         7.62           7.30-7.71        n/a
+bulk tip (random keys)         5000       64 |        10.52        10.38         10.34-10.78        n/a
+bulk tip (random keys)         5000     4096 |         6.97         6.20           6.16-6.47        n/a
+tip hops=2 depth=3-4           5000       64 |         9.12         8.82           8.77-8.99        n/a
+tip hops=2 depth=3-4           5000     4096 |         6.06         5.77           5.61-7.37        n/a
+tip hops=2 depth=1-2           5000       64 |         6.94         6.97           6.67-7.19        n/a
+tip hops=2 depth=1-2           5000     4096 |         6.52         6.25           6.14-6.31        n/a
+tip hops=1 depth=1-2           5000       64 |         6.61         6.35           6.21-7.31        n/a
+tip hops=1 depth=1-2           5000     4096 |         6.45         6.51           5.90-7.75        n/a
+patched(nodes<=32)             8192       64 |         6.44         6.45           6.24-6.83        n/a
+patched(nodes<=32)             8192     4096 |         6.47         6.83           6.55-9.82        n/a
+patched(nodes<=64)             8192       64 |         6.28         6.44           6.21-6.61        n/a
+patched(nodes<=64)             8192     4096 |        10.42         6.14           6.02-6.54        n/a
+patched(nodes<=1024)           8192       64 |        10.50        10.32         10.16-10.57        n/a
+patched(nodes<=1024)           8192     4096 |         8.01         6.61           6.25-7.94        n/a
+(no read counters in this build; use --features counters for the counter run)
+[json] wrote contrib/marf-differential/results/r6/ablate-reference-lateprobe-std-rep4.json

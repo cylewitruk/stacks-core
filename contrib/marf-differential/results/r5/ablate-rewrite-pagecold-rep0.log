@@ -1,0 +1,26 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=false, counters=false, repeat=1
+workload std (20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, compressed): built in 1.2s, 40000 keys
+impl next: rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+mode isolated: fresh handle per capacity x set x repetition, cold pass then warm passes within the cell; cold = fresh handle + OS page cache dropped before the cell (page-cold)
+key sets (walk shape from the rewrite's profiler; identical trie for every implementation):
+  patchfree@tip1               n=2000   distinct patched nodes=0      avg hops=0.00 avg patched/walk=0.00 avg depth=0.00
+  bulk tip (random keys)       n=5000   distinct patched nodes=677    avg hops=1.00 avg patched/walk=2.05 avg depth=4.00
+  tip hops=2 depth=3-4         n=5000   distinct patched nodes=365    avg hops=2.00 avg patched/walk=2.05 avg depth=3.50
+  tip hops=2 depth=1-2         n=5000   distinct patched nodes=438    avg hops=2.00 avg patched/walk=1.71 avg depth=2.00
+  tip hops=1 depth=1-2         n=5000   distinct patched nodes=336    avg hops=1.00 avg patched/walk=1.63 avg depth=2.00
+  patched(nodes<=32)           n=8192   distinct patched nodes=32     avg hops=1.75 avg patched/walk=1.35 avg depth=2.21
+  patched(nodes<=64)           n=8192   distinct patched nodes=64     avg hops=1.78 avg patched/walk=1.53 avg depth=2.38
+  patched(nodes<=1024)         n=8192   distinct patched nodes=995    avg hops=1.86 avg patched/walk=1.92 avg depth=2.71
+capacities: ["prod"] -> e.g. rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+
+set                               n capacity |   cold us/op   warm us/op        warm min-max  occupancy
+patchfree@tip1                 2000     prod |         3.01         2.28           1.98-3.03        n/a
+bulk tip (random keys)         5000     prod |         7.57         1.62           1.49-2.47        n/a
+tip hops=2 depth=3-4           5000     prod |         5.51         1.42           1.31-1.55        n/a
+tip hops=2 depth=1-2           5000     prod |         5.80         1.91           1.87-1.95        n/a
+tip hops=1 depth=1-2           5000     prod |         8.62         2.78           2.56-2.90        n/a
+patched(nodes<=32)             8192     prod |         5.69         3.17           2.54-3.32        n/a
+patched(nodes<=64)             8192     prod |         5.58         3.01           2.33-3.07        n/a
+patched(nodes<=1024)           8192     prod |         5.50         1.78           1.72-2.69        n/a
+(no read counters in this build; use --features counters for the counter run)
+[json] wrote contrib/marf-differential/results/r5/ablate-rewrite-pagecold-rep0.json

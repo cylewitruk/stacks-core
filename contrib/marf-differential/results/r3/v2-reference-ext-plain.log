@@ -1,0 +1,26 @@
+== REPEAT=3 /tmp/claude-0/-home-user-stacks-core/35b442b6-0609-5a4c-a63c-d1409b1324c5/scratchpad/bin/marf-differential-ref alloc external plain
+storage: external blobs, plain; 20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, 5000 reads/phase
+phase                                                             ops | base alloc/op    base B/op base us/op base peakKB | next alloc/op    next B/op next us/op next peakKB
+insert                                                          40000 |         7.70         8865       6.90        2619 |         0.70          998       1.47        1249
+seal                                                               20 |        25.80         5719   14202.98           4 |        16.90        18471   12333.22          16
+commit                                                             20 |        33.90      2728222    5562.14        1887 |        25.45      1010926    4638.97        1185
+warm_get                                                         5000 |         0.00            0       4.91           0 |         0.00            0       4.64           0
+miss_get                                                         5000 |         0.00            0       3.39           0 |         0.00            0       3.37           0
+patched_get                                                      5000 |         0.00            0       4.76           0 |         0.00            0       3.97           0
+get@bulk hops=0 patch=none ~3.6nodes hot64                       5000 |         0.00            0       4.21           0 |         0.00            0       3.50           0
+get@bulk hops=0 patch=none ~3.6nodes fit(n=1024)                 5000 |         0.00            0       4.37           0 |         0.00            0       3.81           0
+get@bulk hops=1 patch=none ~3.4nodes hot64                       5000 |         0.00            0       3.81           0 |         0.00            0       3.32           0
+get@bulk hops=1 patch=none ~3.4nodes fit(n=1024)                 5000 |         0.00            0       4.11           0 |         0.00            0       3.63           0
+get@bulk hops=1 patch=none ~3.4nodes overflow(n=34661)          34661 |         0.00            0       4.32           0 |         0.00            0       3.84           0
+get@bulk hops=2 patch=none ~4.0nodes hot64                       5000 |         0.00            0       4.24           0 |         0.00            0       3.45           0
+get@bulk hops=2 patch=none ~4.0nodes fit(n=1024)                 5000 |         0.00            0       5.03           0 |         0.00            0       4.92           0
+get@patched hops=1 patch=none ~3.4nodes hot64                    5000 |         0.00            0       3.77           0 |         0.00            0       3.27           0
+get@patched hops=1 patch=none ~3.4nodes fit(n=1024)              5000 |         0.00            0       4.10           0 |         0.00            0       3.65           0
+get@patched hops=1 patch=none ~3.4nodes overflow(n=7360)         7360 |         0.00            0       4.22           0 |         0.00            0       3.57           0
+get@patched hops=2 patch=none ~3.4nodes hot64                    5000 |         0.00            0       3.89           0 |         0.00            0       3.25           0
+get@patched hops=2 patch=none ~3.4nodes fit(n=1024)              5000 |         0.00            0       4.38           0 |         0.00            0       3.69           0
+get@patched hops=2 patch=none ~3.4nodes overflow(n=30150)       30150 |         0.00            0       4.23           0 |         0.00            0       3.60           0
+get@patched hops=3+ patch=none ~4.0nodes hot64                   5000 |         0.00            0       4.21           0 |         0.00            0       3.28           0
+get@patched hops=3+ patch=none ~4.0nodes fit(n=1024)             5000 |         0.00            0       5.15           0 |         0.00            0       4.01           0
+proof                                                             500 |       213.99       610270     909.79         344 |       126.29       454372     474.80         343
+prune                                                           48630 |         2.86          509       7.71        5901 |         0.59          273       4.47        4504

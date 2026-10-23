@@ -1,0 +1,14 @@
+==6158== Callgrind, a call-graph generating cache profiler
+==6158== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==6158== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6158== Command: target/bench-bin/marf-differential-reference ablate baseline std
+==6158== 
+==6158== For interactive control, run 'callgrind_control -h'.
+==6158== brk segment overflow in thread #1: can't grow to 0x4901000
+==6158== (see section Limitations in user manual)
+==6158== NOTE: further instances of this message will not be shown
+==6158== 
+==6158== Events    : Ir
+==6158== Collected : 2425792569
+==6158== 
+==6158== I   refs:      2,425,792,569

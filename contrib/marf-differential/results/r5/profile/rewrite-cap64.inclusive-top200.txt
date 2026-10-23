@@ -1,0 +1,200 @@
+--------------------------------------------------------------------------------
+Profile data file 'callgrind.rewrite-cap64.out' (creator: callgrind-3.22.0)
+--------------------------------------------------------------------------------
+I1 cache: 
+D1 cache: 
+LL cache: 
+Timerange: Basic block 0 - 1161307889
+Trigger: Program termination
+Profiled target:  marf-differential-upstream ablate rewrite std (PID 17015, part 1)
+Events recorded:  Ir
+Events shown:     Ir
+Event sort order: Ir
+Thresholds:       99
+Include dirs:     
+User annotated:   
+Auto-annotation:  on
+
+--------------------------------------------------------------------------------
+Ir                      
+--------------------------------------------------------------------------------
+12,015,681,784 (100.0%)  PROGRAM TOTALS
+
+--------------------------------------------------------------------------------
+Ir                       file:function
+--------------------------------------------------------------------------------
+12,015,681,784 (100.0%)  ???:0x000000000001f540 [/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2]
+12,015,200,745 (100.0%)  ???:(below main) [marf-differential-upstream]
+12,015,200,733 (100.0%)  ./csu/../csu/libc-start.c:__libc_start_main@@GLIBC_2.34 [/usr/lib/x86_64-linux-gnu/libc.so.6]
+12,015,200,550 (100.0%)  ./csu/../sysdeps/nptl/libc_start_call_main.h:(below main) [/usr/lib/x86_64-linux-gnu/libc.so.6]
+12,015,198,497 (100.0%)  ???:main [marf-differential-upstream]
+12,015,081,062 (100.0%)  std/src/sys/backtrace.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()> [marf-differential-upstream]
+12,015,081,059 (100.0%)  core/src/ops/function.rs:std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+12,015,081,058 (100.0%)  contrib/marf-differential/src/bin/main.rs:marf_differential::main [marf-differential-upstream]
+12,015,078,538 (99.99%)  contrib/marf-differential/src/ablate.rs:marf_differential::main
+12,015,078,530 (99.99%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::run_direct::<marf_differential::alloc::Rewrite> [marf-differential-upstream]
+ 5,762,832,761 (47.96%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value [marf-differential-upstream]
+ 4,803,772,331 (39.98%)  contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Rewrite>::{closure#0}> [marf-differential-upstream]
+ 4,802,834,811 (39.97%)  contrib/marf-differential/src/ablate.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass_no_counters<marf_differential::alloc::Rewrite>::{closure#0}>
+ 4,471,017,178 (37.21%)  sha2-0.10.8/src/sha512.rs:sha2::sha512::compress512 [marf-differential-upstream]
+ 4,465,397,461 (37.16%)  sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::compress512
+ 4,460,714,399 (37.12%)  sha2-0.10.8/src/sha512/x86.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2 [marf-differential-upstream]
+ 4,396,963,201 (36.59%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::lookup [marf-differential-upstream]
+ 4,396,572,377 (36.59%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+ 3,687,074,224 (30.69%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::resolve_in [marf-differential-upstream]
+ 3,640,812,765 (30.30%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth [marf-differential-upstream]
+ 3,602,867,205 (29.98%)  crates/stacks-marf-next/src/storage.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::read_with_depth
+ 3,396,790,669 (28.27%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2 [marf-differential-upstream]
+ 2,936,539,121 (24.44%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::seal [marf-differential-upstream]
+ 2,936,538,393 (24.44%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::seal
+ 2,936,162,495 (24.44%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal [marf-differential-upstream]
+ 2,933,807,050 (24.42%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal
+ 2,933,806,602 (24.42%)  crates/stacks-marf-next/src/trie.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}> [marf-differential-upstream]
+ 2,499,452,445 (20.80%)  sha2-0.10.8/src/core_api.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+ 1,953,579,403 (16.26%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Manifest>::new [marf-differential-upstream]
+ 1,953,546,458 (16.26%)  sha2-0.10.8/src/core_api.rs:<marf_differential::alloc::Manifest>::new
+ 1,953,546,442 (16.26%)  sha2-0.10.8/src/sha256.rs:sha2::sha256::compress256 [marf-differential-upstream]
+ 1,951,516,280 (16.24%)  sha2-asm-0.6.3/src/lib.rs:sha2::sha256::compress256
+ 1,949,486,270 (16.22%)  sha2-asm-0.6.3/src/sha256_x64.S:0x0000000000292963 [marf-differential-upstream]
+ 1,781,918,229 (14.83%)  stacks-common/src/types/chainstate.rs:<stacks_common::types::chainstate::TrieHash>::from_data [marf-differential-upstream]
+ 1,732,359,104 (14.42%)  sha2-0.10.8/src/core_api.rs:<stacks_common::types::chainstate::TrieHash>::from_data
+ 1,490,798,382 (12.41%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::storage::resolve_in
+ 1,480,385,111 (12.32%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end [marf-differential-upstream]
+ 1,357,876,704 (11.30%)  stacks-common/src/types/chainstate.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::get_value
+   973,908,432 ( 8.11%)  core/src/intrinsics/mod.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   964,377,342 ( 8.03%)  contrib/marf-differential/src/alloc.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Rewrite>::{closure#0}> [marf-differential-upstream]
+   964,189,838 ( 8.02%)  contrib/marf-differential/src/ablate.rs:marf_differential::alloc::measure::<(), marf_differential::ablate::pass<marf_differential::alloc::Rewrite>::{closure#0}>
+   954,598,338 ( 7.94%)  crates/stacks-marf-next/src/codec.rs:stacks_marf_next::codec::apply_patch [marf-differential-upstream]
+   845,750,757 ( 7.04%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::NodeView>::descend [marf-differential-upstream]
+   798,979,921 ( 6.65%)  core/src/num/uint_macros.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   706,652,076 ( 5.88%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::marf::NodeView>::descend
+   661,486,760 ( 5.51%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::skip_scan [marf-differential-upstream]
+   600,296,892 ( 5.00%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::key_sets [marf-differential-upstream]
+   565,490,665 ( 4.71%)  crates/stacks-marf-next/src/codec.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0} [marf-differential-upstream]
+   502,894,231 ( 4.19%)  contrib/marf-differential/src/ablate.rs:marf_differential::ablate::profiles [marf-differential-upstream]
+   496,227,374 ( 4.13%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile [marf-differential-upstream]
+   435,954,113 ( 3.63%)  crates/stacks-marf-next/src/node.rs:<stacks_marf_next::node::Branch>::insert [marf-differential-upstream]
+   360,161,960 ( 3.00%)  core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u64)> [marf-differential-upstream]
+   355,611,178 ( 2.96%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::insert_batch [marf-differential-upstream]
+   354,304,501 ( 2.95%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::insert_batch [marf-differential-upstream]
+   352,695,159 ( 2.94%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::insert_batch [marf-differential-upstream]
+   344,298,648 ( 2.87%)  core/src/../../stdarch/crates/core_arch/src/x86/sse2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   322,520,071 ( 2.68%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::resolve_in
+   300,355,589 ( 2.50%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::location_in [marf-differential-upstream]
+   285,041,890 ( 2.37%)  core/src/hash/mod.rs:<std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u32> [marf-differential-upstream]
+   266,604,525 ( 2.22%)  crates/stacks-marf-next/src/node.rs:stacks_marf_next::codec::apply_patch
+   249,115,296 ( 2.07%)  core/src/cmp.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   247,172,122 ( 2.06%)  core/src/iter/range.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   243,152,968 ( 2.02%)  alloc/src/vec/mod.rs:<stacks_marf_next::codec::BranchView>::fill_with_end::{closure#0}
+   234,898,874 ( 1.95%)  crates/stacks-marf-next/src/hash.rs:stacks_marf_next::hash::leaf_hash [marf-differential-upstream]
+   229,051,808 ( 1.91%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::record_in [marf-differential-upstream]
+   228,279,000 ( 1.90%)  stacks-common/src/types/chainstate.rs:<stacks_marf_next::marf::MARF<stacks_common::types::chainstate::StacksBlockId>>::lookup_profile
+   228,177,807 ( 1.90%)  sha2-0.10.8/src/core_api.rs:stacks_marf_next::hash::leaf_hash
+   224,097,368 ( 1.87%)  std/src/hash/random.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write [marf-differential-upstream]
+   215,399,850 ( 1.79%)  alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVecInner>::finish_grow [marf-differential-upstream]
+   212,031,425 ( 1.76%)  /rust/deps/hashbrown-0.17.1/src/map.rs:stacks_marf_next::storage::location_in
+   201,344,218 ( 1.68%)  std/src/sys/alloc/unix.rs:<alloc::raw_vec::RawVecInner>::finish_grow
+   198,245,822 ( 1.65%)  alloc/src/raw_vec/mod.rs:<alloc::raw_vec::RawVec<stacks_marf_next::node::Ptr>>::grow_one [marf-differential-upstream]
+   198,205,325 ( 1.65%)  ./malloc/./malloc/malloc.c:realloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   196,893,333 ( 1.64%)  stacks-common/src/types/chainstate.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::insert_batch
+   192,632,400 ( 1.60%)  core/src/../../stdarch/crates/core_arch/src/x86/avx2.rs:sha2::sha512::x86::sha512_compress_x86_64_avx2
+   185,591,593 ( 1.54%)  contrib/marf-differential/src/alloc.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::commit [marf-differential-upstream]
+   185,591,201 ( 1.54%)  crates/stacks-marf-next/src/marf.rs:<marf_differential::alloc::Rewrite as marf_differential::alloc::Direct>::commit
+   185,328,227 ( 1.54%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::MarfTransaction<stacks_common::types::chainstate::StacksBlockId>>::commit [marf-differential-upstream]
+   184,609,047 ( 1.54%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::flush [marf-differential-upstream]
+   169,454,998 ( 1.41%)  ./malloc/./malloc/malloc.c:_int_realloc [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   167,899,638 ( 1.40%)  core/src/hash/sip.rs:<std::hash::random::DefaultHasher as core::hash::Hasher>::write
+   159,849,472 ( 1.33%)  crates/stacks-marf-next/src/storage.rs:stacks_marf_next::storage::trie_bytes [marf-differential-upstream]
+   157,155,558 ( 1.31%)  core/src/slice/mod.rs:<stacks_marf_next::node::Branch>::insert
+   155,144,715 ( 1.29%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [/usr/lib/x86_64-linux-gnu/libc.so.6]
+   153,639,863 ( 1.28%)  core/src/num/uint_macros.rs:<stacks_marf_next::codec::BranchView>::fill_with_end
+   138,890,999 ( 1.16%)  core/src/intrinsics/mod.rs:<stacks_marf_next::codec::BranchView>::fill_with_end
+   116,255,336 ( 0.97%)  crates/stacks-marf-next/src/marf.rs:<stacks_marf_next::trie::Trie<stacks_common::types::chainstate::StacksBlockId>>::hash_subtree::<<stacks_marf_next::marf::View<stacks_common::types::chainstate::StacksBlockId>>::seal::{closure#0}>'2
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: sha2-0.10.8/src/sha256.rs
+--------------------------------------------------------------------------------
+Ir          
+
+-- line 26 ----------------------------------------
+ .               }
+ .           }
+ .           
+ .           /// Raw SHA-256 compression function.
+ .           ///
+ .           /// This is a low-level "hazmat" API which provides direct access to the core
+ .           /// functionality of SHA-256.
+ .           #[cfg_attr(docsrs, doc(cfg(feature = "compress")))]
+27 ( 0.00%)  pub fn compress256(state: &mut [u32; 8], blocks: &[GenericArray<u8, U64>]) {
+ .               // SAFETY: GenericArray<u8, U64> and [u8; 64] have
+ .               // exactly the same memory layout
+ .               let p = blocks.as_ptr() as *const [u8; 64];
+ .               let blocks = unsafe { core::slice::from_raw_parts(p, blocks.len()) };
+ .               compress(state, blocks)
+24 ( 0.00%)  }
+
+--------------------------------------------------------------------------------
+-- Auto-annotated source: sha2-asm-0.6.3/src/sha256_x64.S
+--------------------------------------------------------------------------------
+Ir                  
+
+-- line 121 ----------------------------------------
+         .                   movl  %c, %eax;            \
+         .                   orl   %b, %eax;            \
+         .                   andl  %b, %ecx;            \
+         .                   andl  %a, %eax;            \
+         .                   orl   %ecx, %eax;          \
+         .                   addl  %eax, %h;
+         .               
+         .               /* Save registers, allocate scratch space */
+   676,670 ( 0.01%)      movq  %r10, %xmm0
+   676,670 ( 0.01%)      movq  %r11, %xmm1
+   676,670 ( 0.01%)      movq  %r12, %xmm2
+   676,670 ( 0.01%)      movq  %r13, %xmm3
+   676,670 ( 0.01%)      movq  %r14, %xmm4
+   676,670 ( 0.01%)      movq  %r15, %xmm5
+   676,670 ( 0.01%)      movq  %rbx, %xmm6
+   676,670 ( 0.01%)      subq  $64, %rsp
+         .               
+         .               /* Load state */
+   676,670 ( 0.01%)      movl   0(%rdi), %r8d   /* a */
+   676,670 ( 0.01%)      movl   4(%rdi), %r9d   /* b */
+   676,670 ( 0.01%)      movl   8(%rdi), %r10d  /* c */
+   676,670 ( 0.01%)      movl  12(%rdi), %r11d  /* d */
+   676,670 ( 0.01%)      movl  16(%rdi), %r12d  /* e */
+   676,670 ( 0.01%)      movl  20(%rdi), %r13d  /* f */
+   676,670 ( 0.01%)      movl  24(%rdi), %r14d  /* g */
+   676,670 ( 0.01%)      movl  28(%rdi), %r15d  /* h */
+         .               
+         .               /* Do 64 rounds of hashing */
+20,976,770 ( 0.17%)      ROUNDa( 0, r8d , r9d , r10d, r11d, r12d, r13d, r14d, r15d,  0x428A2F98)
+20,976,770 ( 0.17%)      ROUNDa( 1, r15d, r8d , r9d , r10d, r11d, r12d, r13d, r14d,  0x71374491)
+20,976,770 ( 0.17%)      ROUNDa( 2, r14d, r15d, r8d , r9d , r10d, r11d, r12d, r13d, -0x4A3F0431)
+20,976,770 ( 0.17%)      ROUNDa( 3, r13d, r14d, r15d, r8d , r9d , r10d, r11d, r12d, -0x164A245B)
+20,976,770 ( 0.17%)      ROUNDa( 4, r12d, r13d, r14d, r15d, r8d , r9d , r10d, r11d,  0x3956C25B)
+20,976,770 ( 0.17%)      ROUNDa( 5, r11d, r12d, r13d, r14d, r15d, r8d , r9d , r10d,  0x59F111F1)
+20,976,770 ( 0.17%)      ROUNDa( 6, r10d, r11d, r12d, r13d, r14d, r15d, r8d , r9d , -0x6DC07D5C)
+20,976,770 ( 0.17%)      ROUNDa( 7, r9d , r10d, r11d, r12d, r13d, r14d, r15d, r8d , -0x54E3A12B)
+20,976,770 ( 0.17%)      ROUNDa( 8, r8d , r9d , r10d, r11d, r12d, r13d, r14d, r15d, -0x27F85568)
+20,976,770 ( 0.17%)      ROUNDa( 9, r15d, r8d , r9d , r10d, r11d, r12d, r13d, r14d,  0x12835B01)
+20,976,770 ( 0.17%)      ROUNDa(10, r14d, r15d, r8d , r9d , r10d, r11d, r12d, r13d,  0x243185BE)
+20,976,770 ( 0.17%)      ROUNDa(11, r13d, r14d, r15d, r8d , r9d , r10d, r11d, r12d,  0x550C7DC3)
+20,976,770 ( 0.17%)      ROUNDa(12, r12d, r13d, r14d, r15d, r8d , r9d , r10d, r11d,  0x72BE5D74)
+20,976,770 ( 0.17%)      ROUNDa(13, r11d, r12d, r13d, r14d, r15d, r8d , r9d , r10d, -0x7F214E02)
+20,976,770 ( 0.17%)      ROUNDa(14, r10d, r11d, r12d, r13d, r14d, r15d, r8d , r9d , -0x6423F959)
+20,976,770 ( 0.17%)      ROUNDa(15, r9d , r10d, r11d, r12d, r13d, r14d, r15d, r8d , -0x3E640E8C)
+33,156,830 ( 0.28%)      ROUNDb(16, r8d , r9d , r10d, r11d, r12d, r13d, r14d, r15d, -0x1B64963F)
+33,156,830 ( 0.28%)      ROUNDb(17, r15d, r8d , r9d , r10d, r11d, r12d, r13d, r14d, -0x1041B87A)
+33,156,830 ( 0.28%)      ROUNDb(18, r14d, r15d, r8d , r9d , r10d, r11d, r12d, r13d,  0x0FC19DC6)
+33,156,830 ( 0.28%)      ROUNDb(19, r13d, r14d, r15d, r8d , r9d , r10d, r11d, r12d,  0x240CA1CC)
+33,156,830 ( 0.28%)      ROUNDb(20, r12d, r13d, r14d, r15d, r8d , r9d , r10d, r11d,  0x2DE92C6F)
+33,156,830 ( 0.28%)      ROUNDb(21, r11d, r12d, r13d, r14d, r15d, r8d , r9d , r10d,  0x4A7484AA)
+33,156,830 ( 0.28%)      ROUNDb(22, r10d, r11d, r12d, r13d, r14d, r15d, r8d , r9d ,  0x5CB0A9DC)
+33,156,830 ( 0.28%)      ROUNDb(23, r9d , r10d, r11d, r12d, r13d, r14d, r15d, r8d ,  0x76F988DA)
+33,156,830 ( 0.28%)      ROUNDb(24, r8d , r9d , r10d, r11d, r12d, r13d, r14d, r15d, -0x67C1AEAE)
+33,156,830 ( 0.28%)      ROUNDb(25, r15d, r8d , r9d , r10d, r11d, r12d, r13d, r14d, -0x57CE3993)
+33,156,830 ( 0.28%)      ROUNDb(26, r14d, r15d, r8d , r9d , r10d, r11d, r12d, r13d, -0x4FFCD838)
+33,156,830 ( 0.28%)      ROUNDb(27, r13d, r14d, r15d, r8d , r9d , r10d, r11d, r12d, -0x40A68039)
+33,156,830 ( 0.28%)      ROUNDb(28, r12d, r13d, r14d, r15d, r8d , r9d , r10d, r11d, -0x391FF40D)
+33,156,830 ( 0.28%)      ROUNDb(29, r11d, r12d, r13d, r14d, r15d, r8d , r9d , r10d, -0x2A586EB9)
+33,156,830 ( 0.28%)      ROUNDb(30, r10d, r11d, r12d, r13d, r14d, r15d, r8d , r9d ,  0x06CA6351)

@@ -1,0 +1,19 @@
+clarity-bench: optimized stacks-marf (29ef093d): external_blobs=true compress=true mmap=true root_node_cache=false resolved_patch_cache=64 result_cache=2048 | Intel(R) Xeon(R) Processor @ 2.80GHz | profile release | repeat 1 | 20000 keys, 10 timed blocks per workload
+INFO [1792527481.860131] [stacks-marf/src/file.rs:658] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpwSocVC/marf.sqlite.blobs
+INFO [1792527481.860230] [stacks-marf/src/file.rs:586] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+populate (40 blocks, 20000 keys, untimed setup): median 1454.8 ms
+
+workload                   blocks     txs |        exec ms harness ms        seal ms      commit ms       total ms |  first block exec ms
+read-heavy                      9     270 | 369.0 (369.0-369.0)        6.4            4.7           12.5          386.2 |     42.2 (42.2-42.2)
+write-heavy                     9     189 | 586.9 (586.9-586.9)        8.1          163.4          362.9         1113.2 |     83.2 (83.2-83.2)
+mixed                           9     270 | 331.3 (331.3-331.3)        4.0           32.8           22.4          386.5 |     40.7 (40.7-40.7)
+inherited-after-history         4     120 | 156.5 (156.5-156.5)        2.5            2.2           14.0          172.7 |     39.9 (39.9-39.9)
+abort                           4     160 | 21.3 (21.3-21.3)        0.1            1.9            4.9           28.1 |        5.6 (5.6-5.6)
+
+equivalence (must match across implementations):
+  read-heavy                 cost runtime=3281100000 read_count=15900 read_length=1009800 write_count=0 write_length=0 blocks=10 values_digest=c8338937b2d7c054 last_root=f8ccaa4bc5ddc69fdda0b4f4927a79031249f6b1acc39228d3de42ac751f0880
+  write-heavy                cost runtime=3669430000 read_count=30640 read_length=861860 write_count=10010 write_length=500180 blocks=10 values_digest=b2bbf6c653504624 last_root=1e777387254fb038a2993ec13c1460de863c86f590cdf3998760e29b4c85c608
+  mixed                      cost runtime=2171900000 read_count=16200 read_length=603400 write_count=5100 write_length=251800 blocks=10 values_digest=f0e7e5bdd83ea93b last_root=a5fdcceaf24ecd7b62211965bb06d33e4ca584e70703ad7f6529545bf6d4aee2
+  inherited-after-history    cost runtime=1640550000 read_count=7950 read_length=504900 write_count=0 write_length=0 blocks=5 values_digest=ac9a07fbb226499b last_root=d52dfdc7ede4ca3e347f5090d5bb5184f73916fce02355c8a3cb184ea686b6a4
+  abort                      cost runtime=283300000 read_count=800 read_length=178200 write_count=100 write_length=5000 blocks=5 values_digest=f4f8935c256ef973 last_root=420724d1fa4e0da710e7cc57637d5fa460329e7c26d93478e8b271b847186f1d
+[json] wrote contrib/marf-differential/results/r5/clarity-optmarf-rep3.json

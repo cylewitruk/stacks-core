@@ -862,6 +862,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "clarity-bench"
+version = "0.1.0"
+dependencies = [
+ "clarity 0.0.1",
+ "serde",
+ "serde_json",
+ "stacks-common 4.0.5",
+ "stacks-marf-next",
+ "stackslib 0.0.1",
+ "tempfile",
+]
+
+[[package]]
 name = "clarity-cli"
 version = "0.1.0"
 dependencies = [
@@ -875,7 +888,7 @@ dependencies = [
  "serde_json",
  "slog",
  "stacks-common 4.0.5",
- "stacks-marf",
+ "stacks-marf-next",
  "stackslib 0.0.1",
 ]
 
@@ -2801,6 +2814,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "marf-differential"
+version = "0.1.0"
+dependencies = [
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "stacks-common 4.0.5",
+ "stacks-marf",
+ "stacks-marf-next",
+ "tempfile",
+]
+
+[[package]]
 name = "marf-squash"
 version = "0.1.0"
 dependencies = [
@@ -2810,7 +2838,7 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "stacks-common 4.0.5",
- "stacks-marf",
+ "stacks-marf-next",
  "stackslib 0.0.1",
  "tempfile",
  "toml 0.5.11",
@@ -4811,7 +4839,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "stacks-common 4.0.5",
- "stacks-marf",
+ "stacks-marf-next",
  "stacks-profiler",
  "stackslib 0.0.1",
  "stx-genesis",
@@ -4919,7 +4947,7 @@ dependencies = [
  "serde_json",
  "slog",
  "stacks-common 4.0.5",
- "stacks-marf",
+ "stacks-marf-next",
  "stackslib 0.0.1",
  "tikv-jemallocator",
 ]
@@ -4929,6 +4957,24 @@ name = "stacks-marf"
 version = "4.0.5"
 dependencies = [
  "nix",
+ "rstest",
+ "rstest_reuse",
+ "rusqlite",
+ "serde",
+ "serde_derive",
+ "sha2 0.10.9",
+ "slog",
+ "stacks-common 4.0.5",
+ "stacks-profiler",
+ "stdext",
+ "tempfile",
+]
+
+[[package]]
+name = "stacks-marf-next"
+version = "4.0.5"
+dependencies = [
+ "memmap2",
  "rstest",
  "rstest_reuse",
  "rusqlite",
@@ -4977,7 +5023,7 @@ dependencies = [
  "stacks-common 0.0.1",
  "stacks-common 4.0.5",
  "stacks-inspect",
- "stacks-marf",
+ "stacks-marf-next",
  "stacks-signer 0.0.1",
  "stacks-signer 4.0.5",
  "stackslib 0.0.1",
@@ -5129,7 +5175,7 @@ dependencies = [
  "slog",
  "stacks-codec",
  "stacks-common 4.0.5",
- "stacks-marf",
+ "stacks-marf-next",
  "stacks-profiler",
  "stacks-transactions",
  "stdext",

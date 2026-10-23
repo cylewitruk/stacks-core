@@ -1,0 +1,27 @@
+[package]
+name = "clarity-bench"
+version = "0.1.0"
+edition = "2021"
+description = "Executes real Clarity contracts through stackslib's ClarityInstance over a MARF-backed MarfedKV and times them; the MARF implementation is whichever the surrounding workspace provides"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+stacks = { package = "stackslib", path = "../../stackslib" }
+clarity = { path = "../../clarity", features = ["testing"] }
+stacks-common = { path = "../../stacks-common" }
+stacks-marf = { package = "stacks-marf-next", path = "../../crates/stacks-marf-next" }
+tempfile = "3"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[features]
+default = []
+# The surrounding workspace's `stacks-marf` is the optimized reference
+# (29ef093d): set its production options (mmap, root cache off, 64-entry
+# resolved-patch cache, 2,048-entry result cache) explicitly.
+optimized-marf = []
+
+[[bin]]
+name = "clarity-bench"
+path = "src/main.rs"

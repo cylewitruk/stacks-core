@@ -1,0 +1,197 @@
+env: Intel(R) Xeon(R) Processor @ 2.80GHz x4, linux 6.18.44-fc-v139, rustc rustc 1.98.0 (88d9e12ae 2026-08-18), profile release, alloc-count=true, counters=false, repeat=5
+INFO [1792513482.556272] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpDx1S3l/marf.sqlite.blobs
+INFO [1792513482.556340] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+[alloc] upstream stacks-marf: external=true compress=true (no mmap, no caches; requested patch_cache=None result_cache=None not applicable)
+INFO [1792513677.632604] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpDx1S3l/pruned.sqlite.blobs
+INFO [1792513677.632677] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792513677.636614] [stacks-marf/src/squash.rs:765] [main] [alloc] [1/8] Load block entries: 28 rows in 0.00 secs
+INFO [1792513677.636649] [stacks-marf/src/squash.rs:772] [main] [alloc] [2/8] Build squash_height index: reading 28 heights...
+INFO [1792513677.636682] [stacks-marf/src/squash.rs:280] [main] [alloc] [2/8] Pre-reading 28 blob headers (sorted by offset)...
+INFO [1792513677.639127] [stacks-marf/src/squash.rs:287] [main] [alloc] [2/8] Pre-read 28 headers in 0.00 secs
+INFO [1792513677.639155] [stacks-marf/src/squash.rs:356] [main] [alloc] [2/8] In-memory chain walk: 28 heights in 0.00 secs
+INFO [1792513677.639160] [stacks-marf/src/squash.rs:414] [main] [alloc] [2/8] Build height index: 28 heights in 0.00 secs
+INFO [1792513677.639164] [stacks-marf/src/squash.rs:791] [main] [alloc] [3/8] Collect trie nodes: starting DFS...
+INFO [1792513677.993031] [stacks-marf/src/squash.rs:1104] [main] Trie DFS: 48630 nodes in 0.35 secs
+INFO [1792513677.993080] [stacks-marf/src/squash.rs:797] [main] [alloc] [3/8] Collect trie nodes: 48630 nodes in 0.35 secs
+INFO [1792513677.993661] [stacks-marf/src/squash.rs:519] [main] [alloc] [4/8] Register placeholder blocks: 27 historical + sentinel + tip in 0.00 secs
+INFO [1792513677.993703] [stacks-marf/src/squash.rs:818] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes...
+INFO [1792513678.084534] [stacks-marf/src/squash.rs:174] [main] [alloc] Remap trie pointers complete: 48630 nodes in 0.09 secs
+INFO [1792513678.084579] [stacks-marf/src/squash.rs:827] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes in 0.09 secs
+INFO [1792513678.084837] [stacks-marf/src/squash.rs:836] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes...
+INFO [1792513678.168722] [stacks-marf/src/squash/stream.rs:82] [main] Trie hash: 48630 nodes in 0.08 secs
+INFO [1792513678.168770] [stacks-marf/src/squash.rs:840] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes in 0.08 secs
+INFO [1792513678.168775] [stacks-marf/src/squash.rs:854] [main] [alloc] [7/8] Write trie blob: 48630 nodes...
+INFO [1792513678.222437] [stacks-marf/src/squash.rs:892] [main] [alloc] [7/8] Write trie blob: block_id=28, 5433191 bytes in 0.05 secs
+INFO [1792513678.224584] [stacks-marf/src/squash.rs:567] [main] Squash: wrote 28 root hashes and block heights in 0.00 secs
+INFO [1792513678.224653] [stacks-marf/src/squash.rs:912] [main] [alloc] Squash root hash: 101db01b97a86ee767e58f5079a4814e50c8e0a98ce694ec0f96c896cf62c7a7
+INFO [1792513678.224799] [stacks-marf/src/squash.rs:615] [main] Squash: updated 28 marf_data blob offsets in 0.00 secs
+INFO [1792513678.224968] [stacks-marf/src/squash.rs:930] [main] [alloc] [8/8] Persist metadata & commit: finished in 0.00 secs
+INFO [1792513678.224999] [stacks-marf/src/squash.rs:936] [main] [alloc] Squash complete: 48630 nodes, total time 0.59 secs
+[alloc] rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+INFO [1792513679.543315] [crates/stacks-marf-next/src/pruning.rs:314] [main] [alloc] squash: indexed 28 heights
+INFO [1792513679.575339] [crates/stacks-marf-next/src/pruning.rs:366] [main] [alloc] squash: collected 48630 nodes
+INFO [1792513679.666799] [crates/stacks-marf-next/src/pruning.rs:384] [main] [alloc] squash: hashed 48630 nodes
+INFO [1792513679.757193] [crates/stacks-marf-next/src/pruning.rs:526] [main] [alloc] squash: complete, 48630 nodes, 5433191 bytes
+[alloc] rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+INFO [1792513681.120513] [crates/stacks-marf-next/src/pruning.rs:314] [main] [alloc] squash: indexed 28 heights
+INFO [1792513681.152926] [crates/stacks-marf-next/src/pruning.rs:366] [main] [alloc] squash: collected 48630 nodes
+INFO [1792513681.245421] [crates/stacks-marf-next/src/pruning.rs:384] [main] [alloc] squash: hashed 48630 nodes
+INFO [1792513681.323244] [crates/stacks-marf-next/src/pruning.rs:526] [main] [alloc] squash: complete, 48630 nodes, 5433191 bytes
+INFO [1792513681.342025] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpwlxf0X/marf.sqlite.blobs
+INFO [1792513681.342091] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+[alloc] upstream stacks-marf: external=true compress=true (no mmap, no caches; requested patch_cache=None result_cache=None not applicable)
+INFO [1792513880.562868] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpwlxf0X/pruned.sqlite.blobs
+INFO [1792513880.562940] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792513880.566629] [stacks-marf/src/squash.rs:765] [main] [alloc] [1/8] Load block entries: 28 rows in 0.00 secs
+INFO [1792513880.566663] [stacks-marf/src/squash.rs:772] [main] [alloc] [2/8] Build squash_height index: reading 28 heights...
+INFO [1792513880.566698] [stacks-marf/src/squash.rs:280] [main] [alloc] [2/8] Pre-reading 28 blob headers (sorted by offset)...
+INFO [1792513880.568929] [stacks-marf/src/squash.rs:287] [main] [alloc] [2/8] Pre-read 28 headers in 0.00 secs
+INFO [1792513880.568976] [stacks-marf/src/squash.rs:356] [main] [alloc] [2/8] In-memory chain walk: 28 heights in 0.00 secs
+INFO [1792513880.568983] [stacks-marf/src/squash.rs:414] [main] [alloc] [2/8] Build height index: 28 heights in 0.00 secs
+INFO [1792513880.568988] [stacks-marf/src/squash.rs:791] [main] [alloc] [3/8] Collect trie nodes: starting DFS...
+INFO [1792513880.834957] [stacks-marf/src/squash.rs:1104] [main] Trie DFS: 48630 nodes in 0.26 secs
+INFO [1792513880.835003] [stacks-marf/src/squash.rs:797] [main] [alloc] [3/8] Collect trie nodes: 48630 nodes in 0.26 secs
+INFO [1792513880.835413] [stacks-marf/src/squash.rs:519] [main] [alloc] [4/8] Register placeholder blocks: 27 historical + sentinel + tip in 0.00 secs
+INFO [1792513880.835474] [stacks-marf/src/squash.rs:818] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes...
+INFO [1792513880.890692] [stacks-marf/src/squash.rs:174] [main] [alloc] Remap trie pointers complete: 48630 nodes in 0.05 secs
+INFO [1792513880.890734] [stacks-marf/src/squash.rs:827] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes in 0.05 secs
+INFO [1792513880.890743] [stacks-marf/src/squash.rs:836] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes...
+INFO [1792513880.964400] [stacks-marf/src/squash/stream.rs:82] [main] Trie hash: 48630 nodes in 0.07 secs
+INFO [1792513880.964459] [stacks-marf/src/squash.rs:840] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes in 0.07 secs
+INFO [1792513880.964464] [stacks-marf/src/squash.rs:854] [main] [alloc] [7/8] Write trie blob: 48630 nodes...
+INFO [1792513881.012919] [stacks-marf/src/squash.rs:892] [main] [alloc] [7/8] Write trie blob: block_id=28, 5433191 bytes in 0.04 secs
+INFO [1792513881.015026] [stacks-marf/src/squash.rs:567] [main] Squash: wrote 28 root hashes and block heights in 0.00 secs
+INFO [1792513881.015085] [stacks-marf/src/squash.rs:912] [main] [alloc] Squash root hash: 101db01b97a86ee767e58f5079a4814e50c8e0a98ce694ec0f96c896cf62c7a7
+INFO [1792513881.015244] [stacks-marf/src/squash.rs:615] [main] Squash: updated 28 marf_data blob offsets in 0.00 secs
+INFO [1792513881.015444] [stacks-marf/src/squash.rs:930] [main] [alloc] [8/8] Persist metadata & commit: finished in 0.00 secs
+INFO [1792513881.015473] [stacks-marf/src/squash.rs:936] [main] [alloc] Squash complete: 48630 nodes, total time 0.45 secs
+INFO [1792513881.037546] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpjsk8x7/marf.sqlite.blobs
+INFO [1792513881.037612] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+[alloc] upstream stacks-marf: external=true compress=true (no mmap, no caches; requested patch_cache=None result_cache=None not applicable)
+INFO [1792514074.428389] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpjsk8x7/pruned.sqlite.blobs
+INFO [1792514074.428514] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792514074.433036] [stacks-marf/src/squash.rs:765] [main] [alloc] [1/8] Load block entries: 28 rows in 0.00 secs
+INFO [1792514074.433070] [stacks-marf/src/squash.rs:772] [main] [alloc] [2/8] Build squash_height index: reading 28 heights...
+INFO [1792514074.433118] [stacks-marf/src/squash.rs:280] [main] [alloc] [2/8] Pre-reading 28 blob headers (sorted by offset)...
+INFO [1792514074.435145] [stacks-marf/src/squash.rs:287] [main] [alloc] [2/8] Pre-read 28 headers in 0.00 secs
+INFO [1792514074.435178] [stacks-marf/src/squash.rs:356] [main] [alloc] [2/8] In-memory chain walk: 28 heights in 0.00 secs
+INFO [1792514074.435186] [stacks-marf/src/squash.rs:414] [main] [alloc] [2/8] Build height index: 28 heights in 0.00 secs
+INFO [1792514074.435190] [stacks-marf/src/squash.rs:791] [main] [alloc] [3/8] Collect trie nodes: starting DFS...
+INFO [1792514074.665748] [stacks-marf/src/squash.rs:1104] [main] Trie DFS: 48630 nodes in 0.23 secs
+INFO [1792514074.665788] [stacks-marf/src/squash.rs:797] [main] [alloc] [3/8] Collect trie nodes: 48630 nodes in 0.23 secs
+INFO [1792514074.666170] [stacks-marf/src/squash.rs:519] [main] [alloc] [4/8] Register placeholder blocks: 27 historical + sentinel + tip in 0.00 secs
+INFO [1792514074.666206] [stacks-marf/src/squash.rs:818] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes...
+INFO [1792514074.722296] [stacks-marf/src/squash.rs:174] [main] [alloc] Remap trie pointers complete: 48630 nodes in 0.05 secs
+INFO [1792514074.722336] [stacks-marf/src/squash.rs:827] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes in 0.05 secs
+INFO [1792514074.722346] [stacks-marf/src/squash.rs:836] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes...
+INFO [1792514074.794728] [stacks-marf/src/squash/stream.rs:82] [main] Trie hash: 48630 nodes in 0.07 secs
+INFO [1792514074.794768] [stacks-marf/src/squash.rs:840] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes in 0.07 secs
+INFO [1792514074.794775] [stacks-marf/src/squash.rs:854] [main] [alloc] [7/8] Write trie blob: 48630 nodes...
+INFO [1792514074.845678] [stacks-marf/src/squash.rs:892] [main] [alloc] [7/8] Write trie blob: block_id=28, 5433191 bytes in 0.05 secs
+INFO [1792514074.848103] [stacks-marf/src/squash.rs:567] [main] Squash: wrote 28 root hashes and block heights in 0.00 secs
+INFO [1792514074.848155] [stacks-marf/src/squash.rs:912] [main] [alloc] Squash root hash: 101db01b97a86ee767e58f5079a4814e50c8e0a98ce694ec0f96c896cf62c7a7
+INFO [1792514074.848299] [stacks-marf/src/squash.rs:615] [main] Squash: updated 28 marf_data blob offsets in 0.00 secs
+INFO [1792514074.848420] [stacks-marf/src/squash.rs:930] [main] [alloc] [8/8] Persist metadata & commit: finished in 0.00 secs
+INFO [1792514074.848508] [stacks-marf/src/squash.rs:936] [main] [alloc] Squash complete: 48630 nodes, total time 0.42 secs
+[alloc] rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+INFO [1792514076.278585] [crates/stacks-marf-next/src/pruning.rs:314] [main] [alloc] squash: indexed 28 heights
+INFO [1792514076.308897] [crates/stacks-marf-next/src/pruning.rs:366] [main] [alloc] squash: collected 48630 nodes
+INFO [1792514076.400638] [crates/stacks-marf-next/src/pruning.rs:384] [main] [alloc] squash: hashed 48630 nodes
+INFO [1792514076.479762] [crates/stacks-marf-next/src/pruning.rs:526] [main] [alloc] squash: complete, 48630 nodes, 5433191 bytes
+[alloc] rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+INFO [1792514077.679684] [crates/stacks-marf-next/src/pruning.rs:314] [main] [alloc] squash: indexed 28 heights
+INFO [1792514077.712724] [crates/stacks-marf-next/src/pruning.rs:366] [main] [alloc] squash: collected 48630 nodes
+INFO [1792514077.857160] [crates/stacks-marf-next/src/pruning.rs:384] [main] [alloc] squash: hashed 48630 nodes
+INFO [1792514077.957890] [crates/stacks-marf-next/src/pruning.rs:526] [main] [alloc] squash: complete, 48630 nodes, 5433191 bytes
+INFO [1792514077.979839] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpKSgQ8K/marf.sqlite.blobs
+INFO [1792514077.979961] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+[alloc] upstream stacks-marf: external=true compress=true (no mmap, no caches; requested patch_cache=None result_cache=None not applicable)
+INFO [1792514269.201392] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpKSgQ8K/pruned.sqlite.blobs
+INFO [1792514269.201510] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792514269.206088] [stacks-marf/src/squash.rs:765] [main] [alloc] [1/8] Load block entries: 28 rows in 0.00 secs
+INFO [1792514269.206120] [stacks-marf/src/squash.rs:772] [main] [alloc] [2/8] Build squash_height index: reading 28 heights...
+INFO [1792514269.206155] [stacks-marf/src/squash.rs:280] [main] [alloc] [2/8] Pre-reading 28 blob headers (sorted by offset)...
+INFO [1792514269.208553] [stacks-marf/src/squash.rs:287] [main] [alloc] [2/8] Pre-read 28 headers in 0.00 secs
+INFO [1792514269.208591] [stacks-marf/src/squash.rs:356] [main] [alloc] [2/8] In-memory chain walk: 28 heights in 0.00 secs
+INFO [1792514269.208598] [stacks-marf/src/squash.rs:414] [main] [alloc] [2/8] Build height index: 28 heights in 0.00 secs
+INFO [1792514269.208605] [stacks-marf/src/squash.rs:791] [main] [alloc] [3/8] Collect trie nodes: starting DFS...
+INFO [1792514269.473248] [stacks-marf/src/squash.rs:1104] [main] Trie DFS: 48630 nodes in 0.26 secs
+INFO [1792514269.473290] [stacks-marf/src/squash.rs:797] [main] [alloc] [3/8] Collect trie nodes: 48630 nodes in 0.26 secs
+INFO [1792514269.473722] [stacks-marf/src/squash.rs:519] [main] [alloc] [4/8] Register placeholder blocks: 27 historical + sentinel + tip in 0.00 secs
+INFO [1792514269.473752] [stacks-marf/src/squash.rs:818] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes...
+INFO [1792514269.528637] [stacks-marf/src/squash.rs:174] [main] [alloc] Remap trie pointers complete: 48630 nodes in 0.05 secs
+INFO [1792514269.528672] [stacks-marf/src/squash.rs:827] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes in 0.05 secs
+INFO [1792514269.528679] [stacks-marf/src/squash.rs:836] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes...
+INFO [1792514269.602996] [stacks-marf/src/squash/stream.rs:82] [main] Trie hash: 48630 nodes in 0.07 secs
+INFO [1792514269.603042] [stacks-marf/src/squash.rs:840] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes in 0.07 secs
+INFO [1792514269.603046] [stacks-marf/src/squash.rs:854] [main] [alloc] [7/8] Write trie blob: 48630 nodes...
+INFO [1792514269.651619] [stacks-marf/src/squash.rs:892] [main] [alloc] [7/8] Write trie blob: block_id=28, 5433191 bytes in 0.04 secs
+INFO [1792514269.654270] [stacks-marf/src/squash.rs:567] [main] Squash: wrote 28 root hashes and block heights in 0.00 secs
+INFO [1792514269.654338] [stacks-marf/src/squash.rs:912] [main] [alloc] Squash root hash: 101db01b97a86ee767e58f5079a4814e50c8e0a98ce694ec0f96c896cf62c7a7
+INFO [1792514269.654533] [stacks-marf/src/squash.rs:615] [main] Squash: updated 28 marf_data blob offsets in 0.00 secs
+INFO [1792514269.654715] [stacks-marf/src/squash.rs:930] [main] [alloc] [8/8] Persist metadata & commit: finished in 0.00 secs
+INFO [1792514269.654751] [stacks-marf/src/squash.rs:936] [main] [alloc] Squash complete: 48630 nodes, total time 0.45 secs
+INFO [1792514269.688291] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpWyjBwt/marf.sqlite.blobs
+INFO [1792514269.688388] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+[alloc] upstream stacks-marf: external=true compress=true (no mmap, no caches; requested patch_cache=None result_cache=None not applicable)
+INFO [1792514461.182548] [stacks-marf/src/file.rs:400] [main] Migrate 0 blocks to external blob storage at /tmp/.tmpWyjBwt/pruned.sqlite.blobs
+INFO [1792514461.182661] [stacks-marf/src/file.rs:332] [main] Preemptively vacuuming the database file to free up space after copying trie blobs to a separate file
+INFO [1792514461.187688] [stacks-marf/src/squash.rs:765] [main] [alloc] [1/8] Load block entries: 28 rows in 0.00 secs
+INFO [1792514461.187722] [stacks-marf/src/squash.rs:772] [main] [alloc] [2/8] Build squash_height index: reading 28 heights...
+INFO [1792514461.187760] [stacks-marf/src/squash.rs:280] [main] [alloc] [2/8] Pre-reading 28 blob headers (sorted by offset)...
+INFO [1792514461.189831] [stacks-marf/src/squash.rs:287] [main] [alloc] [2/8] Pre-read 28 headers in 0.00 secs
+INFO [1792514461.189950] [stacks-marf/src/squash.rs:356] [main] [alloc] [2/8] In-memory chain walk: 28 heights in 0.00 secs
+INFO [1792514461.189959] [stacks-marf/src/squash.rs:414] [main] [alloc] [2/8] Build height index: 28 heights in 0.00 secs
+INFO [1792514461.189977] [stacks-marf/src/squash.rs:791] [main] [alloc] [3/8] Collect trie nodes: starting DFS...
+INFO [1792514461.415681] [stacks-marf/src/squash.rs:1104] [main] Trie DFS: 48630 nodes in 0.22 secs
+INFO [1792514461.415721] [stacks-marf/src/squash.rs:797] [main] [alloc] [3/8] Collect trie nodes: 48630 nodes in 0.22 secs
+INFO [1792514461.416168] [stacks-marf/src/squash.rs:519] [main] [alloc] [4/8] Register placeholder blocks: 27 historical + sentinel + tip in 0.00 secs
+INFO [1792514461.416198] [stacks-marf/src/squash.rs:818] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes...
+INFO [1792514461.497990] [stacks-marf/src/squash.rs:174] [main] [alloc] Remap trie pointers complete: 48630 nodes in 0.08 secs
+INFO [1792514461.498049] [stacks-marf/src/squash.rs:827] [main] [alloc] [5/8] Remap trie pointers: 48630 nodes in 0.08 secs
+INFO [1792514461.498059] [stacks-marf/src/squash.rs:836] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes...
+INFO [1792514461.584637] [stacks-marf/src/squash/stream.rs:82] [main] Trie hash: 48630 nodes in 0.08 secs
+INFO [1792514461.584678] [stacks-marf/src/squash.rs:840] [main] [alloc] [6/8] Recompute node hashes: 48630 nodes in 0.08 secs
+INFO [1792514461.584683] [stacks-marf/src/squash.rs:854] [main] [alloc] [7/8] Write trie blob: 48630 nodes...
+INFO [1792514461.665975] [stacks-marf/src/squash.rs:892] [main] [alloc] [7/8] Write trie blob: block_id=28, 5433191 bytes in 0.08 secs
+INFO [1792514461.669554] [stacks-marf/src/squash.rs:567] [main] Squash: wrote 28 root hashes and block heights in 0.00 secs
+INFO [1792514461.669655] [stacks-marf/src/squash.rs:912] [main] [alloc] Squash root hash: 101db01b97a86ee767e58f5079a4814e50c8e0a98ce694ec0f96c896cf62c7a7
+INFO [1792514461.669808] [stacks-marf/src/squash.rs:615] [main] Squash: updated 28 marf_data blob offsets in 0.00 secs
+INFO [1792514461.669987] [stacks-marf/src/squash.rs:930] [main] [alloc] [8/8] Persist metadata & commit: finished in 0.00 secs
+INFO [1792514461.670021] [stacks-marf/src/squash.rs:936] [main] [alloc] Squash complete: 48630 nodes, total time 0.49 secs
+[alloc] rewrite stacks-marf-next: external=true compress=true mmap=always patch_cache=4096 result_cache=none
+INFO [1792514462.967210] [crates/stacks-marf-next/src/pruning.rs:314] [main] [alloc] squash: indexed 28 heights
+INFO [1792514462.998418] [crates/stacks-marf-next/src/pruning.rs:366] [main] [alloc] squash: collected 48630 nodes
+INFO [1792514463.088688] [crates/stacks-marf-next/src/pruning.rs:384] [main] [alloc] squash: hashed 48630 nodes
+INFO [1792514463.177831] [crates/stacks-marf-next/src/pruning.rs:526] [main] [alloc] squash: complete, 48630 nodes, 5433191 bytes
+storage: external blobs, compressed; 20 blocks x 2000 inserts, 8 patch blocks x 50 rewrites, 5000 reads/phase
+phase                                                             ops | base alloc/op    base B/op base us/op      base min-max base peakKB | next alloc/op    next B/op next us/op      next min-max next peakKB
+insert                                                          40000 |        38.72        65047      14.21       13.54-14.78        2538 |         0.87         1316       2.07         1.54-2.22        2500
+seal                                                               20 |      3348.05      1222773   15077.08 14752.54-16248.60          48 |        17.00        18478   15057.97 11664.93-15869.73          16
+commit                                                             20 |      2201.50      3711091   12733.68 11027.70-13351.88        1979 |       531.50       617039    4471.57   3629.77-5009.94         648
+warm_get                                                         5000 |        44.25        94029    1341.03   1231.95-1492.62          52 |         0.02            1       1.69         1.65-2.64           6
+miss_get                                                         5000 |        40.41        92568    1251.87   1193.10-1325.81          52 |         0.00            0       1.16         0.98-1.77           0
+patched_get                                                      5000 |        41.56        53161     136.47     126.66-161.47          23 |         0.00            0       1.49         1.45-2.52           0
+get@bulk hops=0 patch=3-4 ~3.6nodes hot64                        5000 |        42.31        92717    1332.10   1225.62-1457.59          52 |         0.00            0       1.12         1.05-1.75           0
+get@bulk hops=0 patch=3-4 ~3.6nodes fit(n=1024)                  5000 |        42.30        92745    1358.62   1190.74-1437.72          52 |         0.00            0       1.23         1.17-2.45           0
+get@bulk hops=1 patch=3-4 ~3.4nodes hot64                        5000 |        42.72        93721    1290.84   1227.00-1388.54          52 |         0.00            0       0.98         0.97-1.76           0
+get@bulk hops=1 patch=3-4 ~3.4nodes fit(n=1024)                  5000 |        43.28        93823    1315.79   1259.99-1406.15          52 |         0.00            0       1.01         0.99-2.27           0
+get@bulk hops=1 patch=3-4 ~3.4nodes overflow(n=34661)           34661 |        43.47        93913    1274.85   1265.31-1327.34          52 |         0.00            0       1.53         1.43-2.24           0
+get@bulk hops=2 patch=3-4 ~4.0nodes hot64                        5000 |        55.98        96693    1275.30   1214.46-1379.55          52 |         0.00            0       1.05         0.96-1.64           0
+get@bulk hops=2 patch=3-4 ~4.0nodes fit(n=1024)                  5000 |        55.82        96777    1282.90   1249.26-1432.75          52 |         0.00            0       1.70         1.18-4.92           0
+get@patched hops=1 patch=1-2 ~3.4nodes hot64                     5000 |        34.39        48697     109.26     104.87-114.68          22 |         0.00            0       1.20         1.18-1.25           0
+get@patched hops=1 patch=1-2 ~3.4nodes fit(n=1024)               5000 |        31.77        47332     106.72      99.06-118.94          22 |         0.00            0       1.40         1.23-1.53           0
+get@patched hops=1 patch=3-4 ~3.4nodes hot64                     5000 |        44.45        51506     150.38     142.12-186.26          22 |         0.00            0       0.89         0.89-0.92           0
+get@patched hops=1 patch=3-4 ~3.4nodes fit(n=1024)               5000 |        41.74        49875     164.69     154.73-212.39          23 |         0.00            0       0.97         0.95-1.12           0
+get@patched hops=2 patch=1-2 ~3.4nodes hot64                     5000 |        33.25        52160     119.52     103.93-147.90          22 |         0.00            0       1.51         1.50-2.91           0
+get@patched hops=2 patch=1-2 ~3.4nodes fit(n=1024)               5000 |        34.40        52539     126.97     102.61-146.27          22 |         0.00            0       1.72         1.61-2.96           0
+get@patched hops=2 patch=1-2 ~3.4nodes overflow(n=14372)        14372 |        34.74        52655     111.65     108.71-141.57          22 |         0.00            0       1.91         1.86-3.82           0
+get@patched hops=2 patch=3-4 ~3.4nodes hot64                     5000 |        47.17        55909     175.10     139.73-181.14          22 |         0.00            0       0.96         0.91-2.13           0
+get@patched hops=2 patch=3-4 ~3.4nodes fit(n=1024)               5000 |        47.49        56037     173.86     153.44-201.14          23 |         0.00            0       0.98         0.97-1.22           0
+get@patched hops=2 patch=3-4 ~3.4nodes overflow(n=15778)        15778 |        47.77        56059     164.21     156.42-179.75          23 |         0.00            0       1.30         1.25-1.46           0
+get@patched hops=3+ patch=1-2 ~4.0nodes hot64                    5000 |        45.60        53754     127.60     114.75-134.27          22 |         0.00            0       1.38         1.35-1.46           0
+get@patched hops=3+ patch=1-2 ~4.0nodes fit(n=1024)              5000 |        44.91        53615     125.04     108.92-143.83          22 |         0.00            0       1.86         1.74-1.92           0
+get@patched hops=3+ patch=3-4 ~4.0nodes hot64                    5000 |        58.14        56894     173.20     149.83-195.11          22 |         0.00            0       1.02         0.93-1.69           0
+get@patched hops=3+ patch=3-4 ~4.0nodes fit(n=1024)              5000 |        58.15        57050     159.66     154.19-217.13          23 |         0.00            0       1.14         1.03-2.04           0
+proof                                                             500 |      3030.45      4138559   24594.26 23295.07-26413.36         488 |       103.45       433857     342.20     305.41-424.07         914
+prune                                                           48630 |         4.07          626       9.44        8.78-12.28        5863 |         0.62          293       4.37         4.17-5.76        4504

@@ -1,0 +1,151 @@
+   Compiling cfg-if v1.0.0
+   Compiling version_check v0.9.4
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.44
+   Compiling unicode-ident v1.0.12
+   Compiling libc v0.2.182
+   Compiling zeroize v1.7.0
+   Compiling typenum v1.17.0
+   Compiling syn v2.0.117
+   Compiling generic-array v0.14.7
+   Compiling const-oid v0.9.6
+   Compiling subtle v2.5.0
+   Compiling autocfg v1.1.0
+   Compiling serde_core v1.0.228
+   Compiling cc v1.0.83
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling semver v1.0.21
+   Compiling digest v0.10.7
+   Compiling getrandom v0.2.12
+   Compiling rand_core v0.6.4
+   Compiling serde v1.0.228
+   Compiling rustc_version v0.4.0
+   Compiling der v0.7.8
+   Compiling once_cell v1.19.0
+   Compiling base16ct v0.2.0
+   Compiling memchr v2.8.0
+   Compiling sha2-asm v0.6.3
+   Compiling spki v0.7.3
+   Compiling ff v0.13.1
+   Compiling ahash v0.8.8
+   Compiling ppv-lite86 v0.2.17
+   Compiling group v0.13.0
+   Compiling pkcs8 v0.10.2
+   Compiling crypto-bigint v0.5.5
+   Compiling signature v2.2.0
+   Compiling cpufeatures v0.2.12
+   Compiling vcpkg v0.2.15
+   Compiling pkg-config v0.3.30
+   Compiling itoa v1.0.10
+   Compiling zmij v1.0.21
+   Compiling zerocopy v0.7.32
+   Compiling secp256k1-sys v0.6.1
+   Compiling curve25519-dalek v4.1.3
+   Compiling hmac v0.12.1
+   Compiling num-traits v0.2.18
+   Compiling memoffset v0.6.5
+   Compiling dirs-sys-next v0.1.2
+   Compiling bitflags v2.11.0
+   Compiling libsqlite3-sys v0.28.0
+   Compiling powerfmt v0.2.0
+   Compiling slog v2.7.0
+   Compiling time-core v0.1.4
+   Compiling num-conv v0.1.0
+   Compiling serde_json v1.0.149
+   Compiling time-macros v0.2.22
+   Compiling deranged v0.4.0
+   Compiling dirs-next v2.0.0
+   Compiling rfc6979 v0.4.0
+   Compiling sha2 v0.10.8
+   Compiling hashbrown v0.14.3
+   Compiling num_threads v0.1.6
+   Compiling thiserror v1.0.65
+   Compiling time v0.3.41
+   Compiling hashlink v0.9.1
+   Compiling term v0.7.0
+   Compiling serde_derive v1.0.228
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling thiserror-impl v1.0.65
+   Compiling ed25519 v2.2.3
+   Compiling rand_chacha v0.3.1
+   Compiling thread_local v1.1.7
+   Compiling atty v0.2.14
+   Compiling allocator-api2 v0.2.16
+   Compiling equivalent v1.0.1
+   Compiling stacks-common v4.0.5 (/home/user/stacks-core/stacks-common)
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling iana-time-zone v0.1.60
+   Compiling bitflags v1.3.2
+   Compiling foldhash v0.1.4
+   Compiling keccak v0.1.5
+   Compiling fallible-iterator v0.3.0
+   Compiling smallvec v1.13.1
+   Compiling sha3 v0.10.8
+   Compiling nix v0.23.2
+   Compiling chrono v0.4.41
+   Compiling slog-term v2.9.0
+   Compiling rand v0.8.5
+   Compiling ripemd v0.1.3
+   Compiling rustix v0.38.31
+   Compiling lazy_static v1.4.0
+   Compiling linux-raw-sys v0.4.13
+   Compiling memmap2 v0.9.9
+   Compiling serdect v0.2.0
+   Compiling sec1 v0.7.3
+   Compiling elliptic-curve v0.13.8
+   Compiling ecdsa v0.16.9
+   Compiling primeorder v0.13.6
+   Compiling p256 v0.13.2
+   Compiling ed25519-dalek v2.1.1
+   Compiling secp256k1 v0.24.3
+   Compiling hashbrown v0.15.2
+   Compiling fastrand v2.0.1
+   Compiling slab v0.4.9
+   Compiling tempfile v3.11.0
+   Compiling syn v1.0.109
+   Compiling futures-sink v0.3.31
+   Compiling futures-core v0.3.31
+   Compiling futures-channel v0.3.31
+   Compiling futures-macro v0.3.31
+   Compiling futures-task v0.3.31
+   Compiling futures-io v0.3.31
+   Compiling pin-utils v0.1.0
+   Compiling pin-project-lite v0.2.16
+   Compiling rstest_macros v0.17.0
+   Compiling rstest_reuse v0.5.0
+   Compiling futures-timer v3.0.2
+   Compiling stdext v0.3.2
+   Compiling futures-util v0.3.31
+   Compiling futures-executor v0.3.30
+   Compiling futures v0.3.30
+   Compiling rstest v0.17.0
+   Compiling rusqlite v0.31.0
+   Compiling stacks-marf-next v4.0.5 (/home/user/stacks-core/crates/stacks-marf-next)
+   Compiling stacks-marf v4.0.5 (/home/user/stacks-core/stacks-marf)
+   Compiling marf-differential v0.1.0 (/home/user/stacks-core/contrib/marf-differential)
+    Finished `test` profile [optimized + debuginfo] target(s) in 2m 44s
+────────────
+ Nextest run ID f24d3f9f-0216-476a-8ae3-0bf8c052ecd8 with nextest profile: default
+    Starting 18 tests across 4 binaries
+        PASS [  11.307s] ( 1/18) marf-differential::fixtures rewrite_reproduces_fixtures
+        PASS [  11.878s] ( 2/18) marf-differential::fixtures rewrite_reproduces_supported_fixture_ops
+        PASS [   0.012s] ( 3/18) marf-differential::fixtures storage_variants_agree_on_consensus_observations
+        PASS [   0.009s] ( 4/18) stacks-marf-next codec::tests::patch_roundtrip
+        PASS [   0.009s] ( 5/18) stacks-marf-next codec::tests::rejects_wrong_type
+        PASS [   0.009s] ( 6/18) stacks-marf-next codec::tests::roundtrip_all_kinds
+        PASS [   0.013s] ( 7/18) stacks-marf-next hash::tests::empty_root_hash_is_stable
+        PASS [   0.021s] ( 8/18) stacks-marf-next hash::tests::leaf_hash_matches_encoding
+        PASS [   0.013s] ( 9/18) stacks-marf-next node::tests::insert_replaces_and_fills
+        PASS [   0.012s] (10/18) stacks-marf-next node::tests::slots_iterate_in_slot_order
+        PASS [   0.013s] (11/18) stacks-marf-next proofs::tests::trie_leaf_hash_matches_node_leaf_hash
+        PASS [   0.140s] (12/18) stacks-marf-next pruning::tests::prune_stats_report_the_blob_length
+        PASS [   0.044s] (13/18) stacks-marf-next storage::tests::sidecar_retirement_is_redone_after_a_rolled_back_commit
+        PASS [   0.011s] (14/18) stacks-marf-next trie::tests::insert_lookup_roundtrip_and_reload
+        PASS [   0.010s] (15/18) stacks-marf-next trie::tests::layout_agrees_with_emission_across_the_u32_boundary
+        PASS [  21.193s] (16/18) marf-differential::fixtures baseline_reproduces_fixtures
+        PASS [  50.307s] (17/18) marf-differential::fixtures baseline_then_rewrite_handoff
+        PASS [  52.104s] (18/18) marf-differential::fixtures rewrite_then_baseline_handoff
+────────────
+     Summary [  63.413s] 18 tests run: 18 passed, 0 skipped
+VAL-CRATE EXIT 0

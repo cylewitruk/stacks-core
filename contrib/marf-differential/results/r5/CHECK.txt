@@ -1,0 +1,2 @@
+construct correctness records: 15 keys, all agree across 23 runs
+clarity equivalence records: 15 keys, all agree across 15 runs

@@ -1,0 +1,14 @@
+==6212== Callgrind, a call-graph generating cache profiler
+==6212== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==6212== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6212== Command: target/bench-bin/marf-differential-upstream ablate rewrite std
+==6212== 
+==6212== For interactive control, run 'callgrind_control -h'.
+==6212== brk segment overflow in thread #1: can't grow to 0x4894000
+==6212== (see section Limitations in user manual)
+==6212== NOTE: further instances of this message will not be shown
+==6212== 
+==6212== Events    : Ir
+==6212== Collected : 406776630
+==6212== 
+==6212== I   refs:      406,776,630

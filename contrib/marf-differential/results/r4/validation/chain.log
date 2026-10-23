@@ -1,0 +1,64 @@
+START 2026-10-20T16:00:50Z
+date 2026-10-20T16:00:50Z
+tree 42c27502062684c3f3e213de828fede93279aae6 (42c2750206)
+upstream oracle: stacks-marf at ad5c57786bb51b58d4bdb4992ad534f762d8cf03 (in tree)
+reference oracle: stacks-marf at 29ef093da5dd58c1fa484624d94a9d972356c629 (worktree + overlay)
+rustc 1.98.0 (88d9e12ae 2026-08-18); cargo 1.98.0 (797e8a9bc 2026-08-05)
+kernel 6.18.44-fc-v139; cpu Intel(R) Xeon(R) Processor @ 2.80GHz; cores 4; mem 15 GB
+REPEAT=5 PASSES=5
+load before: 0.78 0.97 1.21 1/115 14585
+== alloc-upstream-external-compressed
+== alloc-reference-external-compressed
+== alloc-upstream-external-plain
+== alloc-reference-external-plain
+== alloc-upstream-sqlite-plain
+== alloc-reference-sqlite-plain
+== alloc-counts-upstream-external-compressed
+== ablate-std-rewrite
+== ablate-std-reference
+== ablate-std-upstream
+== ablate-std-plain-upstream
+== ablate-std-plain-reference
+== ablate-std-plain-rewrite
+== ablate-std-pagecold-rewrite
+== ablate-std-pagecold-reference
+== ablate-std-counters-rewrite
+== ablate-std-counters-reference
+== ablate-big-reference
+== ablate-big-rewrite
+== ablate-big-counters-rewrite
+== ablate-big-counters-reference
+== construct-rewrite
+== construct-reference-rc2048
+== construct-reference-rc0
+== construct-upstream
+== construct-counters-rewrite
+== construct-counters-reference-rc2048
+== construct-counters-reference-rc0
+results in contrib/marf-differential/results/r4
+MATRIX EXIT 0 2026-10-20T17:24:29Z
+date 2026-10-20T17:24:29Z
+tree 42c27502062684c3f3e213de828fede93279aae6 (42c2750206)
+rustc 1.98.0 (88d9e12ae 2026-08-18); kernel 6.18.44-fc-v139; cpu Intel(R) Xeon(R) Processor @ 2.80GHz; cores 4
+REPEAT=5 BLOCKS=10
+load before: 1.11 1.05 1.02 1/111 16902
+== pass 1 rewrite
+== pass 1 upstream
+== pass 1 optmarf
+== pass 2 optmarf
+== pass 2 upstream
+== pass 2 rewrite
+equivalence lines (must agree):
+      3   write-heavy                cost runtime=3669430000 read_count=30640 read_length=861860 write_count=10010 write_length=500180 blocks=10 last_root=1e777387254fb038a2993ec13c1460de863c86f590cdf3998760e29b4c85c608
+      3   read-heavy                 cost runtime=3281100000 read_count=15900 read_length=1009800 write_count=0 write_length=0 blocks=10 last_root=f8ccaa4bc5ddc69fdda0b4f4927a79031249f6b1acc39228d3de42ac751f0880
+      3   mixed                      cost runtime=2171900000 read_count=16200 read_length=603400 write_count=5100 write_length=251800 blocks=10 last_root=a5fdcceaf24ecd7b62211965bb06d33e4ca584e70703ad7f6529545bf6d4aee2
+      3   inherited-after-history    cost runtime=1640550000 read_count=7950 read_length=504900 write_count=0 write_length=0 blocks=5 last_root=d52dfdc7ede4ca3e347f5090d5bb5184f73916fce02355c8a3cb184ea686b6a4
+      3   abort                      cost runtime=283300000 read_count=800 read_length=178200 write_count=100 write_length=5000 blocks=5 last_root=420724d1fa4e0da710e7cc57637d5fa460329e7c26d93478e8b271b847186f1d
+results in contrib/clarity-bench/results/r4
+CLARITY EXIT 0 2026-10-20T17:27:16Z
+TESTS START 2026-10-20T17:27:16Z
+VAL-CRATE EXIT 0
+VAL-HANDOFF EXIT 0
+VAL-CONSUMER EXIT 0
+VAL-COUNTERS EXIT 0
+END 2026-10-20T17:49:04Z
