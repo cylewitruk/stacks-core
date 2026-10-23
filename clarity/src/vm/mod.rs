@@ -364,7 +364,7 @@ fn dispatch_args(
                     &function.define_type,
                     function.get_identifier().to_string(),
                 );
-                function.apply(&args, exec_state, invoke_ctx)
+                function.apply(args, exec_state, invoke_ctx)
             }
 
             // Special functions evaluate their own arguments and are dispatched directly in
