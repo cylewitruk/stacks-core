@@ -407,3 +407,58 @@ pub fn capture_costs(
     stacks_profiler::counter_add!("CWC", cost.write_count);
     stacks_profiler::counter_add!("CWL", cost.write_length);
 }
+
+#[cfg(all(test, feature = "profiler"))]
+mod tests {
+    use stacks_profiler::{ProfileStats, Profiler};
+
+    use super::{DEFAULT_FLAGS, set_flags};
+    use crate::vm::{self, Value};
+
+    /// Flatten nested spans for assertions across Clarity dispatch.
+    fn flatten(spans: &[ProfileStats]) -> Vec<&ProfileStats> {
+        spans
+            .iter()
+            .flat_map(|span| {
+                let mut entries = vec![span];
+                entries.extend(flatten(&span.children));
+                entries
+            })
+            .collect()
+    }
+
+    /// Owned user arguments retain their span on success and close it on failure.
+    #[test]
+    fn user_function_spans_survive_owned_arguments_and_errors() {
+        let flags = set_flags(DEFAULT_FLAGS);
+        let recording = Profiler::is_record_enabled();
+        Profiler::enable_record();
+        for (source, fails) in [
+            (
+                "(define-private (echo (v (buff 4))) v) (echo 0x01020304)",
+                false,
+            ),
+            ("(define-private (echo (v uint)) (/ v u0)) (echo u1)", true),
+        ] {
+            Profiler::clear();
+            let result = vm::execute(source);
+            if fails {
+                assert!(result.is_err());
+            } else {
+                assert_eq!(
+                    result.unwrap(),
+                    Some(Value::buff_from(vec![1, 2, 3, 4]).unwrap())
+                );
+            }
+            let results = Profiler::take_results().unwrap();
+            let spans = flatten(&results);
+            let user = spans.iter().find(|span| span.name() == "echo").unwrap();
+            assert_eq!(user.context(), Some("clarity::user::private"));
+            assert_eq!(user.entered_count, 1);
+        }
+        set_flags(flags);
+        if !recording {
+            Profiler::disable_record();
+        }
+    }
+}
